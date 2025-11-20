@@ -1,0 +1,5 @@
+project_name: test_project
+current_phase phase_1_planning
+  last_checkpoint: CP_1_001
+invalid yaml here
+  more: invalid: content
