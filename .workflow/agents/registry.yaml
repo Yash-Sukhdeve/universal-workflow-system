@@ -1,0 +1,214 @@
+# Universal Agent Registry
+# Define all available agents and their capabilities
+
+agents:
+  researcher:
+    name: "Research Agent"
+    description: "Handles literature review, hypothesis formation, experimental design"
+    icon: "🔬"
+    capabilities:
+      - literature_review
+      - hypothesis_formation
+      - experimental_design
+      - result_analysis
+      - statistical_validation
+    adapts_to:
+      - ml_research
+      - systems_research
+      - theoretical_research
+      - applied_research
+    primary_skills:
+      - literature_review
+      - experimental_design
+      - paper_writing
+    workspace: "workspace/researcher"
+    
+  architect:
+    name: "Architecture Agent"
+    description: "Designs system architecture, APIs, and technical specifications"
+    icon: "🏗️"
+    capabilities:
+      - system_design
+      - api_design
+      - database_schema
+      - microservice_architecture
+      - pipeline_architecture
+    adapts_to:
+      - web_applications
+      - ml_pipelines
+      - distributed_systems
+      - embedded_systems
+    primary_skills:
+      - system_design
+      - architecture_patterns
+      - api_design
+    workspace: "workspace/architect"
+    
+  implementer:
+    name: "Implementation Agent"
+    description: "Builds software, models, and prototypes"
+    icon: "💻"
+    capabilities:
+      - prototype_development
+      - production_coding
+      - model_training
+      - feature_engineering
+      - integration
+    adapts_to:
+      - research_code
+      - production_systems
+      - ml_models
+      - infrastructure
+    primary_skills:
+      - code_generation
+      - debugging
+      - testing
+      - refactoring
+    workspace: "workspace/implementer"
+    
+  experimenter:
+    name: "Experimentation Agent"
+    description: "Runs experiments, benchmarks, and validation tests"
+    icon: "🧪"
+    capabilities:
+      - experiment_execution
+      - ablation_studies
+      - hyperparameter_tuning
+      - benchmarking
+      - profiling
+    adapts_to:
+      - model_experiments
+      - system_benchmarks
+      - a_b_testing
+      - performance_analysis
+    primary_skills:
+      - experiment_execution
+      - benchmarking
+      - data_analysis
+      - statistical_validation
+    workspace: "workspace/experimenter"
+    
+  optimizer:
+    name: "Optimization Agent"
+    description: "Optimizes performance, compression, and efficiency"
+    icon: "⚡"
+    capabilities:
+      - model_compression
+      - quantization
+      - pruning
+      - distillation
+      - code_optimization
+      - resource_optimization
+      - cost_optimization
+    adapts_to:
+      - model_optimization
+      - system_tuning
+      - performance_optimization
+      - efficiency_improvements
+    primary_skills:
+      - quantization
+      - pruning
+      - profiling
+      - resource_optimization
+    workspace: "workspace/optimizer"
+    
+  deployer:
+    name: "Deployment Agent"
+    description: "Handles deployment, DevOps, and production operations"
+    icon: "🚀"
+    capabilities:
+      - containerization
+      - ci_cd_setup
+      - cloud_deployment
+      - edge_deployment
+      - monitoring_setup
+      - scaling_configuration
+    adapts_to:
+      - aws_deployment
+      - kubernetes
+      - serverless
+      - on_premise
+      - hybrid_cloud
+    primary_skills:
+      - containerization
+      - ci_cd
+      - monitoring
+      - scaling
+    workspace: "workspace/deployer"
+    
+  documenter:
+    name: "Documentation Agent"
+    description: "Creates documentation, papers, and communication materials"
+    icon: "📚"
+    capabilities:
+      - technical_writing
+      - api_documentation
+      - paper_writing
+      - tutorial_creation
+      - presentation_prep
+      - visualization
+    adapts_to:
+      - research_papers
+      - technical_docs
+      - user_guides
+      - slide_decks
+      - blog_posts
+    primary_skills:
+      - technical_writing
+      - visualization
+      - presentation
+      - diagram_creation
+    workspace: "workspace/documenter"
+
+# Agent collaboration patterns
+collaboration_patterns:
+  research_to_implementation:
+    sequence: [researcher, architect, implementer]
+    handoff_artifacts:
+      - research_findings.md
+      - requirements.yaml
+      - architecture_design.md
+      
+  full_ml_pipeline:
+    sequence: [researcher, implementer, experimenter, optimizer, deployer]
+    handoff_artifacts:
+      - literature_review.md
+      - model_code/
+      - experiment_results.yaml
+      - optimized_model/
+      - deployment_config.yaml
+      
+  production_software:
+    sequence: [architect, implementer, experimenter, deployer, documenter]
+    handoff_artifacts:
+      - system_design.md
+      - source_code/
+      - test_results.yaml
+      - deployment/
+      - documentation/
+
+# Agent transition rules
+transition_rules:
+  - from: researcher
+    to: [architect, implementer]
+    condition: "research_complete"
+    
+  - from: architect
+    to: [implementer]
+    condition: "design_approved"
+    
+  - from: implementer
+    to: [experimenter, optimizer]
+    condition: "implementation_complete"
+    
+  - from: experimenter
+    to: [optimizer, deployer]
+    condition: "validation_passed"
+    
+  - from: optimizer
+    to: [deployer, experimenter]
+    condition: "optimization_complete"
+    
+  - from: "*"
+    to: documenter
+    condition: "documentation_needed"
