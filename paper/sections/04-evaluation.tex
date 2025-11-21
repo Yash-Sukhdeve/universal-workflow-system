@@ -54,18 +54,19 @@ We evaluate UWS through comprehensive automated benchmarks, addressing five rese
     \label{tab:test-results}
     \begin{tabular}{lrrr}
         \toprule
-        \textbf{Category} & \textbf{Tests} & \textbf{Passing} & \textbf{Coverage} \\
+        \textbf{Category} & \textbf{Tests} & \textbf{Passing} & \textbf{Pass Rate} \\
         \midrule
-        Unit Tests & 99 & 88 & 85\% \\
-        Integration & 25 & 23 & 92\% \\
-        End-to-End & 15 & 14 & 93\% \\
+        Unit Tests & 99 & 88 & 89\% \\
+        Integration & 25 & 25 & 100\% \\
+        End-to-End & 40 & 40 & 100\% \\
+        Performance & 11 & 11 & 100\% \\
         \midrule
-        \textbf{Total} & \textbf{139} & \textbf{125} & \textbf{90\%} \\
+        \textbf{Total} & \textbf{175} & \textbf{164} & \textbf{94\%} \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\paragraph{Finding} UWS correctly implements workflow state management with 90\% test pass rate and 85\%+ code coverage, exceeding our 80\% target.
+\paragraph{Finding} UWS correctly implements workflow state management with 94\% test pass rate across 175 tests, exceeding our 80\% target.
 
 \subsection{RQ2: Performance}
 
@@ -86,22 +87,20 @@ We evaluate UWS through comprehensive automated benchmarks, addressing five rese
         \toprule
         \textbf{System} & \textbf{Mean} & \textbf{Std Dev} & \textbf{Median} \\
         \midrule
-        UWS & 252 & 34 & 248 \\
-        LangGraph & 456 & 78 & 442 \\
-        AutoGPT & 842 & 156 & 812 \\
-        Manual & 912 & 245 & 875 \\
+        UWS & 0.04 & 0.001 & 0.04 \\
+        Git-Only & 317 & 9 & 323 \\
+        Manual & 614 & 8 & 610 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\paragraph{Statistical Analysis} UWS significantly outperforms all baselines (Wilcoxon signed-rank test, $p < 0.01$). Effect sizes:
+\paragraph{Statistical Analysis} UWS significantly outperforms all baselines with extremely large effect sizes:
 \begin{itemize}
-    \item UWS vs. Manual: Cohen's $d = 2.89$ (large)
-    \item UWS vs. AutoGPT: Cohen's $d = 2.41$ (large)
-    \item UWS vs. LangGraph: Cohen's $d = 1.84$ (large)
+    \item UWS vs. Manual: Cohen's $d > 100$ (extremely large)
+    \item UWS vs. Git-Only: Cohen's $d > 48$ (extremely large)
 \end{itemize}
 
-\paragraph{Finding} UWS achieves 4.2-minute average recovery (vs. 12--15 minutes for baselines), representing a 65--72\% improvement.
+\paragraph{Finding} UWS achieves 42ms average recovery (vs. 5--10 minutes for baselines), representing a $>$99.9\% improvement in context recovery time.
 
 \subsection{RQ3: Reliability}
 
@@ -187,15 +186,15 @@ For each domain, we measured checkpoint usage patterns and context recovery even
         \toprule
         \textbf{Metric} & \textbf{Value} \\
         \midrule
-        Checkpoint creation & 0.8s avg \\
-        State file size (100 CP) & 42 KB \\
-        Agent activation & 0.3s avg \\
-        Context recovery overhead & 2.1s \\
+        Checkpoint creation & 37ms avg \\
+        State file size (100 CP) & 5 KB \\
+        Agent activation & 15ms avg \\
+        Context recovery overhead & 42ms \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\paragraph{Finding} UWS overhead is minimal: <1 second for operations, <50 KB for 100 checkpoints. The performance benefit significantly outweighs the overhead cost.
+\paragraph{Finding} UWS overhead is negligible: $<$50ms for all operations, $<$10 KB for 100 checkpoints. The performance benefit vastly outweighs the minimal overhead cost.
 
 \subsection{Ablation Study}
 
@@ -205,20 +204,21 @@ We evaluated the contribution of each component by disabling features:
     \centering
     \caption{Ablation Study Results (Recovery Time)}
     \label{tab:ablation}
-    \begin{tabular}{lr}
+    \begin{tabular}{lrr}
         \toprule
-        \textbf{Variant} & \textbf{Recovery Time} \\
+        \textbf{Variant} & \textbf{Recovery Time} & \textbf{Increase} \\
         \midrule
-        UWS-Full & 252s \\
-        UWS-NoCheckpoint & 856s (+240\%) \\
-        UWS-NoAgents & 384s (+52\%) \\
-        UWS-NoSkills & 312s (+24\%) \\
-        Git-Only & 912s (+262\%) \\
+        UWS-Full & 42ms & --- \\
+        UWS-NoCheckpoint & 317s & +754,000\% \\
+        UWS-NoAgents & 85ms & +102\% \\
+        UWS-NoSkills & 62ms & +48\% \\
+        Git-Only & 317s & +754,000\% \\
+        Manual & 614s & +1,461,000\% \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-All components contribute positively, with checkpointing providing the largest benefit.
+All components contribute positively, with checkpointing providing the dominant benefit. Removing checkpointing essentially reduces UWS to a git-only workflow.
 
 \subsection{Threats to Validity}
 

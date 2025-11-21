@@ -290,9 +290,12 @@ create_full_test_environment() {
     create_checkpoints_log "${dir}"
     create_handoff_md "${dir}"
 
-    # Create phase directories
+    # Create phase directories (all 5 phases)
     mkdir -p "${dir}/phases/phase_1_planning"
     mkdir -p "${dir}/phases/phase_2_implementation"
+    mkdir -p "${dir}/phases/phase_3_validation"
+    mkdir -p "${dir}/phases/phase_4_delivery"
+    mkdir -p "${dir}/phases/phase_5_maintenance"
 
     # Create workspace directories
     mkdir -p "${dir}/workspace/implementer"

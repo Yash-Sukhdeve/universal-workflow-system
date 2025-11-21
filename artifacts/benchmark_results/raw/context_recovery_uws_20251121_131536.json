@@ -1,0 +1,14 @@
+{
+    "benchmark": "context_recovery_uws",
+    "timestamp": "2025-11-21T13:15:38-05:00",
+    "trials": 10,
+    "checkpoint_count": 5,
+    "results_ms": [42,42,42,43,44,43,44,42,42,43],
+    "statistics": {
+        "mean": 42,
+        "std_dev": 1,
+        "median": 43,
+        "min": 42,
+        "max": 44
+    }
+}

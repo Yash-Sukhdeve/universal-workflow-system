@@ -1,0 +1,14 @@
+{
+    "benchmark": "reliability",
+    "timestamp": "2025-11-21T13:15:09-05:00",
+    "total_tests": 5,
+    "successful_tests": 5,
+    "success_rate": 100.00,
+    "failure_conditions": [
+        "normal_operation",
+        "partial_corruption",
+        "missing_checkpoints_log",
+        "empty_state_file",
+        "concurrent_checkpoints"
+    ]
+}
