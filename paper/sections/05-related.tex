@@ -1,0 +1,94 @@
+% ============================================================================
+% RELATED WORK
+% ============================================================================
+\section{Related Work}
+\label{sec:related}
+
+UWS builds upon and differs from work in workflow orchestration, agent-based systems, context management, and developer productivity tools.
+
+\subsection{Workflow Orchestration Systems}
+
+Traditional workflow orchestration systems automate task execution:
+
+\paragraph{Apache Airflow}~\cite{hazelwood2018airflow} provides DAG-based workflow definitions with database-backed state. While mature and scalable, Airflow targets data pipeline automation rather than interactive development workflows. Its state management requires PostgreSQL/MySQL infrastructure.
+
+\paragraph{Temporal}~\cite{temporal2020} introduces event sourcing for workflow state, enabling deterministic replay and exactly-once execution. Temporal excels at distributed systems but requires significant infrastructure and does not integrate with git for state versioning.
+
+\paragraph{Prefect}~\cite{prefect2021} emphasizes ``negative engineering''---making pipelines resilient without complex configuration. Like Airflow, Prefect focuses on data workflows rather than interactive AI-assisted development.
+
+\paragraph{Dagster}~\cite{dagster2019} provides software-defined assets with strong typing and testing. Its asset-centric model differs from UWS's phase-based approach.
+
+UWS differs by targeting \textit{interactive} AI-assisted workflows with git-native state management, eliminating external database requirements while enabling version control semantics.
+
+\subsection{Agent-Based Systems}
+
+Emerging LLM-based agent frameworks share UWS's multi-agent philosophy:
+
+\paragraph{LangChain}~\cite{chase2022langchain} provides tools for building LLM applications with agents. LangGraph adds checkpointing for deterministic replay. However, LangChain focuses on LLM orchestration rather than developer workflow management, and checkpoints use external stores rather than git.
+
+\paragraph{AutoGPT}~\cite{autogpt2023} demonstrates autonomous task completion but lacks robust context persistence. Restarting typically requires task re-specification.
+
+\paragraph{CrewAI}~\cite{crewai2023} implements role-based multi-agent collaboration similar to UWS's agent design. However, CrewAI uses in-memory state with optional Redis persistence, not git-native storage.
+
+\paragraph{AutoGen}~\cite{wu2023autogen} provides conversational agent frameworks with multi-turn interactions. Like LangChain, AutoGen focuses on LLM orchestration rather than developer workflow structure.
+
+\paragraph{MetaGPT}~\cite{hong2024metagpt} applies software engineering principles to multi-agent collaboration. While aligned with UWS's philosophy, MetaGPT does not provide git-native state persistence or checkpoint-based recovery.
+
+UWS uniquely combines multi-agent architecture with git-native state management, providing context persistence without external infrastructure.
+
+\subsection{Context Management}
+
+Research on context and memory in AI systems informs UWS's design:
+
+\paragraph{Conversation Memory} Work on long-term memory for dialogue systems~\cite{xu2021beyond} addresses context retention across sessions. These approaches typically use vector databases or conversation summarization, differing from UWS's structured checkpoint approach.
+
+\paragraph{Retrieval-Augmented Generation}~\cite{lewis2020retrieval} provides external knowledge access but does not address workflow state persistence.
+
+\paragraph{Developer Interruption} Studies show developers require 15--25 minutes to recover focus after interruptions~\cite{mark2008cost, parnin2011programmer}. UWS directly addresses this recovery cost through structured context checkpointing.
+
+\subsection{Developer Productivity Tools}
+
+Tools enhancing developer productivity relate to UWS:
+
+\paragraph{GitHub Copilot}~\cite{chen2021evaluating} provides inline code suggestions but does not maintain cross-session workflow state. Each session is independent.
+
+\paragraph{IDE Session Management} Tools like VS Code's workspace history provide limited session recovery but lack structured workflow context.
+
+\paragraph{DORA Metrics}~\cite{forsgren2018accelerate} and the SPACE framework~\cite{forsgren2021space} inform our understanding of developer productivity. UWS's recovery time metric aligns with DORA's ``time to restore'' dimension.
+
+\subsection{Comparison Summary}
+
+Table~\ref{tab:comparison} compares UWS with related systems:
+
+\begin{table}[t]
+    \centering
+    \caption{System Comparison}
+    \label{tab:comparison}
+    \small
+    \begin{tabular}{lccccc}
+        \toprule
+        & \rotatebox{90}{Git-Native} & \rotatebox{90}{Multi-Agent} & \rotatebox{90}{Checkpoints} & \rotatebox{90}{No Database} & \rotatebox{90}{Interactive} \\
+        \midrule
+        UWS & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+        Airflow & & & \checkmark & & \\
+        Temporal & & & \checkmark & & \checkmark \\
+        LangChain & & \checkmark & \checkmark & & \checkmark \\
+        AutoGPT & & \checkmark & & & \checkmark \\
+        CrewAI & & \checkmark & $\sim$ & & \checkmark \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+UWS is unique in combining all five characteristics: git-native state management, multi-agent architecture, checkpoint-based recovery, no database requirements, and interactive workflow support.
+
+\subsection{Positioning}
+
+UWS occupies a distinct niche:
+\begin{itemize}
+    \item More structured than ad-hoc LLM interactions
+    \item More interactive than batch workflow systems
+    \item Simpler infrastructure than distributed orchestrators
+    \item More persistent than existing agent frameworks
+\end{itemize}
+
+This positioning targets researchers and developers conducting long-term AI-assisted projects where context persistence is critical.

@@ -1,0 +1,125 @@
+% Universal Workflow System - Academic Paper
+% Target Venue: FSE 2026 / ASE 2026 / EMSE Journal
+% Format: ACM sigconf (FSE/ASE) or IEEE (ICSE)
+
+\documentclass[sigconf,review,anonymous]{acmart}
+
+% ============================================================================
+% PACKAGES
+% ============================================================================
+\usepackage{booktabs}       % Professional tables
+\usepackage{subcaption}     % Subfigures
+\usepackage{listings}       % Code listings
+\usepackage{xcolor}         % Colors
+\usepackage{tikz}           % Diagrams
+\usepackage{pgfplots}       % Plots
+\usepackage{algorithm}      % Algorithms
+\usepackage{algorithmic}    % Algorithm formatting
+\usepackage{balance}        % Balance columns on last page
+
+\pgfplotsset{compat=1.18}
+
+% ============================================================================
+% LISTINGS CONFIGURATION
+% ============================================================================
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    tabsize=2
+}
+
+% Define bash language for listings
+\lstdefinelanguage{bash}{
+    keywords={if, then, else, elif, fi, for, while, do, done, case, esac, function, return, local, export},
+    morecomment=[l]{\#},
+    morestring=[b]",
+    morestring=[b]'
+}
+
+% ============================================================================
+% METADATA
+% ============================================================================
+\title{UWS: A Git-Native Workflow System for Context-Resilient AI-Assisted Development}
+
+% Authors (anonymized for review)
+\author{Anonymous Author(s)}
+\affiliation{
+    \institution{Anonymous Institution}
+    \city{City}
+    \country{Country}
+}
+\email{anonymous@example.com}
+
+% ============================================================================
+% ABSTRACT
+% ============================================================================
+\begin{abstract}
+AI-assisted software development has transformed how developers work, yet context loss during long-term projects remains a critical challenge. When development sessions span weeks or months, interruptions and context window limitations cause developers to spend 15--25 minutes recovering context after each break. We present the Universal Workflow System (UWS), a novel git-native workflow management system that provides persistent context across sessions through checkpoint-based state recovery. UWS introduces a multi-agent architecture with seven specialized roles, a modular skill library, and phase-based workflow management---all built on version-controlled state files.
+
+We evaluate UWS through comprehensive automated benchmarks comparing context recovery performance against baseline approaches including manual recovery, AutoGPT, and LangGraph. Results show UWS achieves average context recovery in 4.2 minutes (vs.\ 12--15 minutes for baselines), representing a 65--72\% improvement. Reliability testing demonstrates 97\% checkpoint recovery success under failure injection, and ablation studies confirm the contribution of each architectural component. Case studies across ML research, LLM development, and software engineering domains demonstrate generalizability.
+
+Our contributions include: (1) a novel git-native state persistence mechanism for workflow systems, (2) a complete open-source implementation with comprehensive test suite, (3) empirical evaluation demonstrating significant performance improvements, and (4) a replication package enabling reproducibility.
+\end{abstract}
+
+% ============================================================================
+% CCS CONCEPTS AND KEYWORDS
+% ============================================================================
+\begin{CCSXML}
+<ccs2012>
+   <concept>
+       <concept_id>10011007.10011006.10011008.10011009.10011012</concept_id>
+       <concept_desc>Software and its engineering~Software development techniques</concept_desc>
+       <concept_significance>500</concept_significance>
+   </concept>
+   <concept>
+       <concept_id>10011007.10011074.10011092</concept_id>
+       <concept_desc>Software and its engineering~Software development process management</concept_desc>
+       <concept_significance>500</concept_significance>
+   </concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Software and its engineering~Software development techniques}
+\ccsdesc[500]{Software and its engineering~Software development process management}
+
+\keywords{workflow systems, context management, developer productivity, multi-agent systems, version control}
+
+% ============================================================================
+% DOCUMENT
+% ============================================================================
+\begin{document}
+
+\maketitle
+
+% Include sections
+\input{sections/01-introduction}
+\input{sections/02-background}
+\input{sections/03-approach}
+\input{sections/04-evaluation}
+\input{sections/05-related}
+\input{sections/06-conclusion}
+
+% ============================================================================
+% ACKNOWLEDGMENTS (hidden for review)
+% ============================================================================
+% \begin{acks}
+% Acknowledgments here after acceptance.
+% \end{acks}
+
+% ============================================================================
+% REFERENCES
+% ============================================================================
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+% Balance columns on last page
+\balance
+
+\end{document}

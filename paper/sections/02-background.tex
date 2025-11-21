@@ -1,0 +1,84 @@
+% ============================================================================
+% BACKGROUND
+% ============================================================================
+\section{Background}
+\label{sec:background}
+
+This section provides context for understanding UWS's design and contributions. We define the context persistence problem, describe the landscape of existing solutions, and introduce a running example.
+
+\subsection{The Context Persistence Problem}
+
+When developers work with AI assistants on complex projects, they establish a shared understanding of the project's state, goals, and history. This \textit{context} encompasses:
+
+\begin{itemize}
+    \item \textbf{Project state}: Current phase, completed tasks, pending work
+    \item \textbf{Design decisions}: Architectural choices and their rationale
+    \item \textbf{Domain knowledge}: Project-specific concepts and terminology
+    \item \textbf{Conversation history}: Previous interactions and insights
+\end{itemize}
+
+Context is fragile. LLM context windows have finite capacity (typically 8K--128K tokens). Session timeouts, system restarts, and natural work interruptions regularly reset this accumulated knowledge. Research shows developers require 15--25 minutes to regain focus after interruptions~\cite{mark2008cost, parnin2011programmer}, and AI-assisted workflows face similar challenges.
+
+\subsection{Running Example: ML Research Workflow}
+
+Consider Alice, a researcher developing a neural network for image classification. Her workflow spans several weeks:
+
+\begin{enumerate}
+    \item \textbf{Week 1}: Literature review, hypothesis formulation
+    \item \textbf{Week 2}: Experimental design, data preparation
+    \item \textbf{Week 3}: Model implementation, initial training
+    \item \textbf{Week 4}: Hyperparameter tuning, validation
+    \item \textbf{Week 5}: Results analysis, paper writing
+\end{enumerate}
+
+Each phase involves different skills and context. Without persistence, Alice would repeatedly explain her dataset, model architecture, and experimental results to her AI assistant. With UWS, each session resumes from a checkpoint containing all relevant state.
+
+\subsection{State Management Approaches}
+
+Existing systems manage state in various ways:
+
+\paragraph{Database-Backed State} Systems like Airflow~\cite{hazelwood2018airflow} and Temporal~\cite{temporal2020} store state in relational databases (PostgreSQL, MySQL). This enables scalable, distributed execution but requires infrastructure setup and lacks version control semantics.
+
+\paragraph{In-Memory State} Many agent frameworks (LangChain~\cite{chase2022langchain}, AutoGen~\cite{autogen2023}) maintain state in memory with optional persistence to external stores. Recovery typically involves replaying conversation history, which can be slow and lose nuanced context.
+
+\paragraph{File-Based State} Some tools use JSON or YAML files for state persistence. While simple, these approaches rarely integrate with version control systems and lack standardized recovery mechanisms.
+
+\paragraph{Git-Native State} UWS uniquely stores all state in version-controlled YAML files within the project's git repository. This provides:
+
+\begin{itemize}
+    \item \textbf{Natural versioning}: Every checkpoint is a git commit
+    \item \textbf{Diffing}: State changes are visible via \texttt{git diff}
+    \item \textbf{Branching}: Experimental workflows via git branches
+    \item \textbf{Collaboration}: Team workflows via standard git operations
+    \item \textbf{Familiarity}: Developers already know git
+\end{itemize}
+
+\subsection{Workflow Phases}
+
+UWS organizes work into five standard phases, adaptable to any project type:
+
+\begin{enumerate}
+    \item \textbf{Planning}: Requirements gathering, scope definition, design
+    \item \textbf{Implementation}: Code development, model building
+    \item \textbf{Validation}: Testing, experiments, verification
+    \item \textbf{Delivery}: Deployment, documentation, release
+    \item \textbf{Maintenance}: Monitoring, updates, support
+\end{enumerate}
+
+Each phase has associated deliverables and completion criteria. Agents specialize in particular phases, and skills are organized by relevance to each phase.
+
+\subsection{Multi-Agent Workflows}
+
+Modern AI development benefits from specialized agents~\cite{wu2023autogen, hong2024metagpt}. UWS defines seven agent roles:
+
+\begin{itemize}
+    \item \textbf{Researcher}: Literature review, hypothesis formation
+    \item \textbf{Architect}: System design, API specification
+    \item \textbf{Implementer}: Code development, testing
+    \item \textbf{Experimenter}: Running experiments, benchmarks
+    \item \textbf{Optimizer}: Performance tuning, profiling
+    \item \textbf{Deployer}: CI/CD, containerization, monitoring
+    \item \textbf{Documenter}: Documentation, paper writing
+\end{itemize}
+
+Transitions between agents follow defined patterns with explicit handoff protocols, ensuring context preservation across role changes.

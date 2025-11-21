@@ -1,0 +1,207 @@
+% ============================================================================
+% APPROACH
+% ============================================================================
+\section{Approach}
+\label{sec:approach}
+
+This section describes UWS's architecture, design decisions, and key components. We emphasize the technical challenges solved and the rationale behind design choices.
+
+\subsection{Architecture Overview}
+
+Figure~\ref{fig:architecture} shows UWS's high-level architecture. The system consists of four main components:
+
+\begin{enumerate}
+    \item \textbf{State Management Layer}: Git-native persistence via YAML files
+    \item \textbf{Agent System}: Seven specialized agents with handoff protocols
+    \item \textbf{Skill Library}: Modular capabilities loaded dynamically
+    \item \textbf{Workflow Engine}: Phase-based execution with checkpoint integration
+\end{enumerate}
+
+% Architecture diagram placeholder
+\begin{figure}[t]
+    \centering
+    \fbox{\parbox{0.9\columnwidth}{
+        \centering
+        \textbf{Architecture Diagram}\\[1em]
+        \small
+        [State Layer] $\rightarrow$ [Agent System] $\rightarrow$ [Skill Library]\\
+        $\downarrow$\\
+        [Git Repository] $\leftarrow$ [Checkpoint System]
+    }}
+    \caption{UWS Architecture: Git-native state persistence enables checkpoint-based recovery across sessions.}
+    \label{fig:architecture}
+\end{figure}
+
+\subsection{Git-Native State Persistence}
+
+UWS's core innovation is storing all workflow state in version-controlled files:
+
+\paragraph{State Files} The \texttt{.workflow/} directory contains:
+\begin{itemize}
+    \item \texttt{state.yaml}: Current phase, checkpoint ID, metadata
+    \item \texttt{config.yaml}: Project configuration, enabled features
+    \item \texttt{checkpoints.log}: Timestamped checkpoint history
+    \item \texttt{handoff.md}: Human-readable context for session continuity
+\end{itemize}
+
+\paragraph{Checkpoint Mechanism} Creating a checkpoint involves:
+\begin{enumerate}
+    \item Updating \texttt{state.yaml} with current context
+    \item Appending to \texttt{checkpoints.log} with timestamp and description
+    \item Optionally committing changes via git
+\end{enumerate}
+
+Listing~\ref{lst:checkpoint} shows the checkpoint creation process:
+
+\begin{lstlisting}[language=bash,caption={Checkpoint creation},label={lst:checkpoint}]
+# Create checkpoint with descriptive message
+./scripts/checkpoint.sh "Completed model training"
+
+# Checkpoint log format:
+# 2024-01-15T14:30:00Z | CP_2_5 | Completed model training
+\end{lstlisting}
+
+\paragraph{Recovery Process} Context recovery reads checkpoint files and restores state:
+\begin{enumerate}
+    \item Load \texttt{state.yaml} to determine current phase
+    \item Read \texttt{checkpoints.log} to show recent history
+    \item Parse \texttt{handoff.md} for critical context
+    \item Display suggested next actions
+\end{enumerate}
+
+The \texttt{recover\_context.sh} script completes this in under 5 minutes, compared to 15+ minutes for manual context rebuilding.
+
+\subsection{Technical Challenges}
+
+Implementing git-native state persistence required solving several challenges:
+
+\paragraph{State Serialization} Agent context must be serializable to YAML. We limit state to:
+\begin{itemize}
+    \item Primitive types (strings, numbers, booleans)
+    \item Nested structures (maps, lists)
+    \item References to files (paths, not contents)
+\end{itemize}
+
+Large data (models, datasets) remain external; only references are checkpointed.
+
+\paragraph{Atomic Operations} Checkpoint creation must be atomic to prevent corruption. We use:
+\begin{itemize}
+    \item Write to temporary file, then rename (atomic on POSIX)
+    \item Validate YAML syntax before committing
+    \item Backup previous state before modification
+\end{itemize}
+
+\paragraph{Conflict Resolution} Collaborative workflows may create git conflicts in state files. UWS:
+\begin{itemize}
+    \item Uses YAML's line-based format for easier merging
+    \item Provides conflict detection warnings
+    \item Suggests resolution strategies
+\end{itemize}
+
+\subsection{Multi-Agent System}
+
+UWS's agent system implements role-based collaboration:
+
+\paragraph{Agent Registry} The \texttt{.workflow/agents/registry.yaml} defines available agents with:
+\begin{itemize}
+    \item Capabilities and specializations
+    \item Default skills
+    \item Transition rules
+\end{itemize}
+
+\paragraph{Activation} Agents are activated via:
+\begin{lstlisting}[language=bash]
+./scripts/activate_agent.sh researcher
+\end{lstlisting}
+
+This updates \texttt{.workflow/agents/active.yaml} with the current agent, loads relevant skills, and creates the agent's workspace directory.
+
+\paragraph{Handoff Protocol} Transitioning between agents follows a structured protocol:
+\begin{enumerate}
+    \item Current agent creates handoff notes
+    \item Checkpoint is created with transition context
+    \item New agent is activated
+    \item New agent loads predecessor's notes
+\end{enumerate}
+
+\subsection{Skill Library}
+
+Skills are modular capabilities that agents can use:
+
+\paragraph{Skill Catalog} The \texttt{.workflow/skills/catalog.yaml} organizes skills by category:
+\begin{itemize}
+    \item Research: literature\_review, experimental\_design
+    \item Development: code\_development, testing
+    \item ML/AI: model\_training, hyperparameter\_tuning
+    \item Deployment: containerization, ci\_cd
+\end{itemize}
+
+\paragraph{Skill Chains} Complex workflows use predefined chains:
+\begin{itemize}
+    \item \texttt{full\_research\_pipeline}: literature $\rightarrow$ design $\rightarrow$ validation
+    \item \texttt{ml\_optimization}: profiling $\rightarrow$ quantization $\rightarrow$ benchmarking
+\end{itemize}
+
+\paragraph{Dynamic Loading} Skills are enabled via:
+\begin{lstlisting}[language=bash]
+./scripts/enable_skill.sh quantization pruning
+\end{lstlisting}
+
+This updates \texttt{.workflow/skills/enabled.yaml} and makes capabilities available to the active agent.
+
+\subsection{Phase-Based Execution}
+
+UWS structures work into phases:
+
+\paragraph{Phase Transitions} Moving between phases:
+\begin{enumerate}
+    \item Verify phase completion criteria
+    \item Create transition checkpoint
+    \item Update \texttt{state.yaml} with new phase
+    \item Activate appropriate agent for new phase
+\end{enumerate}
+
+\paragraph{Phase Workspaces} Each phase has a dedicated directory:
+\begin{itemize}
+    \item \texttt{phases/phase\_1\_planning/}: Requirements, scope docs
+    \item \texttt{phases/phase\_2\_implementation/}: Source code
+    \item \texttt{phases/phase\_3\_validation/}: Test results, metrics
+\end{itemize}
+
+\subsection{Implementation Details}
+
+UWS is implemented in Bash for maximum portability:
+
+\paragraph{Dependencies} Required: Bash 4+, git. Optional: yq (YAML processing).
+
+\paragraph{Utility Libraries} Core functionality is provided by:
+\begin{itemize}
+    \item \texttt{yaml\_utils.sh}: YAML parsing with yq fallback
+    \item \texttt{validation\_utils.sh}: Input validation and sanitization
+\end{itemize}
+
+\paragraph{Error Handling} All scripts use \texttt{set -euo pipefail} for strict error handling, with graceful degradation for optional features.
+
+\subsection{Usage Example}
+
+A typical UWS session:
+
+\begin{lstlisting}[language=bash]
+# Initialize workflow
+./scripts/init_workflow.sh
+
+# Activate researcher agent
+./scripts/activate_agent.sh researcher
+
+# Work on literature review...
+# Create checkpoint
+./scripts/checkpoint.sh "Literature review complete"
+
+# Transition to implementer
+./scripts/activate_agent.sh implementer
+
+# After a break, recover context
+./scripts/recover_context.sh
+\end{lstlisting}
+
+Recovery displays current state, recent checkpoints, active agent, and suggested next actions---enabling quick resumption of work.
