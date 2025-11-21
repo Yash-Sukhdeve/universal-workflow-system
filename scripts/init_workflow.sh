@@ -3,15 +3,44 @@
 # Universal Workflow System - Initialization Script
 # Initialize a new project with the workflow system
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(pwd)"
+
+# Source utility libraries
+if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/validation_utils.sh"
+fi
+
+# Color codes for output
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly NC='\033[0m' # No Color
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "   Universal Workflow System - Project Initialization"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
+
+# Check if workflow is already initialized
+check_existing_workflow() {
+    if [[ -d ".workflow" ]] && [[ -f ".workflow/state.yaml" ]]; then
+        echo -e "${YELLOW}⚠ Workflow system appears to be already initialized${NC}"
+        echo ""
+        read -p "Reinitialize (this will backup existing configuration)? [y/N]: " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo "Initialization cancelled."
+            exit 0
+        fi
+
+        # Backup existing workflow
+        local backup_dir=".workflow.backup.$(date +%Y%m%d_%H%M%S)"
+        echo -e "${YELLOW}Backing up existing workflow to ${backup_dir}${NC}"
+        mv ".workflow" "$backup_dir"
+    fi
+}
 
 # Function to detect project type
 detect_project_type() {
@@ -149,7 +178,7 @@ create_handoff_template() {
 
 ## Commands to Resume
 \`\`\`bash
-cd ${PROJECT_ROOT}
+cd "${PROJECT_ROOT}"
 ./scripts/recover_context.sh
 \`\`\`
 
@@ -163,7 +192,14 @@ EOF
 # Setup git integration
 setup_git_integration() {
     echo "🔗 Setting up git integration..."
-    
+
+    # Check if this is a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo -e "${YELLOW}  ⚠ Not a git repository - skipping git integration${NC}"
+        echo -e "${YELLOW}    Run 'git init' to enable git features${NC}"
+        return 0
+    fi
+
     # Add workflow patterns to .gitignore if it exists
     if [ -f .gitignore ]; then
         if ! grep -q "# Workflow system" .gitignore; then
@@ -176,8 +212,18 @@ workspace/*
 !workspace/.gitkeep
 EOF
         fi
+    else
+        # Create .gitignore if it doesn't exist
+        cat > .gitignore << EOF
+# Workflow system
+.workflow/agents/memory/*
+.workflow/*.tmp
+.workflow/*.backup
+workspace/*
+!workspace/.gitkeep
+EOF
     fi
-    
+
     # Create git hooks
     mkdir -p .git/hooks
     
@@ -187,13 +233,16 @@ EOF
 
 # Update timestamp in state.yaml
 if [ -f .workflow/state.yaml ]; then
-    sed -i "s/last_updated:.*/last_updated: \"$(date -Iseconds)\"/" .workflow/state.yaml
+    TIMESTAMP="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
+    sed -i.bak "s/last_updated:.*/last_updated: \"${TIMESTAMP}\"/" .workflow/state.yaml
+    rm -f .workflow/state.yaml.bak
     git add .workflow/state.yaml
 fi
 
-# Add checkpoint entry if message contains [CHECKPOINT]
+# Add checkpoint entry if workflow files changed
 if git diff --cached --name-only | grep -q ".workflow/"; then
-    echo "$(date -Iseconds) | AUTO | Pre-commit checkpoint" >> .workflow/checkpoints.log
+    TIMESTAMP="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
+    echo "${TIMESTAMP} | AUTO | Pre-commit checkpoint" >> .workflow/checkpoints.log
     git add .workflow/checkpoints.log
 fi
 EOF
@@ -202,15 +251,31 @@ EOF
     echo "  ✓ Git hooks configured"
 }
 
-# Copy workflow scripts
-copy_workflow_scripts() {
-    echo "📦 Installing workflow scripts..."
-    
-    # Copy all scripts from the repository
-    if [ -d "${SCRIPT_DIR}" ]; then
-        cp -r ${SCRIPT_DIR}/*.sh .workflow/scripts/
-        chmod +x .workflow/scripts/*.sh
-        echo "  ✓ Scripts installed"
+# Validate workflow scripts
+validate_workflow_scripts() {
+    echo "📦 Validating workflow scripts..."
+
+    # Check that required scripts exist
+    local required_scripts=(
+        "activate_agent.sh"
+        "checkpoint.sh"
+        "enable_skill.sh"
+        "recover_context.sh"
+        "status.sh"
+    )
+
+    local all_present=true
+    for script in "${required_scripts[@]}"; do
+        if [[ ! -f "${SCRIPT_DIR}/${script}" ]]; then
+            echo -e "${YELLOW}  ⚠ Warning: ${script} not found${NC}"
+            all_present=false
+        fi
+    done
+
+    if [[ "$all_present" == "true" ]]; then
+        echo "  ✓ All workflow scripts present"
+    else
+        echo -e "${YELLOW}  ⚠ Some scripts missing - workflow may be incomplete${NC}"
     fi
 }
 
@@ -223,7 +288,7 @@ create_project_config() {
 # Generated for: ${PROJECT_TYPE} project
 
 project:
-  name: "$(basename ${PROJECT_ROOT})"
+  name: "$(basename "${PROJECT_ROOT}")"
   type: "${PROJECT_TYPE}"
   description: ""
 
@@ -282,7 +347,8 @@ main() {
     else
         echo ""
         read -p "Detected ${PROJECT_TYPE} project. Use this type? [Y/n]: " confirm
-        if [ "$confirm" == "n" ] || [ "$confirm" == "N" ]; then
+        # Case-insensitive check
+        if [[ "$confirm" =~ ^[Nn]$ ]]; then
             select_project_type
         fi
     fi
@@ -291,26 +357,34 @@ main() {
     echo "🚀 Initializing ${PROJECT_TYPE} workflow..."
     echo ""
     
+    # Check for existing workflow
+    check_existing_workflow
+
     # Run initialization steps
     create_workflow_structure
     initialize_state
     initialize_checkpoints
     create_handoff_template
     setup_git_integration
-    copy_workflow_scripts
+    validate_workflow_scripts
     create_project_config
     initialize_knowledge_base
-    
+
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
-    echo "✅ Workflow system initialized successfully!"
+    echo -e "${GREEN}✅ Workflow system initialized successfully!${NC}"
     echo ""
     echo "📌 Next steps:"
     echo "  1. Review .workflow/config.yaml for customization"
-    echo "  2. Run: ./workflow/scripts/status.sh to see current state"
-    echo "  3. Run: ./workflow/scripts/activate_agent.sh [agent] to start"
+    echo "  2. Run: ./scripts/status.sh to see current state"
+    echo "  3. Run: ./scripts/activate_agent.sh [agent] to start"
     echo ""
-    echo "📚 Documentation: .workflow/README.md"
+    echo "💡 Useful commands:"
+    echo "  ./scripts/recover_context.sh    - Recover context after break"
+    echo "  ./scripts/checkpoint.sh \"msg\"   - Create checkpoint"
+    echo "  ./scripts/detect_and_configure.sh - Re-detect project type"
+    echo ""
+    echo "📚 Documentation: README.md and CLAUDE.md"
     echo "═══════════════════════════════════════════════════════════════"
 }
 

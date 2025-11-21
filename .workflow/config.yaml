@@ -1,0 +1,240 @@
+# Universal Workflow System - Configuration
+# This file contains project-specific configuration settings
+#
+# Generated: Initial template
+# Modify these settings to customize your workflow system
+
+# Project Information
+project:
+  name: "Universal Workflow System"
+  type: "software"  # Options: research, ml, software, llm, optimization, deployment, hybrid
+  version: "1.0.0"
+  description: "Domain-agnostic git-based workflow system"
+
+# Workflow Configuration
+workflow:
+  # Auto-initialize workflow on first run
+  auto_init: true
+
+  # Default phase to start with
+  default_phase: "phase_1_planning"
+
+  # Auto-advance to next phase when current phase is complete
+  auto_advance_phase: false
+
+  # Require phase completion confirmation
+  require_phase_confirmation: true
+
+# Agent Configuration
+agents:
+  # Allow multiple agents to be active simultaneously
+  allow_concurrent: false
+
+  # Auto-select appropriate agent based on phase
+  auto_select: true
+
+  # Validate agent transitions based on registry rules
+  validate_transitions: true
+
+  # Preserve agent memory across sessions
+  persist_memory: true
+
+  # Agent workspace settings
+  workspace:
+    # Maximum workspace size per agent (MB)
+    max_size_mb: 1000
+
+    # Auto-cleanup workspace on agent deactivation
+    auto_cleanup: false
+
+    # Cleanup threshold (days of inactivity)
+    cleanup_after_days: 30
+
+# Skill Configuration
+skills:
+  # Auto-enable skills based on active agent
+  auto_enable: true
+
+  # Validate skill dependencies before execution
+  validate_dependencies: true
+
+  # Maximum concurrent skill executions
+  max_concurrent: 3
+
+  # Skill execution timeout (seconds)
+  execution_timeout: 3600
+
+  # Retry failed skills
+  retry_on_failure: true
+
+  # Maximum retry attempts
+  max_retries: 3
+
+# Checkpoint Configuration
+checkpoints:
+  # Auto-create checkpoints on phase transitions
+  auto_checkpoint: true
+
+  # Auto-create checkpoint on git commits
+  auto_commit_checkpoint: false
+
+  # Checkpoint retention policy
+  retention:
+    # Keep all checkpoints from last N days
+    keep_days: 30
+
+    # Keep at least N checkpoints per phase
+    min_per_phase: 3
+
+    # Maximum total checkpoints to keep
+    max_total: 100
+
+  # Snapshot configuration
+  snapshots:
+    # Enable full snapshots
+    enabled: true
+
+    # Compress snapshots
+    compress: true
+
+    # Include workspace in snapshots
+    include_workspace: false
+
+    # Maximum snapshot size (MB)
+    max_size_mb: 500
+
+# State Management
+state:
+  # Auto-save state after operations
+  auto_save: true
+
+  # Validate state consistency on load
+  validate_on_load: true
+
+  # Backup state before modifications
+  backup_before_modify: true
+
+  # State backup retention (number of backups)
+  backup_retention: 10
+
+# Git Integration
+git:
+  # Enable git hooks
+  enable_hooks: true
+
+  # Auto-commit workflow changes
+  auto_commit: false
+
+  # Commit message prefix for workflow commits
+  commit_prefix: "workflow:"
+
+  # Hooks configuration
+  hooks:
+    pre_commit: true
+    post_commit: false
+    pre_push: false
+    post_checkout: false
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARN, ERROR
+  level: "INFO"
+
+  # Enable structured logging
+  structured: false
+
+  # Log file rotation
+  rotation:
+    enabled: true
+    max_size_mb: 10
+    max_files: 5
+
+  # Separate logs by component
+  separate_logs: true
+
+  # Log locations
+  paths:
+    system: ".workflow/logs/system.log"
+    agents: ".workflow/logs/agents.log"
+    skills: ".workflow/logs/skills.log"
+    errors: ".workflow/logs/errors.log"
+    audit: ".workflow/logs/audit.log"
+
+# Performance Settings
+performance:
+  # Enable caching
+  cache_enabled: true
+
+  # Cache TTL (seconds)
+  cache_ttl: 300
+
+  # Enable parallel operations
+  parallel_enabled: false
+
+  # Maximum parallel workers
+  max_workers: 4
+
+# Monitoring Configuration
+monitoring:
+  # Enable health checks
+  health_checks: true
+
+  # Health check interval (seconds)
+  check_interval: 60
+
+  # Enable performance metrics
+  metrics_enabled: false
+
+  # Metrics collection interval (seconds)
+  metrics_interval: 300
+
+  # Alert on errors
+  alert_on_errors: false
+
+# Notifications
+notifications:
+  # Enable notifications
+  enabled: false
+
+  # Notification methods: console, email, webhook
+  methods:
+    - console
+
+  # Events to notify on
+  events:
+    - phase_transition
+    - agent_activation
+    - checkpoint_created
+    - error_occurred
+
+# Security Settings
+security:
+  # Validate all inputs
+  validate_inputs: true
+
+  # Sanitize file paths
+  sanitize_paths: true
+
+  # Enable audit trail
+  audit_trail: true
+
+  # Restrict script execution
+  restrict_execution: false
+
+# Advanced Settings
+advanced:
+  # Enable experimental features
+  experimental_features: false
+
+  # Debug mode
+  debug_mode: false
+
+  # Verbose output
+  verbose: false
+
+  # Dry-run mode (simulate operations)
+  dry_run: false
+
+# Custom Settings
+# Add your project-specific settings below
+custom: {}

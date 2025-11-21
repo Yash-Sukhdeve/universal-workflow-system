@@ -3,19 +3,29 @@
 # Skill Management Script
 # Enable, disable, and execute workflow skills
 
-set -e
+set -euo pipefail
 
-SKILL_NAME=$1
-COMMAND=${2:-enable}
-PARAMS=${3:-""}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_NAME="${1:-}"
+COMMAND="${2:-enable}"
+PARAMS="${3:-}"
+
+# Source utility libraries
+if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/validation_utils.sh"
+fi
+
+if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/yaml_utils.sh"
+fi
 
 # Color codes
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly RED='\033[0;31m'
+readonly CYAN='\033[0;36m'
+readonly NC='\033[0m'
 
 # Function to show usage
 show_usage() {
@@ -53,9 +63,11 @@ show_usage() {
 }
 
 # Check if workflow is initialized
-if [ ! -d .workflow ]; then
-    echo -e "${RED}Error: Workflow not initialized. Run init_workflow.sh first${NC}"
-    exit 1
+if ! validate_workflow_initialized 2>/dev/null; then
+    if [[ ! -d .workflow ]]; then
+        echo -e "${RED}Error: Workflow not initialized. Run ./scripts/init_workflow.sh first${NC}"
+        exit 1
+    fi
 fi
 
 # Create skill directories if they don't exist

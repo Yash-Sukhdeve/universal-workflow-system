@@ -1,22 +1,24 @@
 # Universal Workflow System
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yourusername/universal-workflow-system)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](#)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 A domain-agnostic, git-based workflow system with intelligent agents and skills for reproducible research and development. Maintains context across sessions, survives context resets, and adapts to any project type.
 
 ## 🚀 Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/universal-workflow-system.git
-cd universal-workflow-system
+# Navigate to your project directory
+cd your-project
+
+# Copy workflow system scripts to your project
+# (or clone into a separate directory and copy scripts/)
 
 # Initialize for your project
 ./scripts/init_workflow.sh
 
-# Start with auto-detection
+# Or use auto-detection
 ./scripts/detect_and_configure.sh
 ```
 
@@ -98,8 +100,9 @@ your_project/
 
 ### LLM Development
 ```bash
-# Initialize LLM project
-./scripts/init_project.sh --type llm
+# Initialize workflow and configure as LLM project
+./scripts/init_workflow.sh
+# (select option 4 for LLM/Transformer Project)
 
 # Start optimization
 ./scripts/activate_agent.sh optimizer
@@ -109,7 +112,8 @@ your_project/
 ### Production Software
 ```bash
 # Setup production workflow
-./scripts/init_project.sh --type software
+./scripts/init_workflow.sh
+# (select option 3 for Software Development)
 
 # Enable CI/CD
 ./scripts/enable_skill.sh ci_cd_setup deployment_pipeline
@@ -134,7 +138,10 @@ Lost context? No problem:
 
 ```bash
 # View current progress
-./scripts/show_progress.sh
+./scripts/status.sh
+
+# Verbose status with details
+./scripts/status.sh --verbose
 
 # Create checkpoint
 ./scripts/checkpoint.sh "Completed model training"
@@ -174,11 +181,11 @@ Edit `.workflow/config.yaml` to customize:
 
 ## 📚 Documentation
 
-- [Complete Guide](docs/guide.md)
-- [Agent Documentation](docs/agents.md)
-- [Skill Catalog](docs/skills.md)
-- [API Reference](docs/api.md)
-- [Examples](docs/examples.md)
+- [Agent Registry](.workflow/agents/registry.yaml) - Complete agent definitions and capabilities
+- [Skill Catalog](.workflow/skills/catalog.yaml) - All available skills and chains
+- [Workflow Examples](.workflow/templates/workflow_examples.yaml) - Template workflows
+- [CLAUDE.md](CLAUDE.md) - Integration guide for Claude Code
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 
 ## 🤝 Contributing
 
@@ -210,15 +217,16 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 
 ## 📮 Support
 
-- [Issues](https://github.com/yourusername/universal-workflow-system/issues)
-- [Discussions](https://github.com/yourusername/universal-workflow-system/discussions)
-- [Wiki](https://github.com/yourusername/universal-workflow-system/wiki)
+For issues and questions:
+- Review [CLAUDE.md](CLAUDE.md) for Claude Code integration
+- Check [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines
+- Examine workflow configuration files in `.workflow/` directory
 
 ## 🚦 Status
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Development](https://img.shields.io/badge/status-active-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 

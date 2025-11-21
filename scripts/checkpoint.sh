@@ -3,20 +3,30 @@
 # Checkpoint Management Script
 # Create, list, and restore workflow checkpoints
 
-set -e
+set -euo pipefail
 
-COMMAND=${1:-create}
-CHECKPOINT_MSG=${2:-"Manual checkpoint"}
-CHECKPOINT_ID=${2:-""}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMAND="${1:-create}"
+CHECKPOINT_MSG="${2:-Manual checkpoint}"
+CHECKPOINT_ID="${2:-}"
+
+# Source utility libraries
+if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/validation_utils.sh"
+fi
+
+if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/yaml_utils.sh"
+fi
 
 # Color codes
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly RED='\033[0;31m'
+readonly CYAN='\033[0;36m'
+readonly BOLD='\033[1m'
+readonly NC='\033[0m'
 
 # Function to show usage
 show_usage() {
@@ -37,20 +47,39 @@ show_usage() {
 }
 
 # Check if workflow is initialized
-if [ ! -d .workflow ]; then
-    echo -e "${RED}Error: Workflow not initialized. Run init_workflow.sh first${NC}"
-    exit 1
+if ! validate_workflow_initialized 2>/dev/null; then
+    if [[ ! -d .workflow ]]; then
+        echo -e "${RED}Error: Workflow not initialized. Run ./scripts/init_workflow.sh first${NC}"
+        exit 1
+    fi
 fi
+
+# Create checkpoint directories if they don't exist
+mkdir -p .workflow/checkpoints/snapshots
 
 # Function to generate checkpoint ID
 generate_checkpoint_id() {
-    # Get current phase number
-    local phase=$(grep 'current_phase:' .workflow/state.yaml | cut -d'_' -f2 | cut -d' ' -f1)
-    
+    # Get current phase number using YAML utilities
+    local phase_full
+    if declare -f yaml_get > /dev/null 2>&1; then
+        phase_full=$(yaml_get .workflow/state.yaml "current_phase")
+    else
+        phase_full=$(grep 'current_phase:' .workflow/state.yaml | cut -d':' -f2 | xargs)
+    fi
+
+    # Extract phase number (e.g., "phase_1_planning" -> "1")
+    local phase=$(echo "$phase_full" | cut -d'_' -f2)
+
+    # Validate phase number
+    if [[ ! "$phase" =~ ^[1-5]$ ]]; then
+        echo -e "${RED}Error: Invalid phase in state file${NC}" >&2
+        return 1
+    fi
+
     # Get next checkpoint number for this phase
     local count=$(grep -c "CP_${phase}_" .workflow/checkpoints.log 2>/dev/null || echo 0)
     local next_num=$(printf "%03d" $((count + 1)))
-    
+
     echo "CP_${phase}_${next_num}"
 }
 
@@ -60,17 +89,33 @@ create_checkpoint() {
     local checkpoint_id=$(generate_checkpoint_id)
     
     echo -e "${BLUE}📍 Creating checkpoint...${NC}"
-    
-    # Update state file
-    sed -i "s/current_checkpoint:.*/current_checkpoint: \"${checkpoint_id}\"/" .workflow/state.yaml
-    sed -i "s/last_updated:.*/last_updated: \"$(date -Iseconds)\"/" .workflow/state.yaml
+
+    # Update state file using YAML utilities
+    local timestamp
+    timestamp="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
+
+    if declare -f yaml_set > /dev/null 2>&1; then
+        yaml_set .workflow/state.yaml "current_checkpoint" "$checkpoint_id" || {
+            echo -e "${RED}Error: Failed to update state file${NC}"
+            return 1
+        }
+        yaml_set .workflow/state.yaml "metadata.last_updated" "$timestamp"
+    else
+        # Fallback to sed
+        sed -i.bak "s/current_checkpoint:.*/current_checkpoint: \"${checkpoint_id}\"/" .workflow/state.yaml
+        sed -i.bak "s/last_updated:.*/last_updated: \"${timestamp}\"/" .workflow/state.yaml
+        rm -f .workflow/state.yaml.bak
+    fi
     
     # Add to checkpoint log
     echo "$(date -Iseconds) | ${checkpoint_id} | ${message}" >> .workflow/checkpoints.log
     
     # Create checkpoint snapshot
-    local snapshot_dir=".workflow/snapshots/${checkpoint_id}"
-    mkdir -p "$snapshot_dir"
+    local snapshot_dir=".workflow/checkpoints/snapshots/${checkpoint_id}"
+    mkdir -p "$snapshot_dir" || {
+        echo -e "${RED}Error: Failed to create snapshot directory${NC}"
+        return 1
+    }
     
     # Save current state
     cp .workflow/state.yaml "$snapshot_dir/state.yaml"
@@ -118,9 +163,15 @@ list_checkpoints() {
         return
     fi
     
-    # Get current phase
-    local current_phase=$(grep 'current_phase:' .workflow/state.yaml | cut -d':' -f2 | xargs)
-    local current_checkpoint=$(grep 'current_checkpoint:' .workflow/state.yaml | cut -d':' -f2 | xargs)
+    # Get current phase using YAML utilities
+    local current_phase current_checkpoint
+    if declare -f yaml_get > /dev/null 2>&1; then
+        current_phase=$(yaml_get .workflow/state.yaml "current_phase")
+        current_checkpoint=$(yaml_get .workflow/state.yaml "current_checkpoint")
+    else
+        current_phase=$(grep 'current_phase:' .workflow/state.yaml | cut -d':' -f2 | xargs)
+        current_checkpoint=$(grep 'current_checkpoint:' .workflow/state.yaml | cut -d':' -f2 | xargs)
+    fi
     
     echo -e "${CYAN}Current Phase:${NC} ${GREEN}${current_phase}${NC}"
     echo -e "${CYAN}Current Checkpoint:${NC} ${GREEN}${current_checkpoint}${NC}"
@@ -167,35 +218,85 @@ list_checkpoints() {
 # Function to restore checkpoint
 restore_checkpoint() {
     local checkpoint_id="$1"
-    
-    if [ -z "$checkpoint_id" ]; then
+
+    if [[ -z "$checkpoint_id" ]]; then
         echo -e "${RED}Error: Checkpoint ID required${NC}"
         echo "Usage: $0 restore CP_X_XXX"
         exit 1
     fi
-    
-    local snapshot_dir=".workflow/snapshots/${checkpoint_id}"
-    
-    if [ ! -d "$snapshot_dir" ]; then
+
+    # Validate checkpoint ID format
+    if declare -f validate_checkpoint_id > /dev/null 2>&1; then
+        if ! validate_checkpoint_id "$checkpoint_id"; then
+            exit 1
+        fi
+    fi
+
+    # Check both old and new snapshot locations for backwards compatibility
+    local snapshot_dir=""
+    if [[ -d ".workflow/checkpoints/snapshots/${checkpoint_id}" ]]; then
+        snapshot_dir=".workflow/checkpoints/snapshots/${checkpoint_id}"
+    elif [[ -d ".workflow/snapshots/${checkpoint_id}" ]]; then
+        snapshot_dir=".workflow/snapshots/${checkpoint_id}"
+    else
         echo -e "${RED}Error: Checkpoint ${checkpoint_id} not found${NC}"
+        echo -e "${YELLOW}Available checkpoints:${NC}"
+        list_checkpoints
         exit 1
     fi
-    
+
+    # Validate snapshot has required files
+    if [[ ! -f "$snapshot_dir/state.yaml" ]]; then
+        echo -e "${RED}Error: Checkpoint ${checkpoint_id} is corrupted (missing state.yaml)${NC}"
+        exit 1
+    fi
+
+    # Show checkpoint info
+    if [[ -f "$snapshot_dir/metadata.yaml" ]]; then
+        echo -e "${CYAN}Checkpoint Information:${NC}"
+        echo -e "  ID: ${YELLOW}${checkpoint_id}${NC}"
+        grep "message:" "$snapshot_dir/metadata.yaml" | sed 's/message: /  Message: /' || true
+        grep "created:" "$snapshot_dir/metadata.yaml" | sed 's/created: /  Created: /' || true
+        echo ""
+    fi
+
+    # Confirm restoration
+    read -p "Restore to this checkpoint? [y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Restoration cancelled."
+        return 0
+    fi
+
     echo -e "${BLUE}🔄 Restoring checkpoint ${checkpoint_id}...${NC}"
-    
+
     # Backup current state
-    local backup_dir=".workflow/snapshots/backup_$(date +%s)"
-    mkdir -p "$backup_dir"
-    cp .workflow/state.yaml "$backup_dir/state.yaml"
-    
+    local backup_dir=".workflow/checkpoints/snapshots/backup_$(date +%s)"
+    mkdir -p "$backup_dir" || {
+        echo -e "${RED}Error: Failed to create backup directory${NC}"
+        exit 1
+    }
+
+    echo -e "  ${CYAN}Creating backup of current state...${NC}"
+    cp .workflow/state.yaml "$backup_dir/state.yaml" 2>/dev/null || true
+    [[ -f .workflow/handoff.md ]] && cp .workflow/handoff.md "$backup_dir/handoff.md"
+    [[ -f .workflow/agents/active.yaml ]] && cp .workflow/agents/active.yaml "$backup_dir/active_agent.yaml"
+    [[ -f .workflow/skills/enabled.yaml ]] && cp .workflow/skills/enabled.yaml "$backup_dir/enabled_skills.yaml"
+
+    echo -e "  ${CYAN}Restoring files...${NC}"
     # Restore files
-    cp "$snapshot_dir/state.yaml" .workflow/state.yaml
-    [ -f "$snapshot_dir/handoff.md" ] && cp "$snapshot_dir/handoff.md" .workflow/handoff.md
-    [ -f "$snapshot_dir/active_agent.yaml" ] && cp "$snapshot_dir/active_agent.yaml" .workflow/agents/active.yaml
-    [ -f "$snapshot_dir/enabled_skills.yaml" ] && cp "$snapshot_dir/enabled_skills.yaml" .workflow/skills/enabled.yaml
-    
+    cp "$snapshot_dir/state.yaml" .workflow/state.yaml || {
+        echo -e "${RED}Error: Failed to restore state.yaml${NC}"
+        exit 1
+    }
+
+    [[ -f "$snapshot_dir/handoff.md" ]] && cp "$snapshot_dir/handoff.md" .workflow/handoff.md
+    [[ -f "$snapshot_dir/active_agent.yaml" ]] && cp "$snapshot_dir/active_agent.yaml" .workflow/agents/active.yaml
+    [[ -f "$snapshot_dir/enabled_skills.yaml" ]] && cp "$snapshot_dir/enabled_skills.yaml" .workflow/skills/enabled.yaml
+
     # Log restoration
-    echo "$(date -Iseconds) | RESTORED | Restored to checkpoint ${checkpoint_id}" >> .workflow/checkpoints.log
+    local timestamp
+    timestamp="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
+    echo "${timestamp} | RESTORED | Restored to checkpoint ${checkpoint_id}" >> .workflow/checkpoints.log
     
     echo -e "${GREEN}✓ Restored to checkpoint ${checkpoint_id}${NC}"
     

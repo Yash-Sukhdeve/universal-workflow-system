@@ -3,18 +3,29 @@
 # Status Display Script
 # Show comprehensive workflow status
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source utility libraries
+if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/validation_utils.sh"
+fi
+
+if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/yaml_utils.sh"
+fi
 
 # Color codes
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly MAGENTA='\033[0;35m'
+readonly CYAN='\033[0;36m'
+readonly BOLD='\033[1m'
+readonly DIM='\033[2m'
+readonly NC='\033[0m'
 
 # Parse arguments
 VERBOSE=false
@@ -44,15 +55,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Check if workflow is initialized
-if [ ! -d .workflow ]; then
-    echo -e "${RED}❌ Error: Workflow not initialized${NC}"
-    echo -e "   Run: ${CYAN}./scripts/init_workflow.sh${NC} first"
-    exit 1
+if ! validate_workflow_initialized 2>/dev/null; then
+    if [[ ! -d .workflow ]]; then
+        echo -e "${RED}❌ Error: Workflow not initialized${NC}"
+        echo -e "   Run: ${CYAN}./scripts/init_workflow.sh${NC} first"
+        exit 1
+    fi
 fi
 
 # Helper function to extract YAML values
 get_yaml_value() {
-    grep "^$1:" "$2" 2>/dev/null | cut -d':' -f2- | sed 's/^ *//;s/"//g' || echo "N/A"
+    local key="$1"
+    local file="$2"
+
+    if declare -f yaml_get > /dev/null 2>&1; then
+        local value
+        value=$(yaml_get "$file" "$key" 2>/dev/null || echo "N/A")
+        [[ "$value" == "null" ]] && echo "N/A" || echo "$value"
+    else
+        # Fallback
+        grep "^$key:" "$file" 2>/dev/null | cut -d':' -f2- | sed 's/^ *//;s/"//g' | xargs || echo "N/A"
+    fi
 }
 
 # Helper function to create progress bar

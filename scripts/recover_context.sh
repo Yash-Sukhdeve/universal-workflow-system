@@ -3,17 +3,28 @@
 # Context Recovery Script
 # Quickly restore context after a session break or context loss
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source utility libraries
+if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/validation_utils.sh"
+fi
+
+if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/yaml_utils.sh"
+fi
 
 # Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly MAGENTA='\033[0;35m'
+readonly CYAN='\033[0;36m'
+readonly BOLD='\033[1m'
+readonly NC='\033[0m' # No Color
 
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
 echo -e "${BOLD}           📡 CONTEXT RECOVERY SYSTEM${NC}"
@@ -21,25 +32,35 @@ echo -e "${BOLD}═════════════════════�
 echo ""
 
 # Check if workflow is initialized
-if [ ! -f .workflow/state.yaml ]; then
-    echo -e "${RED}❌ Error: Workflow not initialized${NC}"
-    echo -e "   Run: ${CYAN}./scripts/init_workflow.sh${NC} first"
-    exit 1
+if ! validate_workflow_initialized 2>/dev/null; then
+    if [[ ! -f .workflow/state.yaml ]]; then
+        echo -e "${RED}❌ Error: Workflow not initialized${NC}"
+        echo -e "   Run: ${CYAN}./scripts/init_workflow.sh${NC} first"
+        exit 1
+    fi
 fi
 
-# Function to extract YAML values (simple implementation)
+# Function to extract YAML values using utilities
 get_yaml_value() {
-    grep "^$1:" "$2" | cut -d':' -f2- | sed 's/^ *//;s/"//g'
+    local key="$1"
+    local file="$2"
+
+    if declare -f yaml_get > /dev/null 2>&1; then
+        yaml_get "$file" "$key"
+    else
+        # Fallback
+        grep "^$key:" "$file" | cut -d':' -f2- | sed 's/^ *//;s/"//g' | xargs
+    fi
 }
 
 # Load current state
 echo -e "${BLUE}📊 Current State:${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-PROJECT_TYPE=$(get_yaml_value "project_type" ".workflow/state.yaml")
+PROJECT_TYPE=$(get_yaml_value "project.type" ".workflow/state.yaml")
 CURRENT_PHASE=$(get_yaml_value "current_phase" ".workflow/state.yaml")
 CURRENT_CHECKPOINT=$(get_yaml_value "current_checkpoint" ".workflow/state.yaml")
-LAST_UPDATED=$(get_yaml_value "last_updated" ".workflow/state.yaml")
+LAST_UPDATED=$(get_yaml_value "metadata.last_updated" ".workflow/state.yaml")
 
 echo -e "  📁 Project Type:     ${GREEN}${PROJECT_TYPE}${NC}"
 echo -e "  📍 Current Phase:    ${GREEN}${CURRENT_PHASE}${NC}"
