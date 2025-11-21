@@ -10,15 +10,19 @@ if [[ -f "${SCRIPT_LIB_DIR}/yaml_utils.sh" ]]; then
     source "${SCRIPT_LIB_DIR}/yaml_utils.sh"
 fi
 
-# Color codes for output
-readonly RED='\033[0;31m'
-readonly YELLOW='\033[1;33m'
-readonly GREEN='\033[0;32m'
-readonly NC='\033[0m' # No Color
+# Color codes for output (only set if not already defined)
+if [[ -z "${RED:-}" ]]; then
+    RED='\033[0;31m'
+    YELLOW='\033[1;33m'
+    GREEN='\033[0;32m'
+    NC='\033[0m' # No Color
+fi
 
-# Validation result codes
-readonly VALID=0
-readonly INVALID=1
+# Validation result codes (only set if not already defined)
+if [[ -z "${VALID:-}" ]]; then
+    VALID=0
+    INVALID=1
+fi
 
 #######################################
 # Validate agent name against registry

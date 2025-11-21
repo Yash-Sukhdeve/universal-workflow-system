@@ -5,11 +5,13 @@
 
 set -euo pipefail
 
-# Color codes for output
-readonly RED='\033[0;31m'
-readonly YELLOW='\033[1;33m'
-readonly GREEN='\033[0;32m'
-readonly NC='\033[0m' # No Color
+# Color codes for output (only set if not already defined)
+if [[ -z "${RED:-}" ]]; then
+    RED='\033[0;31m'
+    YELLOW='\033[1;33m'
+    GREEN='\033[0;32m'
+    NC='\033[0m' # No Color
+fi
 
 # Check if yq is available
 HAS_YQ=false

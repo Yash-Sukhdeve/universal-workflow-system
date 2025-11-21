@@ -1,0 +1,215 @@
+# Universal Workflow System - CI/CD Pipeline
+# Runs tests on Ubuntu and macOS for cross-platform validation
+
+name: CI
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  TERM: xterm-256color
+
+jobs:
+  # ============================================================================
+  # LINTING
+  # ============================================================================
+  lint:
+    name: ShellCheck Linting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: |
+          echo "Running ShellCheck on all shell scripts..."
+          find scripts -name "*.sh" -type f | while read -r script; do
+            echo "Checking: ${script}"
+            shellcheck -x -e SC1091 "${script}" || true
+          done
+
+      - name: Check for critical errors
+        run: |
+          # Fail on critical errors only
+          find scripts -name "*.sh" -type f -exec shellcheck -x -e SC1091 -S error {} \;
+
+  # ============================================================================
+  # UNIT TESTS - Ubuntu
+  # ============================================================================
+  test-ubuntu:
+    name: Tests (Ubuntu)
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install BATS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: Install yq (optional)
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version || echo "yq installation failed (non-critical)"
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/*.sh
+          chmod +x scripts/lib/*.sh 2>/dev/null || true
+          chmod +x tests/run_all_tests.sh
+
+      - name: Run unit tests
+        run: |
+          if ls tests/unit/*.bats 1> /dev/null 2>&1; then
+            bats tests/unit/*.bats
+          else
+            echo "No unit tests found yet"
+          fi
+
+      - name: Run integration tests
+        run: |
+          if ls tests/integration/*.bats 1> /dev/null 2>&1; then
+            bats tests/integration/*.bats
+          else
+            echo "No integration tests found yet"
+          fi
+
+      - name: Run system tests
+        run: |
+          if ls tests/system/*.bats 1> /dev/null 2>&1; then
+            bats tests/system/*.bats
+          else
+            echo "No system tests found yet"
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-ubuntu
+          path: test-results/
+          retention-days: 7
+
+  # ============================================================================
+  # UNIT TESTS - macOS
+  # ============================================================================
+  test-macos:
+    name: Tests (macOS)
+    runs-on: macos-latest
+    needs: lint
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install BATS
+        run: brew install bats-core
+
+      - name: Install yq (optional)
+        run: |
+          brew install yq || echo "yq installation failed (non-critical)"
+          yq --version || true
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/*.sh
+          chmod +x scripts/lib/*.sh 2>/dev/null || true
+          chmod +x tests/run_all_tests.sh
+
+      - name: Run unit tests
+        run: |
+          if ls tests/unit/*.bats 1> /dev/null 2>&1; then
+            bats tests/unit/*.bats
+          else
+            echo "No unit tests found yet"
+          fi
+
+      - name: Run integration tests
+        run: |
+          if ls tests/integration/*.bats 1> /dev/null 2>&1; then
+            bats tests/integration/*.bats
+          else
+            echo "No integration tests found yet"
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-macos
+          path: test-results/
+          retention-days: 7
+
+  # ============================================================================
+  # BENCHMARKS (Nightly/Manual only)
+  # ============================================================================
+  benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/*.sh
+          chmod +x scripts/lib/*.sh 2>/dev/null || true
+
+      - name: Run benchmarks
+        run: |
+          if ls tests/benchmarks/*.bats 1> /dev/null 2>&1; then
+            bats tests/benchmarks/*.bats
+          else
+            echo "No benchmark tests found yet"
+          fi
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: test-results/benchmarks/
+          retention-days: 30
+
+  # ============================================================================
+  # SUMMARY
+  # ============================================================================
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [test-ubuntu, test-macos]
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          echo "Ubuntu tests: ${{ needs.test-ubuntu.result }}"
+          echo "macOS tests: ${{ needs.test-macos.result }}"
+
+          if [[ "${{ needs.test-ubuntu.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-macos.result }}" == "failure" ]]; then
+            echo "::error::Some tests failed"
+            exit 1
+          fi
+
+          echo "All tests passed!"
