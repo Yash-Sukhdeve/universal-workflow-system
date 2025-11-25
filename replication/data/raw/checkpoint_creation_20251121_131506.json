@@ -1,0 +1,13 @@
+{
+    "benchmark": "checkpoint_creation",
+    "timestamp": "2025-11-21T13:15:07-05:00",
+    "trials": 10,
+    "results_ms": [39,38,40,38,38,38,37,39,38,38],
+    "statistics": {
+        "mean": 38,
+        "std_dev": 0,
+        "median": 38,
+        "min": 37,
+        "max": 40
+    }
+}

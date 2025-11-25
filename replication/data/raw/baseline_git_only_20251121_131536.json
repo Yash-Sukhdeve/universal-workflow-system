@@ -1,0 +1,14 @@
+{
+    "benchmark": "baseline_git_only",
+    "timestamp": "2025-11-21T13:15:39-05:00",
+    "trials": 10,
+    "method": "git_commands_plus_cognitive_overhead",
+    "results_ms": [322736,310514,304080,326801,315859,324821,329671,322764,311141,302090],
+    "statistics": {
+        "mean": 317047,
+        "std_dev": 9223.97,
+        "median": 322736,
+        "min": 302090,
+        "max": 329671
+    }
+}

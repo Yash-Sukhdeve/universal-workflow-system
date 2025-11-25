@@ -1,0 +1,22 @@
+{
+    "benchmark_suite": "UWS Performance Benchmarks",
+    "timestamp": "2025-11-21T13:15:39-05:00",
+    "configuration": {
+        "trials": 10,
+        "warmup_trials": 2
+    },
+    "results": {
+        "checkpoint_creation_ms": 37,
+        "agent_activation_ms": 15,
+        "context_recovery_uws_ms": 42,
+        "context_recovery_manual_ms": 613817,
+        "context_recovery_git_only_ms": 317047,
+        "state_file_size_bytes": 5168,
+        "reliability_percent": 100.00
+    },
+    "comparison": {
+        "uws_vs_manual_improvement_percent": 100.0,
+        "uws_recovery_seconds": 0,
+        "manual_recovery_minutes": 10
+    }
+}

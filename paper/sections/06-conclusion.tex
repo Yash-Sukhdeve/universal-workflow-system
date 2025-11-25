@@ -11,9 +11,9 @@ We presented the Universal Workflow System (UWS), a novel git-native workflow ma
 Our evaluation demonstrated significant improvements over existing approaches:
 
 \begin{enumerate}
-    \item \textbf{Performance}: UWS achieves context recovery in 42ms on average, compared to 5--10 minutes for baselines---an order-of-magnitude improvement enabled by structured state persistence.
+    \item \textbf{Performance}: UWS achieves context recovery in 44ms on average (95\% CI: [43.7, 44.3]), compared to 15--25 minutes for manual reconstruction~\cite{mark2008cost}---representing an order-of-magnitude improvement enabled by structured state persistence.
 
-    \item \textbf{Reliability}: Checkpoint recovery succeeds in 100\% of cases under failure injection, exceeding our 95\% target.
+    \item \textbf{Reliability}: Checkpoint recovery succeeds in 97\% of cases under failure injection (100\% under normal conditions, 87--98\% under corruption), exceeding our 95\% target.
 
     \item \textbf{Functionality}: Our test suite achieves 94\% pass rate across 175 tests, demonstrating correct implementation.
 
@@ -34,13 +34,21 @@ Our work reveals several insights for designing AI-assisted development tools:
 
 \subsection{Limitations}
 
-Several limitations should be acknowledged:
+We acknowledge the following limitations:
 
-\paragraph{No User Study} We did not conduct a user study with human developers. While our automated benchmarks demonstrate technical performance, direct evidence of productivity impact requires human evaluation. We plan to conduct such studies as future work.
+\paragraph{No User Study} We did not conduct a user study with human developers. While our automated benchmarks demonstrate technical performance (44ms recovery time), direct evidence of productivity impact requires human evaluation. Our claims about reducing cognitive load are based on literature~\cite{mark2008cost, parnin2011programmer} rather than direct measurement with UWS users.
 
-\paragraph{Single-User Focus} UWS currently targets single-developer workflows. Multi-user collaborative features remain future work, though git's native collaboration capabilities provide a foundation.
+\paragraph{Proxy Metric} Recovery time measures mechanical state restoration, not full cognitive context reconstruction. Developers must still recall domain-specific details that cannot be persisted. UWS accelerates the structured portion of recovery but does not eliminate the human cognitive component.
 
-\paragraph{Bash Implementation} Implementation in Bash ensures portability but limits extensibility compared to Python or Go implementations.
+\paragraph{Single-User Focus} UWS currently targets single-developer workflows. Multi-user collaborative recovery (e.g., team member handoffs, merge conflicts in workflow state) remains future work.
+
+\paragraph{Bash Implementation} Implementation in Bash ensures portability and zero external dependencies but limits extensibility. Adding complex features (e.g., intelligent checkpointing, IDE integration) would benefit from a Python or TypeScript implementation.
+
+\paragraph{No Semantic Understanding} UWS checkpoints workflow \emph{structure} (phase, agent, files), not semantic \emph{intent}. If the codebase changes significantly between sessions, the checkpoint may restore outdated context.
+
+\paragraph{Manual Checkpoint Discipline} Checkpoint creation is currently manual. Users who forget to checkpoint before interruptions may not benefit from recovery features. Automatic checkpointing based on activity patterns is future work.
+
+\paragraph{Comparison Scope} Our baseline comparison with LangGraph measures different operations: LangGraph checkpoints computation state (graph execution), while UWS checkpoints workflow state (development progress). Direct performance comparison requires careful interpretation.
 
 \subsection{Future Work}
 
@@ -55,6 +63,8 @@ Several directions extend this work:
 \paragraph{Intelligent Checkpointing} Automatically triggering checkpoints based on activity patterns or time intervals could reduce manual overhead.
 
 \paragraph{Knowledge Synthesis} Aggregating insights across checkpoints to build project-specific knowledge bases could further enhance context recovery.
+
+\paragraph{Cross-Agent Generalization} Future research should investigate whether predictive models for workflow recovery generalize across different AI coding assistants (e.g., GitHub Copilot, Cursor, Claude Code). While our models are trained on UWS-generated data, validating transfer learning across AI tools would strengthen external validity claims.
 
 \subsection{Availability}
 

@@ -22,11 +22,12 @@ We evaluate UWS through comprehensive automated benchmarks, addressing five rese
 
 \paragraph{Baselines} We compare UWS against:
 \begin{itemize}
-    \item \textbf{Manual}: Developer manually reconstructs context
-    \item \textbf{AutoGPT}: Restart from scratch approach~\cite{autogpt2023}
-    \item \textbf{LangGraph}: Checkpoint-based replay~\cite{chase2022langchain}
-    \item \textbf{Git-Only}: Standard git without UWS
+    \item \textbf{Manual}: Developer manually reconstructs context from memory and artifacts (literature-based estimate~\cite{mark2008cost, parnin2011programmer})
+    \item \textbf{LangGraph}: In-memory state checkpoint/restore (LangGraph 1.0.3, measured)
+    \item \textbf{Git-Only}: Standard git commands without workflow management (measured)
 \end{itemize}
+
+\paragraph{Important Note on Comparisons} These systems serve different purposes: LangGraph checkpoints graph \emph{execution state} (intermediate computation results), while UWS checkpoints \emph{workflow context} (project phase, agent state, handoff documents). Direct performance comparison requires careful interpretation of what is being measured.
 
 \paragraph{Benchmark Suite} We created five benchmark scenarios:
 \begin{enumerate}
@@ -70,37 +71,47 @@ We evaluate UWS through comprehensive automated benchmarks, addressing five rese
 
 \subsection{RQ2: Performance}
 
-\paragraph{Methodology} We measured context recovery time across 10 trials for each system:
+\paragraph{Methodology} We measured context recovery time across 30 trials (plus 3 warmup) for each system:
 \begin{enumerate}
-    \item Initialize workflow with 5 checkpoints
-    \item Simulate interruption (clear session)
+    \item Initialize workflow with 10 checkpoints and realistic state
+    \item Simulate interruption (fresh process/context)
     \item Measure time to fully recover context
 \end{enumerate}
 
-\paragraph{Results} Table~\ref{tab:recovery-time} shows recovery times:
+\paragraph{Results} Table~\ref{tab:recovery-time} shows measured recovery times with 95\% confidence intervals:
 
 \begin{table}[t]
     \centering
-    \caption{Context Recovery Time (seconds)}
+    \caption{Context Recovery Time Comparison}
     \label{tab:recovery-time}
     \begin{tabular}{lrrr}
         \toprule
-        \textbf{System} & \textbf{Mean} & \textbf{Std Dev} & \textbf{Median} \\
+        \textbf{System} & \textbf{Mean (ms)} & \textbf{95\% CI} & \textbf{Median (IQR)} \\
         \midrule
-        UWS & 0.04 & 0.001 & 0.04 \\
-        Git-Only & 317 & 9 & 323 \\
-        Manual & 614 & 8 & 610 \\
+        UWS & 44.0 & [43.7, 44.3] & 44.1 (0.9) \\
+        LangGraph$^*$ & 0.064 & [0.06, 0.07] & 0.06 (0.01) \\
+        Git-Only$^\dagger$ & 6.6 & [6.5, 6.7] & 6.7 (0.6) \\
+        Manual$^\ddagger$ & 1,200,000 & --- & --- \\
         \bottomrule
     \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item $^*$In-memory state retrieval only (different operation than UWS)
+    \item $^\dagger$Git log reading only (no structured context)
+    \item $^\ddagger$Literature estimate~\cite{mark2008cost, parnin2011programmer}
+    \end{tablenotes}
 \end{table}
 
-\paragraph{Statistical Analysis} UWS significantly outperforms all baselines with extremely large effect sizes:
+\paragraph{Statistical Analysis} We use Cliff's delta~\cite{cliff1993dominance} for effect size (non-parametric, robust to non-normality):
 \begin{itemize}
-    \item UWS vs. Manual: Cohen's $d > 100$ (extremely large)
-    \item UWS vs. Git-Only: Cohen's $d > 48$ (extremely large)
+    \item UWS vs. Manual: Improvement factor of 27,269$\times$ (literature comparison)
+    \item UWS vs. Git-Only: $\delta = -1.0$ (large); UWS slower but provides structured context
+    \item UWS vs. LangGraph: $\delta = -1.0$ (large); different operation types (see note)
 \end{itemize}
 
-\paragraph{Finding} UWS achieves 42ms average recovery (vs. 5--10 minutes for baselines), representing an order-of-magnitude improvement in context recovery time. The improvement stems from UWS's structured state files eliminating the need for manual context reconstruction.
+\paragraph{Interpretation} The comparison with LangGraph requires careful interpretation. LangGraph's 0.064ms measures \emph{in-memory state retrieval} for graph execution, while UWS's 44ms measures \emph{file-based workflow context recovery}. These address different problems: LangGraph resumes interrupted \emph{computations}, while UWS resumes interrupted \emph{development workflows}. The meaningful comparison is UWS (44ms) vs. manual context reconstruction (15--25 minutes)~\cite{mark2008cost}, where UWS provides $>$99.99\% reduction.
+
+\paragraph{Finding} UWS achieves 44ms average recovery, compared to 15--25 minutes for manual reconstruction. This represents an order-of-magnitude improvement in workflow context recovery time, eliminating the cognitive overhead of manually reconstructing project state after interruptions.
 
 \subsection{RQ3: Reliability}
 
@@ -139,33 +150,58 @@ We evaluate UWS through comprehensive automated benchmarks, addressing five rese
 
 \subsection{RQ4: Generalizability}
 
-\paragraph{Methodology} We deployed UWS on projects across three domains:
+\paragraph{Methodology} We conducted a repository mining study, simulating UWS deployment across 10 diverse project types:
 \begin{itemize}
-    \item ML Research: Neural network development project
-    \item LLM Development: Transformer model fine-tuning
-    \item Software Engineering: Web application feature development
+    \item 3 Python ML projects (basic, research, production)
+    \item 3 JavaScript/TypeScript projects (web app, Node API, React Native)
+    \item 2 Bash/DevOps projects (infrastructure, automation)
+    \item 2 Mixed/polyglot projects (fullstack monorepo, data platform)
 \end{itemize}
 
-For each domain, we measured checkpoint usage patterns and context recovery events.
+For each project, we tested: (1) UWS setup success, (2) checkpoint creation (3 trials), and (3) context recovery (3 trials).
 
-\paragraph{Results} Table~\ref{tab:case-studies} summarizes case study findings:
+\paragraph{Results} Table~\ref{tab:repository-mining} summarizes findings:
 
 \begin{table}[t]
     \centering
-    \caption{Case Study Summary}
-    \label{tab:case-studies}
+    \caption{Repository Mining Study Results}
+    \label{tab:repository-mining}
     \begin{tabular}{lrrr}
         \toprule
-        \textbf{Domain} & \textbf{Checkpoints} & \textbf{Recoveries} & \textbf{Phases} \\
+        \textbf{Project Type} & \textbf{Setup} & \textbf{Checkpoint} & \textbf{Recovery} \\
         \midrule
-        ML Research & 47 & 12 & 5 \\
-        LLM Development & 38 & 8 & 4 \\
-        Software Eng. & 52 & 15 & 5 \\
+        Python ML (n=3) & 3/3 & 9/9 & 9/9 \\
+        JS/TypeScript (n=3) & 3/3 & 9/9 & 9/9 \\
+        Bash/DevOps (n=2) & 1/2 & 3/3$^*$ & 3/3$^*$ \\
+        Mixed/Polyglot (n=2) & 1/2 & 3/3$^*$ & 3/3$^*$ \\
+        \midrule
+        \textbf{Total (n=10)} & \textbf{8/10} & \textbf{24/24$^*$} & \textbf{24/24$^*$} \\
         \bottomrule
     \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item $^*$Counts only projects with successful setup
+    \end{tablenotes}
 \end{table}
 
-\paragraph{Finding} UWS successfully supports diverse project types, with consistent checkpoint and recovery usage across domains.
+\paragraph{Failure Analysis} Two projects (20\%) failed UWS setup due to directory naming conflicts: both had existing \texttt{scripts/} directories that conflicted with UWS infrastructure. This is a deployment constraint that could be addressed through configuration (customizable directory names).
+
+\paragraph{Finding} UWS achieves 80\% out-of-box compatibility across diverse project types. For successfully deployed projects, checkpoint and recovery operations achieve 100\% success rates, demonstrating robustness across project structures.
+
+\subsubsection{Author Experience Report}
+
+As a form of ``eating our own dogfood,'' we used UWS throughout the development of this paper. Over the course of writing and revising, we created:
+\begin{itemize}
+    \item 2 explicit checkpoints at major milestones
+    \item 10 git commits tracking incremental progress
+    \item Multiple context recovery events at session boundaries
+\end{itemize}
+
+The handoff document (\texttt{.workflow/handoff.md}) maintained continuity across sessions, preserving: current phase status, critical context (test results, benchmark data), and next actions. While this represents a single author's experience and cannot substitute for a controlled user study, it provided practical validation of UWS's workflow during a realistic extended project.
+
+\textbf{Observed benefit}: Context recovery at session start consistently took $<$50ms (matching benchmark results), versus an estimated 5--10 minutes to manually reconstruct state by reading git logs and notes.
+
+\textbf{Observed limitation}: Checkpoint discipline required conscious effort; automatic checkpointing would reduce this overhead.
 
 \subsection{RQ5: Overhead}
 
@@ -198,37 +234,72 @@ For each domain, we measured checkpoint usage patterns and context recovery even
 
 \subsection{Ablation Study}
 
-We evaluated the contribution of each component by disabling features:
+We evaluated the contribution of each component by disabling features and measuring recovery time across 30 trials:
 
 \begin{table}[t]
     \centering
-    \caption{Ablation Study Results (Recovery Time)}
+    \caption{Ablation Study Results (Recovery Time, 30 trials)}
     \label{tab:ablation}
+    \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Variant} & \textbf{Mean (ms)} & \textbf{95\% CI} & \textbf{vs. Full} \\
+        \midrule
+        UWS-Full & 26.5 & [26.4, 26.7] & --- \\
+        UWS-NoCheckpoint & 18.3 & [18.2, 18.4] & -31\%$^*$ \\
+        UWS-NoAgents & 26.4 & [26.2, 26.6] & -0.7\% \\
+        UWS-NoSkills & 26.3 & [26.2, 26.5] & -0.8\% \\
+        UWS-Minimal & 18.4 & [18.2, 18.5] & -31\%$^*$ \\
+        \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item $^*$Faster but without checkpoint functionality
+    \end{tablenotes}
+\end{table}
+
+\paragraph{Interpretation} Removing checkpoint functionality reduces recovery time by 31\% (from 26.5ms to 18.3ms) because there is no checkpoint log to parse. However, this eliminates the core value proposition---without checkpoints, there is no structured context to recover. The agent and skill registries add negligible overhead ($<$1\%), providing organizational structure at minimal cost.
+
+\paragraph{Finding} The checkpoint system is essential (responsible for structured context recovery), while supporting systems (agents, skills) add negligible overhead. The full system remains fast enough (26.5ms) that the 8ms checkpoint overhead is justified by the functionality provided.
+
+\subsection{Sensitivity Analysis}
+
+We tested UWS stability across different checkpoint counts (5, 25, 50, 100 checkpoints):
+
+\begin{table}[h]
+    \centering
+    \caption{Recovery Time vs Checkpoint Count (15 trials each)}
+    \label{tab:sensitivity}
     \begin{tabular}{lrr}
         \toprule
-        \textbf{Variant} & \textbf{Recovery Time} & \textbf{Increase} \\
+        \textbf{Checkpoints} & \textbf{Mean (ms)} & \textbf{95\% CI} \\
         \midrule
-        UWS-Full & 42ms & --- \\
-        UWS-NoCheckpoint & 317s & +754,000\% \\
-        UWS-NoAgents & 85ms & +102\% \\
-        UWS-NoSkills & 62ms & +48\% \\
-        Git-Only & 317s & +754,000\% \\
-        Manual & 614s & +1,461,000\% \\
+        5 & 28.9 & [28.7, 29.1] \\
+        25 & 28.7 & [28.3, 29.0] \\
+        50 & 29.0 & [28.8, 29.1] \\
+        100 & 28.8 & [28.3, 29.3] \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-All components contribute positively, with checkpointing providing the dominant benefit. Removing checkpointing essentially reduces UWS to a git-only workflow.
+\paragraph{Finding} Recovery time shows only 1\% variation across 20$\times$ increase in checkpoint count, demonstrating UWS scales well with project history size. Performance remains stable under realistic workloads.
 
 \subsection{Threats to Validity}
 
-\paragraph{Internal Validity} We controlled for confounding factors by using identical test environments and randomizing trial order. However, simulated interruptions may not fully capture real-world disruption patterns.
+\paragraph{Internal Validity} We controlled for confounding factors by using identical test environments and randomizing trial order. However, simulated interruptions may not fully capture real-world disruption patterns. All benchmarks used fresh temporary directories to avoid state contamination.
 
-\paragraph{External Validity} Our benchmarks cover three domains (ML, LLM, software), but results may not generalize to all project types. The absence of a user study limits claims about developer productivity; we rely on automated metrics rather than human performance. Additionally, our baseline comparisons use simulated recovery times based on literature estimates~\cite{mark2008cost, parnin2011programmer} rather than direct measurement of competing systems. While this approach is common in SE research, direct comparison with actual AutoGPT or LangGraph restart times would strengthen our claims.
+\paragraph{External Validity} Our benchmarks cover three domains (ML, LLM, software), but results may not generalize to all project types. The absence of a user study limits claims about developer productivity; we rely on automated metrics rather than human performance. The manual baseline relies on literature estimates~\cite{mark2008cost, parnin2011programmer} rather than direct measurement, though these estimates are well-established in SE research.
 
-\paragraph{Construct Validity} Recovery time is a proxy for productivity impact. While literature supports the 15--25 minute recovery cost~\cite{mark2008cost}, direct measurement with developers would strengthen claims.
+\paragraph{Construct Validity} \emph{Recovery time as measured by UWS is a proxy metric, not direct productivity measurement.} We distinguish between:
+\begin{itemize}
+    \item \textbf{What UWS measures}: Time to restore working environment state (file reads, YAML parsing, state reconstruction)
+    \item \textbf{What UWS does NOT measure}: Full cognitive context reconstruction (recalling domain-specific details, understanding code intent, rebuilding mental models)
+\end{itemize}
 
-\paragraph{Conclusion Validity} We used appropriate statistical tests (Wilcoxon, effect sizes) and report confidence intervals. Sample sizes (10 trials per condition) provide adequate power for detecting large effects.
+UWS accelerates the \emph{mechanical portion} of context recovery---reading state files, loading checkpoint data, presenting structured context. The developer must still recall domain-specific details that cannot be persisted. However, by eliminating mechanical recovery overhead and providing structured context (phase, recent checkpoints, handoff notes), UWS reduces cognitive load during the resumption process.
+
+The comparison with LangGraph also involves construct validity concerns: LangGraph's checkpoint measures \emph{computation state} (graph execution progress), while UWS measures \emph{workflow state} (development phase, agent context). These serve different purposes and should not be directly compared on raw speed.
+
+\paragraph{Conclusion Validity} We used appropriate statistical tests: Mann-Whitney U for independent samples (non-parametric), Cliff's delta~\cite{cliff1993dominance} for effect size (robust to non-normality and outliers), and 95\% confidence intervals for all reported means. Sample sizes (30 trials per condition) provide adequate statistical power.
 
 \subsection{Reproducibility}
 
@@ -240,4 +311,14 @@ All experiments are reproducible via our replication package:
     \item Docker container for consistent environment
 \end{itemize}
 
-The package is archived on Zenodo with DOI for long-term preservation.
+\subsection{Data Availability}
+
+In accordance with open science policies, we provide:
+\begin{itemize}
+    \item \textbf{Replication Package}: Complete source code, benchmark scripts, and Dockerfile available at [DOI to be assigned]
+    \item \textbf{Raw Data}: All benchmark results in JSON format, including individual trial measurements
+    \item \textbf{Analysis Scripts}: Python scripts for statistical analysis and LaTeX table generation
+    \item \textbf{Expected Outputs}: Reference results with acceptable variance ranges
+\end{itemize}
+
+The package includes step-by-step instructions and verification checklists. Results should be reproducible within the documented variance ranges across different hardware configurations.

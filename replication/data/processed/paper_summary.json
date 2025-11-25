@@ -1,0 +1,30 @@
+{
+  "generated": "2025-11-21T13:16:56.595700",
+  "rq1_functionality": {
+    "total_tests": 175,
+    "passing_tests": 164,
+    "pass_rate": 94,
+    "target": 90,
+    "status": "exceeded"
+  },
+  "rq2_performance": {
+    "uws_recovery_ms": 42,
+    "manual_recovery_ms": 613817,
+    "improvement_percent": 100.0,
+    "effect_size": "large",
+    "target_improvement": 65,
+    "status": "exceeded"
+  },
+  "rq3_reliability": {
+    "success_rate": 100.0,
+    "target": 95,
+    "status": "exceeded"
+  },
+  "rq5_overhead": {
+    "checkpoint_creation_ms": 37,
+    "state_size_100cp_kb": 5,
+    "target_checkpoint_ms": 1000,
+    "target_size_kb": 50,
+    "status": "exceeded"
+  }
+}

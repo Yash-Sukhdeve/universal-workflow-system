@@ -1,0 +1,408 @@
+{
+  "projects": [
+    {
+      "name": "python_ml_basic",
+      "type": "Python ML",
+      "files_count": 6,
+      "git_commits": 15,
+      "setup_success": true,
+      "checkpoints": [
+        {
+          "id": "CP_TEST_0",
+          "success": true,
+          "time_ms": 41.23,
+          "state_size_bytes": 230
+        },
+        {
+          "id": "CP_TEST_1",
+          "success": true,
+          "time_ms": 40.67,
+          "state_size_bytes": 230
+        },
+        {
+          "id": "CP_TEST_2",
+          "success": true,
+          "time_ms": 39.47,
+          "state_size_bytes": 230
+        }
+      ],
+      "recovery_tests": [
+        {
+          "trial": 0,
+          "success": true,
+          "time_ms": 29.87
+        },
+        {
+          "trial": 1,
+          "success": true,
+          "time_ms": 30.92
+        },
+        {
+          "trial": 2,
+          "success": true,
+          "time_ms": 31.04
+        }
+      ]
+    },
+    {
+      "name": "python_ml_research",
+      "type": "Python ML",
+      "files_count": 8,
+      "git_commits": 25,
+      "setup_success": true,
+      "checkpoints": [
+        {
+          "id": "CP_TEST_0",
+          "success": true,
+          "time_ms": 39.67,
+          "state_size_bytes": 233
+        },
+        {
+          "id": "CP_TEST_1",
+          "success": true,
+          "time_ms": 38.84,
+          "state_size_bytes": 233
+        },
+        {
+          "id": "CP_TEST_2",
+          "success": true,
+          "time_ms": 39.12,
+          "state_size_bytes": 233
+        }
+      ],
+      "recovery_tests": [
+        {
+          "trial": 0,
+          "success": true,
+          "time_ms": 31.53
+        },
+        {
+          "trial": 1,
+          "success": true,
+          "time_ms": 33.03
+        },
+        {
+          "trial": 2,
+          "success": true,
+          "time_ms": 30.85
+        }
+      ]
+    },
+    {
+      "name": "python_ml_production",
+      "type": "Python ML",
+      "files_count": 8,
+      "git_commits": 30,
+      "setup_success": true,
+      "checkpoints": [
+        {
+          "id": "CP_TEST_0",
+          "success": true,
+          "time_ms": 37.99,
+          "state_size_bytes": 235
+        },
+        {
+          "id": "CP_TEST_1",
+          "success": true,
+          "time_ms": 38.21,
+          "state_size_bytes": 235
+        },
+        {
+          "id": "CP_TEST_2",
+          "success": true,
+          "time_ms": 40.24,
+          "state_size_bytes": 235
+        }
+      ],
+      "recovery_tests": [
+        {
+          "trial": 0,
+          "success": true,
+          "time_ms": 33.11
+        },
+        {
+          "trial": 1,
+          "success": true,
+          "time_ms": 31.87
+        },
+        {
+          "trial": 2,
+          "success": true,
+          "time_ms": 31.8
+        }
+      ]
+    },
+    {
+      "name": "typescript_webapp",
+      "type": "JavaScript/TypeScript",
+      "files_count": 7,
+      "git_commits": 20,
+      "setup_success": true,
+      "checkpoints": [
+        {
+          "id": "CP_TEST_0",
+          "success": true,
+          "time_ms": 39.46,
+          "state_size_bytes": 232
+        },
+        {
+          "id": "CP_TEST_1",
+          "success": true,
+          "time_ms": 38.91,
+          "state_size_bytes": 232
+        },
+        {
+          "id": "CP_TEST_2",
+          "success": true,
+          "time_ms": 38.53,
+          "state_size_bytes": 232
+        }
+      ],
+      "recovery_tests": [
+        {
+          "trial": 0,
+          "success": true,
+          "time_ms": 31.28
+        },
+        {
+          "trial": 1,
+          "success": true,
+          "time_ms": 30.24
+        },
+        {
+          "trial": 2,
+          "success": true,
+          "time_ms": 31.18
+        }
+      ]
+    },
+    {
+      "name": "nodejs_api",
+      "type": "JavaScript/TypeScript",
+      "files_count": 7,
+      "git_commits": 18,
+      "setup_success": true,
+      "checkpoints": [
+        {
+          "id": "CP_TEST_0",
+          "success": true,
+          "time_ms": 40.15,
+          "state_size_bytes": 225
+        },
+        {
+          "id": "CP_TEST_1",
+          "success": true,
+          "time_ms": 36.79,
+          "state_size_bytes": 225
+        },
+        {
+          "id": "CP_TEST_2",
+          "success": true,
+          "time_ms": 38.6,
+          "state_size_bytes": 225
+        }
+      ],
+      "recovery_tests": [
+        {
+          "trial": 0,
+          "success": true,
+          "time_ms": 31.16
+        },
+        {
+          "trial": 1,
+          "success": true,
+          "time_ms": 30.21
+        },
+        {
+          "trial": 2,
+          "success": true,
+          "time_ms": 30.42
+        }
+      ]
+    },
+    {
+      "name": "react_native_app",
+      "type": "JavaScript/TypeScript",
+      "files_count": 7,
+      "git_commits": 22,
+      "setup_success": true,
+      "checkpoints": [
+        {
+          "id": "CP_TEST_0",
+          "success": true,
+          "time_ms": 39.31,
+          "state_size_bytes": 231
+        },
+        {
+          "id": "CP_TEST_1",
+          "success": true,
+          "time_ms": 40.25,
+          "state_size_bytes": 231
+        },
+        {
+          "id": "CP_TEST_2",
+          "success": true,
+          "time_ms": 38.9,
+          "state_size_bytes": 231
+        }
+      ],
+      "recovery_tests": [
+        {
+          "trial": 0,
+          "success": true,
+          "time_ms": 30.61
+        },
+        {
+          "trial": 1,
+          "success": true,
+          "time_ms": 31.61
+        },
+        {
+          "trial": 2,
+          "success": true,
+          "time_ms": 30.65
+        }
+      ]
+    },
+    {
+      "name": "devops_infra",
+      "type": "Bash/DevOps",
+      "files_count": 7,
+      "git_commits": 12,
+      "setup_success": false,
+      "checkpoints": [],
+      "recovery_tests": []
+    },
+    {
+      "name": "bash_automation",
+      "type": "Bash/DevOps",
+      "files_count": 6,
+      "git_commits": 10,
+      "setup_success": true,
+      "checkpoints": [
+        {
+          "id": "CP_TEST_0",
+          "success": true,
+          "time_ms": 41.41,
+          "state_size_bytes": 230
+        },
+        {
+          "id": "CP_TEST_1",
+          "success": true,
+          "time_ms": 39.0,
+          "state_size_bytes": 230
+        },
+        {
+          "id": "CP_TEST_2",
+          "success": true,
+          "time_ms": 39.71,
+          "state_size_bytes": 230
+        }
+      ],
+      "recovery_tests": [
+        {
+          "trial": 0,
+          "success": true,
+          "time_ms": 31.31
+        },
+        {
+          "trial": 1,
+          "success": true,
+          "time_ms": 31.51
+        },
+        {
+          "trial": 2,
+          "success": true,
+          "time_ms": 31.73
+        }
+      ]
+    },
+    {
+      "name": "fullstack_monorepo",
+      "type": "Mixed/Polyglot",
+      "files_count": 8,
+      "git_commits": 35,
+      "setup_success": false,
+      "checkpoints": [],
+      "recovery_tests": []
+    },
+    {
+      "name": "data_platform",
+      "type": "Mixed/Polyglot",
+      "files_count": 8,
+      "git_commits": 40,
+      "setup_success": true,
+      "checkpoints": [
+        {
+          "id": "CP_TEST_0",
+          "success": true,
+          "time_ms": 40.83,
+          "state_size_bytes": 228
+        },
+        {
+          "id": "CP_TEST_1",
+          "success": true,
+          "time_ms": 40.39,
+          "state_size_bytes": 228
+        },
+        {
+          "id": "CP_TEST_2",
+          "success": true,
+          "time_ms": 40.41,
+          "state_size_bytes": 228
+        }
+      ],
+      "recovery_tests": [
+        {
+          "trial": 0,
+          "success": true,
+          "time_ms": 30.85
+        },
+        {
+          "trial": 1,
+          "success": true,
+          "time_ms": 31.79
+        },
+        {
+          "trial": 2,
+          "success": true,
+          "time_ms": 31.53
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_projects": 10,
+    "setup_success_count": 8,
+    "setup_success_rate": 80.0,
+    "checkpoint_success_rate": 100.0,
+    "recovery_success_rate": 100.0,
+    "by_project_type": {
+      "Python ML": {
+        "count": 3,
+        "setup_success": 3,
+        "checkpoint_success": 9,
+        "recovery_success": 9
+      },
+      "JavaScript/TypeScript": {
+        "count": 3,
+        "setup_success": 3,
+        "checkpoint_success": 9,
+        "recovery_success": 9
+      },
+      "Bash/DevOps": {
+        "count": 2,
+        "setup_success": 1,
+        "checkpoint_success": 3,
+        "recovery_success": 3
+      },
+      "Mixed/Polyglot": {
+        "count": 2,
+        "setup_success": 1,
+        "checkpoint_success": 3,
+        "recovery_success": 3
+      }
+    },
+    "timestamp": "2025-11-21T15:08:06.683923"
+  }
+}

@@ -1,15 +1,21 @@
-
 \begin{table}[t]
     \centering
-    \caption{Context Recovery Time (seconds)}
+    \caption{Context Recovery Time Comparison}
     \label{tab:recovery-time}
     \begin{tabular}{lrrr}
         \toprule
-        \textbf{System} & \textbf{Mean} & \textbf{Std Dev} & \textbf{Median} \\
+        \textbf{System} & \textbf{Mean (ms)} & \textbf{95\% CI} & \textbf{Median (IQR)} \\
         \midrule
-        UWS & 0.04 & 0.001 & 0.04 \\
-        Git-Only & 317 & 9 & 323 \\
-        Manual & 614 & 8 & 610 \\
+        UWS & 44.0 & [43.7, 44.3] & 44.1 (0.9) \\
+        LangGraph$^*$ & 0.064 & [0.062, 0.066] & 0.060 (0.007) \\
+        Git-Only$^\dagger$ & 6.6 & [6.5, 6.7] & 6.7 (0.6) \\
+        Manual$^\ddagger$ & 1,200,000 & --- & --- \\
         \bottomrule
     \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item $^*$In-memory state retrieval only (different operation than UWS)
+    \item $^\dagger$Git log reading only (no structured context)
+    \item $^\ddagger$Literature estimate~\cite{mark2008cost, parnin2011programmer}
+    \end{tablenotes}
 \end{table}

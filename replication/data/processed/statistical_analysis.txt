@@ -1,0 +1,19 @@
+
+Statistical Analysis Results
+============================
+
+Context Recovery Time Comparison:
+- UWS: 42ms (std: 1)
+- Manual baseline: 613817ms (~10 min)
+- Git-only baseline: 317047ms (~5 min)
+
+Effect Sizes (Cohen's d):
+- UWS vs Manual: d = 104.38 (large)
+- UWS vs Git-only: d = 48.60 (large)
+
+Improvement:
+- Over manual: 100.0%
+- Over git-only: 100.0%
+
+Note: All effect sizes are large (d > 0.8), indicating
+statistically meaningful differences.

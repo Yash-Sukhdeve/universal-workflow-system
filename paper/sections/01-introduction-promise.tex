@@ -1,0 +1,40 @@
+% ============================================================================
+% INTRODUCTION - PROMISE 2026 VERSION
+% Focused on Predictive Models for Context Recovery
+% ============================================================================
+\section{Introduction}
+\label{sec:introduction}
+
+AI-assisted software development has fundamentally transformed how developers approach complex tasks. Large language models (LLMs) serve as intelligent coding assistants for code generation, debugging, and project planning. However, this paradigm introduces a critical operational challenge: \textit{context persistence across extended development sessions}. When developers return to a project after interruptions---meetings, context window limits, or system restarts---they must reconstruct their working context, a process that can take 15--25 minutes per session~\cite{mark2008cost, parnin2011programmer}.
+
+While workflow management systems can reduce this overhead through automated state persistence, a fundamental question remains unanswered: \textbf{Can we predict whether context recovery will succeed, and how long it will take?} Such predictions would enable proactive interventions, adaptive checkpointing strategies, and informed decisions about workflow tool adoption.
+
+This paper presents the first predictive models for workflow context recovery in AI-assisted development. Using the Universal Workflow System (UWS) as our experimental platform, we generate a comprehensive dataset of 3,000 recovery scenarios spanning diverse conditions: varying checkpoint counts (1--200), state complexities (minimal to complex), corruption levels (0--90\%), and interruption types (clean, abrupt, crash, timeout). We train and evaluate multiple machine learning models to predict:
+
+\begin{enumerate}
+    \item \textbf{Recovery Time} (regression): How long will context recovery take?
+    \item \textbf{Recovery Success} (classification): Will recovery succeed under given conditions?
+    \item \textbf{State Completeness} (regression): What percentage of context will be recoverable?
+\end{enumerate}
+
+Our key findings demonstrate that workflow recovery is \textit{predictable}:
+
+\begin{itemize}
+    \item \textbf{Recovery time prediction} achieves MAE of 1.1ms using Gradient Boosting ($R^2 = 0.756$), enabling accurate estimation of recovery overhead.
+    \item \textbf{Recovery success prediction} achieves AUC-ROC of 0.912 and F1 of 0.911, enabling reliable failure anticipation.
+    \item \textbf{Feature importance analysis} reveals that corruption level, checkpoint count, and handoff document size are the dominant factors affecting recovery outcomes.
+\end{itemize}
+
+\paragraph{Contributions} This paper makes the following contributions:
+
+\begin{enumerate}
+    \item \textbf{First predictive models} for workflow context recovery in AI-assisted development, achieving MAE of 1.1ms for recovery time and AUC-ROC of 0.912 for recovery success prediction.
+
+    \item \textbf{Public benchmark dataset} of 3,000 annotated recovery scenarios with ground-truth measurements, enabling future research on development workflow analytics.
+
+    \item \textbf{Feature importance analysis} identifying key factors affecting recovery outcomes: corruption level ($r = -0.475$), checkpoint characteristics ($r = 0.318$), and handoff document size ($r = 0.531$).
+
+    \item \textbf{Open-source implementation} of the Universal Workflow System with comprehensive test suite (175 tests), benchmark scripts, and replication package.
+\end{enumerate}
+
+\paragraph{Paper Organization} Section~\ref{sec:background} provides background on workflow systems and context management. Section~\ref{sec:approach} describes our predictive modeling approach. Section~\ref{sec:evaluation} presents evaluation methodology and results. Section~\ref{sec:related} discusses related work, and Section~\ref{sec:conclusion} concludes with implications for practice and future directions.

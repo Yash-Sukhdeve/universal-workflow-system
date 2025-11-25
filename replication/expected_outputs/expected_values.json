@@ -1,0 +1,111 @@
+{
+  "baseline_benchmark": {
+    "uws_context_recovery_ms": {
+      "expected": 44.0,
+      "min": 30,
+      "max": 80
+    },
+    "langgraph_state_restore_ms": {
+      "expected": 0.064,
+      "min": 0.03,
+      "max": 0.2
+    },
+    "git_only_log_reading_ms": {
+      "expected": 6.6,
+      "min": 3,
+      "max": 15
+    },
+    "trials_required": 30
+  },
+  "repository_mining": {
+    "projects_tested": 10,
+    "setup_success_rate_percent": {
+      "expected": 80,
+      "min": 70,
+      "max": 100
+    },
+    "checkpoint_success_rate_percent": {
+      "expected": 100,
+      "min": 95,
+      "max": 100
+    },
+    "recovery_success_rate_percent": {
+      "expected": 100,
+      "min": 95,
+      "max": 100
+    }
+  },
+  "ablation_study": {
+    "uws_full_recovery_ms": {
+      "expected": 26.5,
+      "min": 20,
+      "max": 40
+    },
+    "uws_no_checkpoint_recovery_ms": {
+      "expected": 18.3,
+      "min": 15,
+      "max": 25
+    },
+    "uws_no_agents_recovery_ms": {
+      "expected": 26.4,
+      "min": 20,
+      "max": 40
+    },
+    "uws_no_skills_recovery_ms": {
+      "expected": 26.3,
+      "min": 20,
+      "max": 40
+    },
+    "uws_minimal_recovery_ms": {
+      "expected": 18.4,
+      "min": 15,
+      "max": 25
+    },
+    "trials_required": 30
+  },
+  "sensitivity_analysis": {
+    "checkpoints_5_recovery_ms": {
+      "expected": 28.9,
+      "min": 20,
+      "max": 40
+    },
+    "checkpoints_25_recovery_ms": {
+      "expected": 28.7,
+      "min": 20,
+      "max": 40
+    },
+    "checkpoints_50_recovery_ms": {
+      "expected": 29.0,
+      "min": 20,
+      "max": 40
+    },
+    "checkpoints_100_recovery_ms": {
+      "expected": 28.8,
+      "min": 20,
+      "max": 40
+    },
+    "max_variation_percent": 5,
+    "trials_required": 15
+  },
+  "test_suite": {
+    "overall_pass_rate_percent": {
+      "expected": 92,
+      "min": 90,
+      "max": 100
+    },
+    "unit_pass_rate_percent": {
+      "min": 85
+    },
+    "integration_pass_rate_percent": {
+      "min": 95
+    },
+    "e2e_pass_rate_percent": {
+      "min": 95
+    }
+  },
+  "metadata": {
+    "generated": "2025-11-21",
+    "paper": "UWS: A Git-Native Workflow System for Context-Resilient AI-Assisted Development",
+    "venue": "FSE 2026"
+  }
+}

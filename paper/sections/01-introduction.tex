@@ -10,7 +10,7 @@ Consider a researcher conducting an ML experiment over several weeks. They work 
 
 Current solutions address this problem inadequately. Traditional workflow orchestration systems (Apache Airflow~\cite{hazelwood2018airflow}, Temporal~\cite{temporal2020}, Prefect~\cite{prefect2021}) excel at automated data pipeline execution but lack support for interactive, AI-assisted development workflows. Emerging agent frameworks (LangChain~\cite{chase2022langchain}, AutoGPT~\cite{autogpt2023}, CrewAI~\cite{crewai2023}) provide multi-agent capabilities but suffer from context fragility---restarting often means starting over.
 
-We present the \textbf{Universal Workflow System (UWS)}, a novel git-native workflow management system designed specifically for context-resilient AI-assisted development. UWS introduces three key innovations:
+We present the \textbf{Universal Workflow System (UWS)}, a git-native workflow management system designed specifically for context-resilient AI-assisted development. UWS integrates existing concepts in a practical system through three key design decisions:
 
 \begin{enumerate}
     \item \textbf{Git-Native State Persistence}: All workflow state is stored in version-controlled YAML files, enabling checkpoint-based recovery, state diffing, and collaborative workflows through standard git operations.
@@ -20,7 +20,7 @@ We present the \textbf{Universal Workflow System (UWS)}, a novel git-native work
     \item \textbf{Modular Skill Library}: A catalog of reusable capabilities that agents can dynamically load, enabling adaptation to diverse project types (ML research, LLM development, software engineering).
 \end{enumerate}
 
-We evaluate UWS through comprehensive automated benchmarks, comparing context recovery performance against manual workflows, AutoGPT, and LangGraph. Our evaluation addresses five research questions:
+We evaluate UWS through comprehensive automated benchmarks, comparing context recovery performance against manual workflows (based on literature estimates~\cite{mark2008cost, parnin2011programmer}), LangGraph (measured), and git-only workflows (measured). Our evaluation addresses five research questions:
 
 \begin{itemize}
     \item \textbf{RQ1 (Functionality)}: Does UWS correctly implement workflow state management across diverse scenarios?
@@ -30,18 +30,18 @@ We evaluate UWS through comprehensive automated benchmarks, comparing context re
     \item \textbf{RQ5 (Overhead)}: What is the performance cost of using UWS?
 \end{itemize}
 
-Results demonstrate that UWS achieves context recovery in an average of 42 milliseconds compared to 5--10 minutes for baseline approaches---an order-of-magnitude improvement. Reliability testing shows 100\% checkpoint recovery success under failure injection, exceeding our 95\% target. Ablation studies confirm the contribution of each architectural component, and case studies across three domains demonstrate practical applicability.
+Results demonstrate that UWS achieves context recovery in 44ms on average (95\% CI: [43.7, 44.3]). Compared to manual reconstruction (15--25 minutes based on literature~\cite{mark2008cost}), this represents $>$99.99\% reduction in mechanical recovery overhead. Reliability testing shows 100\% checkpoint recovery success under controlled failure injection. We acknowledge important limitations: LangGraph's in-memory state restore (0.064ms) is faster but addresses a different problem (computation state vs. workflow context), and our manual baseline relies on literature estimates rather than direct measurement.
 
 \paragraph{Contributions} This paper makes the following contributions:
 
 \begin{enumerate}
-    \item A novel git-native state persistence mechanism that provides deterministic, version-controlled workflow state management (Section~\ref{sec:approach}).
+    \item A git-native state persistence mechanism for development workflow context, integrating version control semantics with structured state management (Section~\ref{sec:approach}).
 
-    \item An open-source implementation of UWS with comprehensive test suite achieving 80\%+ code coverage (Section~\ref{sec:evaluation}).
+    \item An open-source implementation of UWS with comprehensive test suite (175 tests, 94\% pass rate) demonstrating practical functionality (Section~\ref{sec:evaluation}).
 
-    \item Empirical evaluation demonstrating significant performance improvements over existing approaches (Section~\ref{sec:evaluation}).
+    \item Empirical evaluation with real baseline measurements (LangGraph 1.0.3, git-only) and literature-based comparison (manual recovery), using appropriate non-parametric statistics (Cliff's delta, 95\% CIs) (Section~\ref{sec:evaluation}).
 
-    \item A complete replication package including source code, benchmarks, and analysis scripts, archived with DOI for reproducibility.
+    \item A complete replication package including source code, Docker environment, benchmarks, and analysis scripts for reproducibility.
 \end{enumerate}
 
 \paragraph{Paper Organization} Section~\ref{sec:background} provides background on workflow systems and context management. Section~\ref{sec:approach} describes UWS's architecture and design. Section~\ref{sec:evaluation} presents our evaluation methodology and results. Section~\ref{sec:related} discusses related work, and Section~\ref{sec:conclusion} concludes with future directions.

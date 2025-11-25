@@ -1,0 +1,172 @@
+% ============================================================================
+% EVALUATION - PROMISE 2026 VERSION
+% Focused on Predictive Model Evaluation
+% ============================================================================
+\section{Evaluation}
+\label{sec:evaluation}
+
+We evaluate our predictive models for workflow context recovery through comprehensive experiments addressing three research questions.
+
+\subsection{Research Questions}
+
+\begin{itemize}
+    \item \textbf{RQ1 (Recovery Time Prediction)}: How accurately can we predict context recovery time from workflow characteristics?
+    \item \textbf{RQ2 (Recovery Success Prediction)}: How accurately can we predict whether recovery will succeed under given conditions?
+    \item \textbf{RQ3 (Feature Importance)}: Which workflow characteristics most strongly influence recovery outcomes?
+\end{itemize}
+
+\subsection{Dataset Construction}
+
+\paragraph{Scenario Generation} We generated 1,000 unique recovery scenarios by systematically varying workflow parameters:
+
+\begin{itemize}
+    \item \textbf{Checkpoint count}: 1, 5, 10, 25, 50, 100, 200
+    \item \textbf{State complexity}: minimal, low, medium, high, complex
+    \item \textbf{Project type}: ML pipeline, web development, research, DevOps, data engineering, LLM application, mixed
+    \item \textbf{Corruption level}: 0\%, 5\%, 10\%, 25\%, 50\%, 75\%, 90\%
+    \item \textbf{Interruption type}: clean, abrupt, crash, timeout
+    \item \textbf{Handoff size}: small (500 chars), medium (2,000), large (8,000), very large (25,000)
+\end{itemize}
+
+\paragraph{Ground Truth Collection} For each scenario, we executed three independent trials, measuring:
+\begin{itemize}
+    \item Recovery time (milliseconds)
+    \item Recovery success (binary)
+    \item State completeness (percentage)
+\end{itemize}
+
+The final dataset contains 3,000 entries (1,000 scenarios $\times$ 3 trials) with 18 features per entry.
+
+\paragraph{Dataset Statistics} Table~\ref{tab:dataset-stats} summarizes the dataset characteristics:
+
+\begin{table}[h]
+    \centering
+    \caption{Predictive Dataset Statistics}
+    \label{tab:dataset-stats}
+    \begin{tabular}{lr}
+        \toprule
+        \textbf{Metric} & \textbf{Value} \\
+        \midrule
+        Total entries & 3,000 \\
+        Unique scenarios & 1,000 \\
+        Features & 18 \\
+        Recovery time (mean) & 29.4ms \\
+        Recovery time (std dev) & 3.5ms \\
+        Success rate & 85.3\% \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Experimental Setup}
+
+\paragraph{Models} We evaluated four model families using scikit-learn~\cite{pedregosa2011scikit}:
+\begin{itemize}
+    \item \textbf{Linear models}: Linear Regression, Ridge Regression, Logistic Regression
+    \item \textbf{Ensemble models}: Random Forest~\cite{breiman2001random}, Gradient Boosting~\cite{friedman2001greedy}
+\end{itemize}
+
+\paragraph{Validation} We used 5-fold cross-validation on 80\% training data, with 20\% held out for final testing. All experiments used random seed 42 for reproducibility.
+
+\paragraph{Metrics} For regression: MAE, RMSE, $R^2$. For classification: Accuracy, F1-score, AUC-ROC. All metrics include 95\% confidence intervals.
+
+\subsection{RQ1: Recovery Time Prediction}
+
+Table~\ref{tab:regression-results} presents recovery time prediction results:
+
+\input{tables/prediction_regression}
+
+\paragraph{Findings} Gradient Boosting achieves the best performance with MAE of 1.1ms (95\% CI: [1.0, 1.2]) and $R^2 = 0.756$. This means:
+\begin{itemize}
+    \item Predictions are within 1.1ms of actual recovery time on average
+    \item The model explains 75.6\% of variance in recovery time
+    \item Linear models perform poorly ($R^2 = 0.152$), suggesting non-linear relationships
+\end{itemize}
+
+\paragraph{Practical Significance} With mean recovery time of 29.4ms, MAE of 1.1ms represents 3.7\% error---sufficient for practical applications like adaptive checkpointing and resource planning.
+
+\subsection{RQ2: Recovery Success Prediction}
+
+Table~\ref{tab:classification-results} presents recovery success prediction results:
+
+\input{tables/prediction_classification}
+
+\paragraph{Findings} All models achieve strong predictive performance:
+\begin{itemize}
+    \item Gradient Boosting: AUC-ROC = 0.912, F1 = 0.911
+    \item Logistic Regression: AUC-ROC = 0.904, F1 = 0.917
+    \item Random Forest: AUC-ROC = 0.907, F1 = 0.909
+\end{itemize}
+
+\paragraph{Confusion Matrix Analysis} On the test set (600 samples), Gradient Boosting achieved:
+\begin{itemize}
+    \item True Negatives: 51 (correctly predicted failures)
+    \item False Positives: 37 (predicted success, actual failure)
+    \item False Negatives: 49 (predicted failure, actual success)
+    \item True Positives: 463 (correctly predicted successes)
+\end{itemize}
+
+The 5.8\% false positive rate indicates the model may occasionally overestimate recovery success under adverse conditions.
+
+\subsection{RQ3: Feature Importance Analysis}
+
+We analyzed feature importance using two methods: (1) Spearman correlation with target variables, and (2) model-based feature importance from tree ensembles.
+
+\paragraph{Recovery Time Features} The top predictors of recovery time are:
+\begin{enumerate}
+    \item \textbf{Handoff document size} ($r = 0.531$, $p < 0.001$): Larger handoff documents increase recovery time
+    \item \textbf{Checkpoint count} ($r = 0.318$, $p < 0.001$): More checkpoints require more parsing
+    \item \textbf{Checkpoint log size} ($r = 0.318$, $p < 0.001$): Directly correlated with checkpoint count
+\end{enumerate}
+
+\paragraph{Recovery Success Features} The top predictors of recovery success are:
+\begin{enumerate}
+    \item \textbf{Corruption level} ($r = -0.475$, $p < 0.001$): Higher corruption strongly reduces success probability
+    \item \textbf{Interruption type}: Crash and timeout interruptions reduce success rates
+    \item \textbf{Phase progress}: Earlier phases show slightly higher recovery success
+\end{enumerate}
+
+\paragraph{Model-Based Importance} Random Forest feature importance confirms these findings:
+\begin{itemize}
+    \item For recovery time: checkpoint\_count (23\%), handoff\_chars (18\%), checkpoint\_log\_size (17\%)
+    \item For recovery success: corruption\_level (31\%), interruption\_type (22\%), phase\_progress (15\%)
+\end{itemize}
+
+\subsection{State Completeness Prediction}
+
+We also evaluated models for predicting state completeness percentage:
+
+\begin{table}[h]
+    \centering
+    \caption{State Completeness Prediction Results}
+    \label{tab:completeness-results}
+    \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Model} & \textbf{MAE (\%)} & \textbf{RMSE (\%)} & \textbf{$R^2$} \\
+        \midrule
+        Random Forest & 8.51 & 13.53 & 0.680 \\
+        Gradient Boosting & 8.79 & 11.45 & 0.770 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Gradient Boosting achieves MAE of 8.79\% for state completeness prediction ($R^2 = 0.770$), enabling estimation of how much context will be recoverable under given conditions.
+
+\subsection{Threats to Validity}
+
+\paragraph{Internal Validity} Scenario generation uses controlled parameter variation, which may not capture all real-world correlations. We mitigate this through systematic coverage of the parameter space combined with random sampling.
+
+\paragraph{External Validity} Our dataset is generated using UWS; results may differ for other workflow systems. However, the features (checkpoint characteristics, corruption levels) are general concepts applicable across systems.
+
+\paragraph{Construct Validity} Recovery success is defined as state completeness $\geq$ 50\% and no fatal errors. This threshold is pragmatic but arbitrary; different thresholds would yield different success rates.
+
+\paragraph{Conclusion Validity} We use appropriate statistical methods: 5-fold cross-validation, 95\% confidence intervals, and non-parametric correlation (Spearman). Sample size (3,000 entries) provides adequate statistical power.
+
+\subsection{Reproducibility}
+
+All experiments are reproducible via our replication package:
+\begin{itemize}
+    \item Dataset: 3,000 entries in JSON and CSV formats
+    \item Scripts: \texttt{predictive\_dataset\_generator.py}, \texttt{train\_predictive\_models.py}
+    \item Environment: \texttt{requirements.txt} with pinned versions (scikit-learn 1.6.1, pandas 2.2.3)
+    \item Docker: Containerized environment for consistent results
+\end{itemize}

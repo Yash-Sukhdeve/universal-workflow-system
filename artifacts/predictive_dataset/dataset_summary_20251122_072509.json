@@ -1,0 +1,96 @@
+{
+  "metadata": {
+    "generated": "2025-11-22T07:25:09.859925",
+    "total_entries": 3000,
+    "unique_scenarios": 1000,
+    "trials_per_scenario": 3,
+    "paper": "PROMISE 2026 - Predicting Context Recovery in AI-Assisted Development"
+  },
+  "overall_statistics": {
+    "recovery_time_ms": {
+      "mean": 29.4,
+      "median": 30.28,
+      "std_dev": 3.45,
+      "min": 17.59,
+      "max": 41.81
+    },
+    "success_rate_percent": 85.3,
+    "completeness_percent": {
+      "mean": 74.51,
+      "median": 87.5
+    }
+  },
+  "by_state_complexity": {
+    "minimal": {
+      "mean_recovery_ms": 29.3,
+      "success_rate": 87.04,
+      "count": 594
+    },
+    "low": {
+      "mean_recovery_ms": 29.51,
+      "success_rate": 85.24,
+      "count": 603
+    },
+    "medium": {
+      "mean_recovery_ms": 29.3,
+      "success_rate": 85.08,
+      "count": 630
+    },
+    "high": {
+      "mean_recovery_ms": 29.32,
+      "success_rate": 83.33,
+      "count": 558
+    },
+    "complex": {
+      "mean_recovery_ms": 29.57,
+      "success_rate": 85.69,
+      "count": 615
+    }
+  },
+  "by_corruption_level": {
+    "0": {
+      "mean_recovery_ms": 29.45,
+      "success_rate": 100.0,
+      "count": 834
+    },
+    "5": {
+      "mean_recovery_ms": 30.28,
+      "success_rate": 100.0,
+      "count": 81
+    },
+    "10": {
+      "mean_recovery_ms": 30.36,
+      "success_rate": 100.0,
+      "count": 156
+    },
+    "25": {
+      "mean_recovery_ms": 29.14,
+      "success_rate": 100.0,
+      "count": 846
+    },
+    "50": {
+      "mean_recovery_ms": 28.45,
+      "success_rate": 57.26,
+      "count": 117
+    },
+    "75": {
+      "mean_recovery_ms": 29.36,
+      "success_rate": 59.69,
+      "count": 846
+    },
+    "90": {
+      "mean_recovery_ms": 30.23,
+      "success_rate": 58.33,
+      "count": 120
+    }
+  },
+  "feature_importance_indicators": {
+    "note": "Preliminary correlation analysis - full analysis in training script",
+    "expected_important_features": [
+      "corruption_level",
+      "state_complexity",
+      "checkpoint_count",
+      "interruption_type"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+# UWS Replication Package - Python Dependencies
+# Generated: 2025-11-22
+# Python version: 3.9+
+
+# Core dependencies
+langgraph==1.0.3
+langgraph-checkpoint==3.0.1
+scipy==1.13.1
+numpy==1.26.4
+
+# For statistical analysis
+statsmodels>=0.14.0
+
+# For predictive modeling (PROMISE 2026)
+scikit-learn==1.6.1
+pandas==2.2.3
+
+# Optional: For better YAML handling
+PyYAML>=6.0

@@ -1,0 +1,20 @@
+\begin{table}[t]
+    \centering
+    \caption{Ablation Study Results (Recovery Time, 30 trials)}
+    \label{tab:ablation}
+    \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Variant} & \textbf{Mean (ms)} & \textbf{95\% CI} & \textbf{vs. Full} \\
+        \midrule
+        UWS-Full & 26.5 & [26.4, 26.7] & --- \\
+        UWS-NoCheckpoint & 18.3 & [18.2, 18.4] & -31\%$^*$ \\
+        UWS-NoAgents & 26.4 & [26.2, 26.6] & -0.7\% \\
+        UWS-NoSkills & 26.3 & [26.2, 26.5] & -0.8\% \\
+        UWS-Minimal & 18.4 & [18.2, 18.5] & -31\%$^*$ \\
+        \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item $^*$Faster but without checkpoint functionality
+    \end{tablenotes}
+\end{table}

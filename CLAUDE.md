@@ -4,217 +4,125 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Universal Workflow System is a domain-agnostic, git-based workflow system with intelligent agents and skills for reproducible research and development. It maintains context across sessions, survives context resets, and adapts to any project type (ML research, LLM development, software engineering, etc.).
-
-## Core Architecture
-
-### State Management System
-The workflow system is built around persistent state that survives context resets:
-- `.workflow/state.yaml` - Core state file tracking current phase, checkpoint, and project type
-- `.workflow/checkpoints.log` - Timestamped checkpoint history for recovery
-- `.workflow/handoff.md` - Context handoff document for session continuity
-
-### Multi-Agent System
-Seven specialized agents handle different task types (defined in `.workflow/agents/registry.yaml`):
-- **researcher**: Literature review, hypothesis formation, experimental design
-- **architect**: System design, API design, architecture planning
-- **implementer**: Code development, model building, prototypes
-- **experimenter**: Running experiments, benchmarks, validation tests
-- **optimizer**: Performance optimization, quantization, pruning
-- **deployer**: Deployment, DevOps, CI/CD, monitoring
-- **documenter**: Documentation, paper writing, technical guides
-
-Agents follow collaboration patterns and transition rules defined in the registry. Each agent has dedicated workspace directories and agent-specific skills.
-
-### Skill Library
-Skills are reusable capabilities (cataloged in `.workflow/skills/catalog.yaml`) organized into categories:
-- research, development, ml_ai, optimization, deployment, documentation
-
-Skills can be chained together for complex workflows (see `skill_chains` in catalog).
-
-### Phase System
-Projects progress through five phases:
-1. phase_1_planning - Requirements, scope, design
-2. phase_2_implementation - Code and model development
-3. phase_3_validation - Testing, experiments, validation
-4. phase_4_delivery - Deployment, documentation
-5. phase_5_maintenance - Monitoring, support, updates
-
-Each phase has deliverables and completion criteria defined in workflow examples.
+Universal Workflow System (UWS) is a git-native workflow system for context-resilient AI-assisted development. It maintains context across sessions, survives context resets, and adapts to any project type. This repository also contains a **PROMISE 2026 research paper** (predictive models for workflow recovery) and replication package.
 
 ## Common Commands
 
-### Initialization and Setup
+### Testing
 ```bash
-# Initialize workflow system for current project
-./scripts/init_workflow.sh
+# Run all tests (requires BATS)
+./tests/run_all_tests.sh
 
-# Detect project type and configure automatically
-./scripts/detect_and_configure.sh
+# Run specific test category
+./tests/run_all_tests.sh -c unit
+./tests/run_all_tests.sh -c integration
+./tests/run_all_tests.sh -c system
+
+# Run with ShellCheck linting
+./tests/run_all_tests.sh -l
+
+# Run individual test file
+bats tests/unit/test_checkpoint.bats
 ```
 
-### Agent Management
+### Benchmarks & Predictive Models
 ```bash
-# Activate an agent
-./scripts/activate_agent.sh <agent_name>
+# Run full benchmark suite
+./tests/benchmarks/benchmark_runner.sh
 
-# Available agents: researcher, architect, implementer, experimenter, optimizer, deployer, documenter
-./scripts/activate_agent.sh researcher
+# Generate predictive dataset (3,000 recovery scenarios)
+python3 tests/benchmarks/predictive_dataset_generator.py
 
-# Check agent status
-./scripts/activate_agent.sh <agent_name> status
+# Train predictive models (recovery time, success classification)
+python3 tests/benchmarks/train_predictive_models.py
 
-# Deactivate agent
-./scripts/activate_agent.sh <agent_name> deactivate
+# Generate LaTeX tables for paper
+python3 tests/benchmarks/generate_paper_tables.py
 
-# Prepare handoff to another agent
-./scripts/activate_agent.sh <agent_name> handoff
+# Additional analysis
+python3 tests/benchmarks/ablation_study.py
+python3 tests/benchmarks/sensitivity_analysis.py
+python3 tests/benchmarks/baseline_benchmark.py
 ```
 
-### Skills and Capabilities
+### Workflow Operations
 ```bash
-# Enable specific skills
-./scripts/enable_skill.sh <skill_name> [skill_name2...]
-
-# Example: Enable optimization skills
-./scripts/enable_skill.sh quantization pruning
+./scripts/recover_context.sh            # Recover context after session break
+./scripts/status.sh                     # Show current workflow status
+./scripts/checkpoint.sh "message"       # Create checkpoint (also: list, restore, status)
+./scripts/activate_agent.sh <agent>     # researcher|architect|implementer|experimenter|optimizer|deployer|documenter
+./scripts/enable_skill.sh <skill>       # Enable specific skills
+./scripts/init_workflow.sh              # Initialize workflow system
 ```
 
-### Context and Progress
+### Paper/LaTeX
 ```bash
-# Recover context after session break or context loss
-./scripts/recover_context.sh
-
-# Show current workflow status
-./scripts/status.sh
-
-# Show detailed status with checkpoint history
-./scripts/status.sh --verbose
-
-# Show compact status
-./scripts/status.sh --compact
-
-# Create checkpoint
-./scripts/checkpoint.sh "Completed model training"
-
-# View checkpoint history
-cat .workflow/checkpoints.log
+cd paper && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
 ```
 
-### Project Types
-When initializing, the system detects or prompts for project type:
-- `research` - Academic research projects
-- `ml` - ML/AI development
-- `software` - Production software development
-- `llm` - LLM/transformer projects
-- `optimization` - Model optimization work
-- `deployment` - DevOps and deployment
-- `hybrid` - Mixed projects
+## Architecture
 
-## Development Workflow
+### State Files (`.workflow/`)
+- `state.yaml` - Current phase, checkpoint, project metadata, agent status, health metrics
+- `checkpoints.log` - Timestamped history: `TIMESTAMP | CP_ID | DESC`
+- `handoff.md` - **Critical**: Human-readable context handoff for session continuity
+- `agents/registry.yaml` - Agent definitions with capabilities and workspace paths
+- `skills/catalog.yaml` - Skill definitions and chains
+- `checkpoints/snapshots/<CP_ID>/` - Full state snapshots for each checkpoint
 
-### Starting Work
-1. Run `./scripts/recover_context.sh` to restore context from previous session
-2. Check `.workflow/handoff.md` for critical context and next actions
-3. Activate appropriate agent for current phase using `./scripts/activate_agent.sh`
-4. Review current phase status with `./scripts/status.sh`
+### Multi-Agent System
+Seven agents (`researcher`, `architect`, `implementer`, `experimenter`, `optimizer`, `deployer`, `documenter`), each with:
+- Defined capabilities and primary skills in `registry.yaml`
+- Dedicated workspace: `workspace/<agent>/`
+- Collaboration patterns (e.g., `research_to_implementation`, `full_ml_pipeline`)
+- Transition rules controlling valid agent handoffs
 
-### During Development
-- State is automatically tracked in `.workflow/state.yaml`
-- Create checkpoints at key milestones using `./scripts/checkpoint.sh`
-- Agent workspaces are in `workspace/<agent_name>/`
-- Artifacts go in `artifacts/` directory
-- Phase-specific work goes in `phases/phase_N_<name>/`
+### Phase System
+Linear progression: `phase_1_planning` → `phase_2_implementation` → `phase_3_validation` → `phase_4_delivery` → `phase_5_maintenance`. Each phase tracked in `state.yaml` with status, timestamps, progress percentage, and deliverables.
 
-### Context Handoff
-When switching contexts or agents:
-1. Update `.workflow/handoff.md` with current status and critical context
-2. Use `./scripts/activate_agent.sh <current_agent> handoff` to prepare transition
-3. Ensure checkpoint is created before long breaks
-4. Next session starts with `./scripts/recover_context.sh`
+### Checkpoint System
+- IDs: `CP_<phase_num>_<seq>` (e.g., `CP_1_003`)
+- `./scripts/checkpoint.sh create "msg"` - Creates snapshot with state, handoff, active agent, enabled skills
+- `./scripts/checkpoint.sh restore CP_X_XXX` - Restores from snapshot (prompts for confirmation)
+- Snapshots include git commit hash and branch at time of creation
 
-### Git Integration
-- Git hooks automatically update state timestamps on commit
-- Pre-commit hook adds checkpoint entries for workflow changes
-- Workflow patterns added to `.gitignore` (agent memory, temp files)
-- State files are tracked in version control for reproducibility
+## Test Infrastructure
 
-## Key Files and Locations
+BATS-based tests with shared helpers in `tests/helpers/test_helper.bash`:
+- `setup_test_environment()` - Creates isolated temp directory with minimal workflow structure
+- `create_full_test_environment()` - Complete fixture with all config files
+- Custom assertions: `assert_file_contains`, `assert_less_than`, `assert_matches`
+- `measure_time()` - Returns execution time in milliseconds
 
-### Core Configuration
-- `.workflow/config.yaml` - Project-specific configuration (agents, skills, git settings)
-- `.workflow/agents/registry.yaml` - Agent definitions and capabilities
-- `.workflow/skills/catalog.yaml` - Complete skill library
-- `.workflow/templates/workflow_examples.yaml` - Template workflows for different project types
+Results output as TAP format to `test-results/`.
 
-### State Files
-- `.workflow/state.yaml` - Current phase, checkpoint, and context
-- `.workflow/agents/active.yaml` - Active agent configuration
-- `.workflow/skills/enabled.yaml` - Currently enabled skills
-- `.workflow/checkpoints.log` - Checkpoint history
+## Research Artifacts
 
-### Knowledge Base
-- `.workflow/knowledge/patterns.yaml` - Learned patterns and solutions
-- `.workflow/agents/memory/` - Saved agent states
-- `.workflow/agents/handoff_*.yaml` - Agent transition records
+### Predictive Dataset (`artifacts/predictive_dataset/`)
+3,000 annotated recovery scenarios with 18 features for ML research:
+- `raw/` - JSON format
+- `processed/` - CSV for scikit-learn
 
-### Working Directories
-- `workspace/<agent_name>/` - Agent-specific workspaces
-- `phases/phase_N_<name>/` - Phase deliverables
-- `artifacts/` - Generated outputs (models, reports, metrics)
-- `archive/` - Historical artifacts
+### Predictive Models (`artifacts/predictive_models/`)
+- Recovery time regression (Gradient Boosting: MAE=1.1ms, R²=0.756)
+- Recovery success classification (Gradient Boosting: AUC=0.912, F1=0.911)
+- State completeness regression (MAE=8.79%)
 
-## Important Patterns
+### Paper (`paper/`)
+PROMISE 2026 submission with:
+- `sections/*-promise.tex` - Predictive model focus
+- `tables/prediction_*.tex` - Auto-generated from benchmark results
 
-### Context Recovery
-The system is designed to recover full context even after complete context window loss:
-1. State file preserves phase, checkpoint, and metadata
-2. Handoff document maintains critical context and next actions
-3. Checkpoint log provides historical trail
-4. Agent memory persists between sessions
+## Session Workflow
 
-### Agent Collaboration
-Agents follow defined collaboration patterns:
-- `research_to_implementation`: researcher → architect → implementer
-- `full_ml_pipeline`: researcher → implementer → experimenter → optimizer → deployer
-- `production_software`: architect → implementer → experimenter → deployer → documenter
+1. Run `./scripts/recover_context.sh` at session start
+2. Read `.workflow/handoff.md` for priority actions and critical context
+3. Create checkpoints at milestones: `./scripts/checkpoint.sh "description"`
+4. Update `handoff.md` before ending session with next actions and blockers
 
-Handoff artifacts are explicitly defined for each transition.
+## Key Conventions
 
-### Skill Chains
-Complex workflows use skill chains defined in the catalog:
-- `full_research_pipeline`: literature_review → experimental_design → model_development → statistical_validation → paper_writing
-- `ml_optimization_pipeline`: profiling → quantization → pruning → benchmarking
-- `production_deployment`: testing → containerization → ci_cd → monitoring → scaling
-
-### Checkpoint Strategy
-- Create checkpoints at phase boundaries
-- Use descriptive checkpoint messages
-- Format: `TIMESTAMP | CHECKPOINT_ID | DESCRIPTION`
-- Checkpoint IDs follow pattern: `CP_<phase>_<number>`
-
-## Testing and Validation
-
-When running tests, validation, or experiments:
-- Use the `experimenter` agent
-- Enable relevant skills: `testing`, `benchmarking`, `statistical_validation`
-- Results go in `artifacts/` with clear naming
-- Update checkpoint after validation milestones
-
-## Documentation Standards
-
-When writing documentation or papers:
-- Activate `documenter` agent
-- Enable skills: `technical_writing`, `paper_writing`, `visualization`
-- Use appropriate templates from `.workflow/templates/`
-- Place outputs in phase-appropriate directories
-
-## Notes for Claude Code
-
-- Always check `.workflow/state.yaml` to understand current project context
-- Use `./scripts/recover_context.sh` when continuing previous work
-- Create checkpoints before and after major changes
-- Update `.workflow/handoff.md` when work is interrupted
-- Follow agent transition rules when switching between different task types
-- Respect the phase system - deliverables should match current phase
-- The workflow adapts to YOU - start simple, evolve as needed
+- Checkpoint before/after major changes
+- State YAML uses `yq` when available, falls back to grep/sed
+- Scripts source `lib/yaml_utils.sh` and `lib/validation_utils.sh` for shared utilities
+- Benchmark JSON results enable statistical analysis with confidence intervals

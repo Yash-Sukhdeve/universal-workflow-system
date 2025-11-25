@@ -1,0 +1,677 @@
+{
+  "metadata": {
+    "generated": "2025-11-22T07:25:15.499180",
+    "dataset_size": 3000,
+    "features": [
+      "checkpoint_count",
+      "state_lines",
+      "corruption_level",
+      "handoff_chars",
+      "skill_count",
+      "time_since_checkpoint",
+      "state_file_size_bytes",
+      "checkpoint_log_size_bytes",
+      "total_workflow_files",
+      "active_agent_count",
+      "phase_progress_percent",
+      "has_blockers",
+      "has_pending_actions",
+      "state_complexity",
+      "project_type",
+      "agent_state",
+      "handoff_size",
+      "interruption_type"
+    ],
+    "random_seed": 42,
+    "cv_folds": 5,
+    "paper": "PROMISE 2026 - Predicting Context Recovery in AI-Assisted Development"
+  },
+  "regression": {
+    "Linear Regression": {
+      "cv_mae_mean": 2.205,
+      "cv_mae_std": 0.079,
+      "cv_mae_ci_95": [
+        2.095,
+        2.315
+      ],
+      "cv_rmse_mean": 3.089,
+      "cv_rmse_std": 0.156,
+      "cv_rmse_ci_95": [
+        2.873,
+        3.305
+      ],
+      "test_mae": 2.356,
+      "test_rmse": 3.304,
+      "r_squared": 0.1521,
+      "feature_importance": null
+    },
+    "Ridge Regression": {
+      "cv_mae_mean": 2.205,
+      "cv_mae_std": 0.079,
+      "cv_mae_ci_95": [
+        2.094,
+        2.315
+      ],
+      "cv_rmse_mean": 3.089,
+      "cv_rmse_std": 0.156,
+      "cv_rmse_ci_95": [
+        2.873,
+        3.305
+      ],
+      "test_mae": 2.356,
+      "test_rmse": 3.304,
+      "r_squared": 0.1521,
+      "feature_importance": null
+    },
+    "Random Forest": {
+      "cv_mae_mean": 1.207,
+      "cv_mae_std": 0.095,
+      "cv_mae_ci_95": [
+        1.075,
+        1.34
+      ],
+      "cv_rmse_mean": 1.866,
+      "cv_rmse_std": 0.237,
+      "cv_rmse_ci_95": [
+        1.536,
+        2.195
+      ],
+      "test_mae": 1.257,
+      "test_rmse": 1.905,
+      "r_squared": 0.718,
+      "feature_importance": [
+        [
+          "checkpoint_count",
+          0.4175
+        ],
+        [
+          "checkpoint_log_size_bytes",
+          0.314
+        ],
+        [
+          "handoff_chars",
+          0.0621
+        ],
+        [
+          "handoff_size",
+          0.0516
+        ],
+        [
+          "phase_progress_percent",
+          0.0328
+        ],
+        [
+          "corruption_level",
+          0.025
+        ],
+        [
+          "time_since_checkpoint",
+          0.0143
+        ],
+        [
+          "project_type",
+          0.0125
+        ],
+        [
+          "agent_state",
+          0.0106
+        ],
+        [
+          "interruption_type",
+          0.0091
+        ]
+      ]
+    },
+    "Gradient Boosting": {
+      "cv_mae_mean": 1.098,
+      "cv_mae_std": 0.079,
+      "cv_mae_ci_95": [
+        0.989,
+        1.208
+      ],
+      "cv_rmse_mean": 1.666,
+      "cv_rmse_std": 0.22,
+      "cv_rmse_ci_95": [
+        1.36,
+        1.972
+      ],
+      "test_mae": 1.17,
+      "test_rmse": 1.772,
+      "r_squared": 0.756,
+      "feature_importance": [
+        [
+          "checkpoint_log_size_bytes",
+          0.577
+        ],
+        [
+          "checkpoint_count",
+          0.2412
+        ],
+        [
+          "handoff_chars",
+          0.0805
+        ],
+        [
+          "handoff_size",
+          0.044
+        ],
+        [
+          "corruption_level",
+          0.0203
+        ],
+        [
+          "phase_progress_percent",
+          0.0122
+        ],
+        [
+          "time_since_checkpoint",
+          0.0054
+        ],
+        [
+          "project_type",
+          0.0035
+        ],
+        [
+          "state_complexity",
+          0.0028
+        ],
+        [
+          "has_pending_actions",
+          0.0028
+        ]
+      ]
+    }
+  },
+  "classification": {
+    "Logistic Regression": {
+      "cv_accuracy_mean": 0.8562,
+      "cv_accuracy_ci_95": [
+        0.8424,
+        0.8701
+      ],
+      "cv_f1_mean": 0.9174,
+      "cv_f1_ci_95": [
+        0.9095,
+        0.9254
+      ],
+      "cv_auc_mean": 0.9042,
+      "cv_auc_ci_95": [
+        0.8889,
+        0.9196
+      ],
+      "test_accuracy": 0.875,
+      "test_precision": 0.9178,
+      "test_recall": 0.9375,
+      "test_f1": 0.9275,
+      "test_auc": 0.9327,
+      "confusion_matrix": [
+        [
+          45,
+          43
+        ],
+        [
+          32,
+          480
+        ]
+      ],
+      "feature_importance": null
+    },
+    "Random Forest": {
+      "cv_accuracy_mean": 0.845,
+      "cv_accuracy_ci_95": [
+        0.8347,
+        0.8553
+      ],
+      "cv_f1_mean": 0.9093,
+      "cv_f1_ci_95": [
+        0.9025,
+        0.9161
+      ],
+      "cv_auc_mean": 0.9069,
+      "cv_auc_ci_95": [
+        0.8973,
+        0.9165
+      ],
+      "test_accuracy": 0.8617,
+      "test_precision": 0.9248,
+      "test_recall": 0.9121,
+      "test_f1": 0.9184,
+      "test_auc": 0.9233,
+      "confusion_matrix": [
+        [
+          50,
+          38
+        ],
+        [
+          45,
+          467
+        ]
+      ],
+      "feature_importance": [
+        [
+          "corruption_level",
+          0.4199
+        ],
+        [
+          "interruption_type",
+          0.1297
+        ],
+        [
+          "phase_progress_percent",
+          0.0741
+        ],
+        [
+          "time_since_checkpoint",
+          0.0369
+        ],
+        [
+          "project_type",
+          0.0341
+        ],
+        [
+          "agent_state",
+          0.0324
+        ],
+        [
+          "checkpoint_log_size_bytes",
+          0.032
+        ],
+        [
+          "checkpoint_count",
+          0.0316
+        ],
+        [
+          "total_workflow_files",
+          0.0258
+        ],
+        [
+          "active_agent_count",
+          0.025
+        ]
+      ]
+    },
+    "Gradient Boosting": {
+      "cv_accuracy_mean": 0.8512,
+      "cv_accuracy_ci_95": [
+        0.8426,
+        0.8599
+      ],
+      "cv_f1_mean": 0.9115,
+      "cv_f1_ci_95": [
+        0.9057,
+        0.9174
+      ],
+      "cv_auc_mean": 0.9125,
+      "cv_auc_ci_95": [
+        0.9005,
+        0.9244
+      ],
+      "test_accuracy": 0.8567,
+      "test_precision": 0.926,
+      "test_recall": 0.9043,
+      "test_f1": 0.915,
+      "test_auc": 0.9199,
+      "confusion_matrix": [
+        [
+          51,
+          37
+        ],
+        [
+          49,
+          463
+        ]
+      ],
+      "feature_importance": [
+        [
+          "corruption_level",
+          0.6321
+        ],
+        [
+          "interruption_type",
+          0.2853
+        ],
+        [
+          "phase_progress_percent",
+          0.0319
+        ],
+        [
+          "project_type",
+          0.0078
+        ],
+        [
+          "handoff_size",
+          0.0069
+        ],
+        [
+          "agent_state",
+          0.0058
+        ],
+        [
+          "active_agent_count",
+          0.0056
+        ],
+        [
+          "skill_count",
+          0.0042
+        ],
+        [
+          "checkpoint_log_size_bytes",
+          0.0034
+        ],
+        [
+          "total_workflow_files",
+          0.0032
+        ]
+      ]
+    }
+  },
+  "completeness": {
+    "Random Forest": {
+      "cv_mae_mean": 8.509,
+      "cv_mae_ci_95": [
+        7.863,
+        9.156
+      ],
+      "test_mae": 8.776,
+      "test_rmse": 13.526,
+      "r_squared": 0.6798,
+      "feature_importance": [
+        [
+          "corruption_level",
+          0.8014
+        ],
+        [
+          "interruption_type",
+          0.0621
+        ],
+        [
+          "phase_progress_percent",
+          0.0311
+        ],
+        [
+          "project_type",
+          0.0129
+        ],
+        [
+          "time_since_checkpoint",
+          0.0123
+        ],
+        [
+          "agent_state",
+          0.0092
+        ],
+        [
+          "checkpoint_count",
+          0.0078
+        ],
+        [
+          "checkpoint_log_size_bytes",
+          0.0077
+        ],
+        [
+          "active_agent_count",
+          0.0075
+        ],
+        [
+          "handoff_chars",
+          0.0068
+        ]
+      ]
+    },
+    "Gradient Boosting": {
+      "cv_mae_mean": 8.788,
+      "cv_mae_ci_95": [
+        8.314,
+        9.262
+      ],
+      "test_mae": 8.888,
+      "test_rmse": 11.455,
+      "r_squared": 0.7703,
+      "feature_importance": [
+        [
+          "corruption_level",
+          0.9149
+        ],
+        [
+          "interruption_type",
+          0.0617
+        ],
+        [
+          "phase_progress_percent",
+          0.0068
+        ],
+        [
+          "time_since_checkpoint",
+          0.0032
+        ],
+        [
+          "total_workflow_files",
+          0.0018
+        ],
+        [
+          "project_type",
+          0.0016
+        ],
+        [
+          "active_agent_count",
+          0.0015
+        ],
+        [
+          "handoff_size",
+          0.0014
+        ],
+        [
+          "state_complexity",
+          0.0013
+        ],
+        [
+          "agent_state",
+          0.001
+        ]
+      ]
+    }
+  },
+  "feature_correlations": {
+    "recovery_time_ms": {
+      "checkpoint_count": {
+        "correlation": 0.3182,
+        "p_value": 0.0,
+        "significant": true
+      },
+      "state_lines": {
+        "correlation": 0.0333,
+        "p_value": 0.068315,
+        "significant": false
+      },
+      "corruption_level": {
+        "correlation": -0.0679,
+        "p_value": 0.000198,
+        "significant": true
+      },
+      "handoff_chars": {
+        "correlation": 0.5309,
+        "p_value": 0.0,
+        "significant": true
+      },
+      "skill_count": {
+        "correlation": -0.0234,
+        "p_value": 0.200227,
+        "significant": false
+      },
+      "time_since_checkpoint": {
+        "correlation": 0.0216,
+        "p_value": 0.237019,
+        "significant": false
+      },
+      "state_file_size_bytes": {
+        "correlation": 0.0333,
+        "p_value": 0.068315,
+        "significant": false
+      },
+      "checkpoint_log_size_bytes": {
+        "correlation": 0.3182,
+        "p_value": 0.0,
+        "significant": true
+      },
+      "total_workflow_files": {
+        "correlation": -0.0234,
+        "p_value": 0.200227,
+        "significant": false
+      },
+      "active_agent_count": {
+        "correlation": -0.0021,
+        "p_value": 0.906325,
+        "significant": false
+      },
+      "phase_progress_percent": {
+        "correlation": 0.0304,
+        "p_value": 0.095489,
+        "significant": false
+      },
+      "has_blockers": {
+        "correlation": -0.0037,
+        "p_value": 0.838832,
+        "significant": false
+      },
+      "has_pending_actions": {
+        "correlation": -0.0427,
+        "p_value": 0.01931,
+        "significant": true
+      }
+    },
+    "recovery_success": {
+      "checkpoint_count": {
+        "correlation": -0.0141,
+        "p_value": 0.43931,
+        "significant": false
+      },
+      "state_lines": {
+        "correlation": -0.0177,
+        "p_value": 0.331227,
+        "significant": false
+      },
+      "corruption_level": {
+        "correlation": -0.4749,
+        "p_value": 0.0,
+        "significant": true
+      },
+      "handoff_chars": {
+        "correlation": -0.0245,
+        "p_value": 0.179085,
+        "significant": false
+      },
+      "skill_count": {
+        "correlation": -0.0198,
+        "p_value": 0.278602,
+        "significant": false
+      },
+      "time_since_checkpoint": {
+        "correlation": 0.0024,
+        "p_value": 0.897547,
+        "significant": false
+      },
+      "state_file_size_bytes": {
+        "correlation": -0.0177,
+        "p_value": 0.331227,
+        "significant": false
+      },
+      "checkpoint_log_size_bytes": {
+        "correlation": -0.0141,
+        "p_value": 0.43931,
+        "significant": false
+      },
+      "total_workflow_files": {
+        "correlation": -0.0198,
+        "p_value": 0.278602,
+        "significant": false
+      },
+      "active_agent_count": {
+        "correlation": 0.0049,
+        "p_value": 0.788505,
+        "significant": false
+      },
+      "phase_progress_percent": {
+        "correlation": 0.0087,
+        "p_value": 0.633933,
+        "significant": false
+      },
+      "has_blockers": {
+        "correlation": -0.0023,
+        "p_value": 0.899674,
+        "significant": false
+      },
+      "has_pending_actions": {
+        "correlation": -0.01,
+        "p_value": 0.582638,
+        "significant": false
+      }
+    },
+    "state_completeness_percent": {
+      "checkpoint_count": {
+        "correlation": -0.0048,
+        "p_value": 0.791059,
+        "significant": false
+      },
+      "state_lines": {
+        "correlation": -0.0093,
+        "p_value": 0.609438,
+        "significant": false
+      },
+      "corruption_level": {
+        "correlation": -0.8812,
+        "p_value": 0.0,
+        "significant": true
+      },
+      "handoff_chars": {
+        "correlation": -0.034,
+        "p_value": 0.062713,
+        "significant": false
+      },
+      "skill_count": {
+        "correlation": -0.0133,
+        "p_value": 0.467873,
+        "significant": false
+      },
+      "time_since_checkpoint": {
+        "correlation": 0.0226,
+        "p_value": 0.216886,
+        "significant": false
+      },
+      "state_file_size_bytes": {
+        "correlation": -0.0093,
+        "p_value": 0.609438,
+        "significant": false
+      },
+      "checkpoint_log_size_bytes": {
+        "correlation": -0.0048,
+        "p_value": 0.791059,
+        "significant": false
+      },
+      "total_workflow_files": {
+        "correlation": -0.0133,
+        "p_value": 0.467873,
+        "significant": false
+      },
+      "active_agent_count": {
+        "correlation": 0.0109,
+        "p_value": 0.55067,
+        "significant": false
+      },
+      "phase_progress_percent": {
+        "correlation": 0.0146,
+        "p_value": 0.424284,
+        "significant": false
+      },
+      "has_blockers": {
+        "correlation": 0.0145,
+        "p_value": 0.425751,
+        "significant": false
+      },
+      "has_pending_actions": {
+        "correlation": -0.0202,
+        "p_value": 0.26916,
+        "significant": false
+      }
+    }
+  }
+}

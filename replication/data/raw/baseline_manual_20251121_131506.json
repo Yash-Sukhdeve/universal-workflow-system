@@ -1,0 +1,15 @@
+{
+    "benchmark": "baseline_manual",
+    "timestamp": "2025-11-21T13:15:09-05:00",
+    "trials": 10,
+    "method": "simulated",
+    "literature_reference": "Mark et al. (2008), Parnin & Rugaber (2011)",
+    "results_ms": [619950,626609,609003,600091,629892,621369,620910,611596,621775,625467],
+    "statistics": {
+        "mean": 618666,
+        "std_dev": 8645.30,
+        "median": 621369,
+        "min": 600091,
+        "max": 629892
+    }
+}

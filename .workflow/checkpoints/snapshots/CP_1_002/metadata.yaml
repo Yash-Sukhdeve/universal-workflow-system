@@ -1,0 +1,7 @@
+checkpoint_id: "CP_1_002"
+created: "2025-11-21T13:41:08-05:00"
+message: "Paper ready for FSE 2026 submission review Manual checkpoint"
+git_commit: "db30567"
+git_branch: "master"
+files_changed: 2
+phase: "phase_1_planning"
