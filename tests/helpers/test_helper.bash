@@ -387,25 +387,64 @@ assert_file_not_contains() {
     return 0
 }
 
-# Assert command succeeds
+# Assert command succeeds (BATS-compatible)
+# If called without arguments, checks the last 'run' status
+# If called with arguments, runs the command and checks success
 assert_success() {
-    local cmd="$1"
-    local message="${2:-Command should succeed: ${cmd}}"
-
-    if ! eval "${cmd}" > /dev/null 2>&1; then
-        echo "FAIL: ${message}" >&2
-        return 1
+    if [[ $# -eq 0 ]]; then
+        # BATS style - check last run result
+        if [[ "${status:-1}" -ne 0 ]]; then
+            echo "FAIL: Command failed with status ${status:-unknown}" >&2
+            return 1
+        fi
+    else
+        local cmd="$1"
+        local message="${2:-Command should succeed: ${cmd}}"
+        if ! eval "${cmd}" > /dev/null 2>&1; then
+            echo "FAIL: ${message}" >&2
+            return 1
+        fi
     fi
     return 0
 }
 
-# Assert command fails
+# Assert command fails (BATS-compatible)
+# If called without arguments, checks the last 'run' status
+# If called with arguments, runs the command and checks failure
 assert_failure() {
-    local cmd="$1"
-    local message="${2:-Command should fail: ${cmd}}"
+    if [[ $# -eq 0 ]]; then
+        # BATS style - check last run result
+        if [[ "${status:-0}" -eq 0 ]]; then
+            echo "FAIL: Command succeeded but should have failed" >&2
+            return 1
+        fi
+    else
+        local cmd="$1"
+        local message="${2:-Command should fail: ${cmd}}"
+        if eval "${cmd}" > /dev/null 2>&1; then
+            echo "FAIL: ${message}" >&2
+            return 1
+        fi
+    fi
+    return 0
+}
 
-    if eval "${cmd}" > /dev/null 2>&1; then
-        echo "FAIL: ${message}" >&2
+# Assert output contains string (BATS-style)
+assert_output() {
+    local expected="${1:-}"
+    if [[ -n "$expected" ]]; then
+        if [[ "${output:-}" != *"$expected"* ]]; then
+            echo "FAIL: Output does not contain: $expected" >&2
+            echo "  Actual: ${output:-<empty>}" >&2
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# Refute - negation helper
+refute() {
+    if "$@"; then
         return 1
     fi
     return 0

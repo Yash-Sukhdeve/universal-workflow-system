@@ -1,0 +1,41 @@
+{
+  "classification": [
+    {
+      "model": "Random Baseline",
+      "auc_roc": 0.5,
+      "f1_score": 0.9206691851052348
+    },
+    {
+      "model": "Single-Feature Heuristic",
+      "auc_roc": 0.8740406674588553,
+      "f1_score": 0.4916003536693192
+    },
+    {
+      "model": "Logistic Regression",
+      "auc_roc": 0.904,
+      "f1_score": 0.917
+    },
+    {
+      "model": "Gradient Boosting",
+      "auc_roc": 0.912,
+      "f1_score": 0.911
+    }
+  ],
+  "regression": [
+    {
+      "model": "Random Baseline",
+      "mae_ms": 2.3636992866906663,
+      "r_squared": 0.0
+    },
+    {
+      "model": "Linear Regression",
+      "mae_ms": 2.21,
+      "r_squared": 0.152
+    },
+    {
+      "model": "Gradient Boosting",
+      "mae_ms": 1.1,
+      "r_squared": 0.756
+    }
+  ]
+}

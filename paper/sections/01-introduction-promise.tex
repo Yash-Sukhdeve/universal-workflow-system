@@ -5,36 +5,40 @@
 \section{Introduction}
 \label{sec:introduction}
 
-AI-assisted software development has fundamentally transformed how developers approach complex tasks. Large language models (LLMs) serve as intelligent coding assistants for code generation, debugging, and project planning. However, this paradigm introduces a critical operational challenge: \textit{context persistence across extended development sessions}. When developers return to a project after interruptions---meetings, context window limits, or system restarts---they must reconstruct their working context, a process that can take 15--25 minutes per session~\cite{mark2008cost, parnin2011programmer}.
+AI-assisted software development has fundamentally transformed how developers approach complex tasks. Large language models (LLMs) serve as intelligent coding assistants for code generation, debugging, and project planning. However, this paradigm introduces a critical operational challenge: \textit{context persistence across extended development sessions}. When developers return to a project after interruptions---meetings, context window limits, or system restarts---workflow management systems must restore saved state from checkpoints, a process that can fail due to file corruption, incomplete writes, or schema changes.
 
-While workflow management systems can reduce this overhead through automated state persistence, a fundamental question remains unanswered: \textbf{Can we predict whether context recovery will succeed, and how long it will take?} Such predictions would enable proactive interventions, adaptive checkpointing strategies, and informed decisions about workflow tool adoption.
+Prior research establishes that developers require 15--25 minutes to cognitively re-engage after interruptions~\cite{mark2008cost, parnin2011programmer}. While workflow tools aim to reduce this burden by preserving technical state, \textbf{we do not claim to measure or predict developer cognitive recovery}---that remains an open research question requiring user studies. Instead, we address a prerequisite question: \textbf{Can we predict whether \textit{system-level} state recovery will succeed, and how long it will take?} Such predictions enable adaptive checkpointing, proactive failure warnings, and informed tool reliability assessments.
 
-This paper presents the first predictive models for workflow context recovery in AI-assisted development. Using the Universal Workflow System (UWS) as our experimental platform, we generate a comprehensive dataset of 3,000 recovery scenarios spanning diverse conditions: varying checkpoint counts (1--200), state complexities (minimal to complex), corruption levels (0--90\%), and interruption types (clean, abrupt, crash, timeout). We train and evaluate multiple machine learning models to predict:
+This paper presents the first predictive models for workflow context recovery in AI-assisted development, along with a \textbf{synthetic benchmark for reproducible research} on workflow resilience. Using the Universal Workflow System (UWS) as our experimental platform, we generate a comprehensive dataset of 3,000 recovery scenarios spanning diverse conditions: varying checkpoint counts (1--200), state complexities (minimal to complex), corruption levels (0--90\%), and interruption types (clean, abrupt, crash, timeout).
+
+Unlike observational datasets (e.g., KaVE~\cite{amann2018feedbag}, DevGPT~\cite{xiao2024devgpt}) that capture developer behavior without controlled interventions, our synthetic benchmark enables \textit{causal analysis} of how specific factors (corruption level, state complexity) affect recovery outcomes. We train and evaluate multiple machine learning models to predict:
 
 \begin{enumerate}
-    \item \textbf{Recovery Time} (regression): How long will context recovery take?
-    \item \textbf{Recovery Success} (classification): Will recovery succeed under given conditions?
-    \item \textbf{State Completeness} (regression): What percentage of context will be recoverable?
+    \item \textbf{System Recovery Time} (regression): How long will file parsing and state restoration take?
+    \item \textbf{Recovery Success} (classification): Will state restoration succeed under given corruption conditions?
+    \item \textbf{State Completeness} (regression): What percentage of checkpoint data will be successfully parsed?
 \end{enumerate}
 
-Our key findings demonstrate that workflow recovery is \textit{predictable}:
+Our key findings demonstrate that \textit{system-level} workflow recovery is predictable:
 
 \begin{itemize}
-    \item \textbf{Recovery time prediction} achieves MAE of 1.1ms using Gradient Boosting ($R^2 = 0.756$), enabling accurate estimation of recovery overhead.
-    \item \textbf{Recovery success prediction} achieves AUC-ROC of 0.912 and F1 of 0.911, enabling reliable failure anticipation.
-    \item \textbf{Feature importance analysis} reveals that corruption level, checkpoint count, and handoff document size are the dominant factors affecting recovery outcomes.
+    \item \textbf{Recovery time prediction} achieves MAE of 1.1ms using Gradient Boosting ($R^2 = 0.756$), enabling accurate estimation of file I/O and parsing overhead.
+    \item \textbf{Recovery success prediction} achieves AUC-ROC of 0.912 and F1 of 0.911, enabling reliable failure anticipation before developers encounter errors.
+    \item \textbf{Feature importance analysis} reveals that corruption level, checkpoint count, and handoff document size are the dominant factors affecting system recovery outcomes.
 \end{itemize}
 
 \paragraph{Contributions} This paper makes the following contributions:
 
 \begin{enumerate}
-    \item \textbf{First predictive models} for workflow context recovery in AI-assisted development, achieving MAE of 1.1ms for recovery time and AUC-ROC of 0.912 for recovery success prediction.
+    \item \textbf{Synthetic benchmark for reproducible research} on system-level workflow recovery: 3,000 annotated scenarios with controlled corruption levels, enabling causal analysis impossible with observational data. Unlike existing datasets (KaVE, DevGPT), our benchmark provides ground-truth \textit{system} recovery outcomes under systematic state degradation.
 
-    \item \textbf{Public benchmark dataset} of 3,000 annotated recovery scenarios with ground-truth measurements, enabling future research on development workflow analytics.
+    \item \textbf{First predictive models} for system-level workflow state recovery, achieving MAE of 1.1ms for file parsing time and AUC-ROC of 0.912 for recovery success prediction. We explicitly scope this to technical state restoration, not developer cognitive recovery.
 
-    \item \textbf{Feature importance analysis} identifying key factors affecting recovery outcomes: corruption level ($r = -0.475$), checkpoint characteristics ($r = 0.318$), and handoff document size ($r = 0.531$).
+    \item \textbf{Feature importance analysis} identifying key factors affecting system recovery outcomes: corruption level ($r = -0.475$), checkpoint characteristics ($r = 0.318$), and handoff document size ($r = 0.531$).
 
-    \item \textbf{Open-source implementation} of the Universal Workflow System with comprehensive test suite (175 tests), benchmark scripts, and replication package.
+    \item \textbf{Open-source implementation} of the Universal Workflow System with comprehensive test suite (356 tests: 93\% core, 76\% experimental), benchmark scripts, and replication package.
 \end{enumerate}
+
+\paragraph{PROMISE Relevance} This work contributes directly to the PROMISE community's mission of advancing predictive models and data analytics in software engineering. We build \textit{predictive models} for system-level recovery outcomes---enabling proactive failure warnings and adaptive checkpointing rather than reactive debugging. Our synthetic benchmark enables controlled experiments on workflow state restoration that are impossible with observational datasets. This positions our work squarely within PROMISE's scope: machine learning models trained on SE-specific data to predict software tool reliability. Note: We predict \textit{system} recovery (file I/O, parsing), not \textit{developer} cognitive recovery---the relationship between the two requires user studies we identify as future work.
 
 \paragraph{Paper Organization} Section~\ref{sec:background} provides background on workflow systems and context management. Section~\ref{sec:approach} describes our predictive modeling approach. Section~\ref{sec:evaluation} presents evaluation methodology and results. Section~\ref{sec:related} discusses related work, and Section~\ref{sec:conclusion} concludes with implications for practice and future directions.

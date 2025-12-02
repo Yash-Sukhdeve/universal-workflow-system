@@ -4,67 +4,59 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented the Universal Workflow System (UWS), a novel git-native workflow management system for context-resilient AI-assisted development. UWS addresses the critical challenge of context loss during long-term development projects through checkpoint-based state persistence, multi-agent collaboration patterns, and a modular skill library.
+We presented, to our knowledge, the first predictive models specifically for automated workflow context recovery in AI-assisted development, along with a synthetic benchmark enabling reproducible research on workflow resilience. Using the Universal Workflow System (UWS) as an experimental testbed, we demonstrated that recovery outcomes are predictable and identified key factors affecting success.
 
 \subsection{Summary of Contributions}
 
-Our evaluation demonstrated significant improvements over existing approaches:
+Our work makes the following contributions:
 
 \begin{enumerate}
-    \item \textbf{Performance}: UWS achieves context recovery in 44ms on average (95\% CI: [43.7, 44.3]), compared to 15--25 minutes for manual reconstruction~\cite{mark2008cost}---representing an order-of-magnitude improvement enabled by structured state persistence.
+    \item \textbf{Synthetic Benchmark}: A dataset of 3,000 annotated recovery scenarios with controlled corruption levels (0--90\%), enabling causal analysis impossible with observational data. Unlike existing datasets (KaVE, DevGPT), our benchmark provides ground-truth recovery outcomes under systematic state degradation.
 
-    \item \textbf{Reliability}: Checkpoint recovery succeeds in 97\% of cases under failure injection (100\% under normal conditions, 87--98\% under corruption), exceeding our 95\% target.
+    \item \textbf{Predictive Models}: Machine learning models achieving MAE of 1.1ms for recovery time prediction ($R^2=0.756$) and AUC-ROC of 0.912 for recovery success classification, demonstrating that workflow recovery is predictable.
 
-    \item \textbf{Functionality}: Our test suite achieves 94\% pass rate across 175 tests, demonstrating correct implementation.
+    \item \textbf{Feature Importance}: Analysis revealing that corruption level dominates success/completeness prediction (63\% feature importance), while checkpoint-related features dominate time prediction (82\% combined importance).
 
-    \item \textbf{Generalizability}: Case studies across ML research, LLM development, and software engineering confirm applicability to diverse domains.
-
-    \item \textbf{Overhead}: UWS adds negligible overhead ($<$50ms per operation, $<$10 KB per 100 checkpoints), with benefits vastly outweighing costs.
+    \item \textbf{Implementation}: Open-source testbed with comprehensive test suite (356 tests: 93\% core pass rate, 76\% experimental), benchmark scripts, and replication package.
 \end{enumerate}
 
 \subsection{Key Insights}
 
-Our work reveals several insights for designing AI-assisted development tools:
+Our work reveals several insights for predictive modeling of workflow recovery:
 
-\paragraph{Git-Native Design} Storing workflow state in version-controlled files provides natural versioning, collaboration, and familiarity without external infrastructure. Developers already understand git semantics, reducing adoption barriers.
+\paragraph{Corruption Level is Dominant} For recovery success and state completeness, corruption level is the strongest predictor (63\% and 91\% feature importance respectively). This suggests that recovery system design should prioritize corruption resilience over other factors.
 
-\paragraph{Structured Context} Rather than relying on LLM memory or conversation replay, explicitly structured context (phases, agents, checkpoints) enables reliable recovery and handoff.
+\paragraph{Time Prediction is Structural} Recovery time is primarily determined by checkpoint-related features (log size, count), not corruption level. This indicates that time complexity scales with state size, not failure severity.
 
-\paragraph{Agent Specialization} Role-based agents with defined transition protocols improve workflow organization and enable appropriate context preservation across transitions.
+\paragraph{Synthetic Benchmarks Enable Causal Analysis} Unlike observational datasets, our controlled methodology isolates variables, enabling definitive statements about which factors affect recovery. This approach is complementary to real-world observational studies.
 
 \subsection{Limitations}
 
 We acknowledge the following limitations:
 
-\paragraph{No User Study} We did not conduct a user study with human developers. While our automated benchmarks demonstrate technical performance (44ms recovery time), direct evidence of productivity impact requires human evaluation. Our claims about reducing cognitive load are based on literature~\cite{mark2008cost, parnin2011programmer} rather than direct measurement with UWS users.
+\paragraph{Synthetic Data} Our dataset is programmatically generated with controlled parameters. While this enables causal analysis, high model performance on synthetic data does not guarantee real-world generalization. We explicitly scope our claims to this benchmark and identify validation with production data as critical future work.
 
-\paragraph{Proxy Metric} Recovery time measures mechanical state restoration, not full cognitive context reconstruction. Developers must still recall domain-specific details that cannot be persisted. UWS accelerates the structured portion of recovery but does not eliminate the human cognitive component.
+\paragraph{Single-System Training} Models are trained exclusively on UWS-generated data. Features are specific to UWS's architecture (checkpoint counts, handoff sizes). Transfer learning to other workflow systems requires further investigation.
 
-\paragraph{Single-User Focus} UWS currently targets single-developer workflows. Multi-user collaborative recovery (e.g., team member handoffs, merge conflicts in workflow state) remains future work.
+\paragraph{Construct Validity} We measure \emph{system recovery} (script execution, file parsing), not \emph{developer recovery} (cognitive re-engagement). The relationship between technical recovery time and developer productivity requires a user study to establish.
 
-\paragraph{Bash Implementation} Implementation in Bash ensures portability and zero external dependencies but limits extensibility. Adding complex features (e.g., intelligent checkpointing, IDE integration) would benefit from a Python or TypeScript implementation.
+\paragraph{Corruption Model Simplicity} Our corruption simulation uses byte-level random corruption. Real-world failures may exhibit different patterns (e.g., incomplete writes, sector-level failures). More sophisticated fault injection models are future work.
 
-\paragraph{No Semantic Understanding} UWS checkpoints workflow \emph{structure} (phase, agent, files), not semantic \emph{intent}. If the codebase changes significantly between sessions, the checkpoint may restore outdated context.
-
-\paragraph{Manual Checkpoint Discipline} Checkpoint creation is currently manual. Users who forget to checkpoint before interruptions may not benefit from recovery features. Automatic checkpointing based on activity patterns is future work.
-
-\paragraph{Comparison Scope} Our baseline comparison with LangGraph measures different operations: LangGraph checkpoints computation state (graph execution), while UWS checkpoints workflow state (development progress). Direct performance comparison requires careful interpretation.
+\paragraph{No User Study} We do not measure developer productivity directly. Claims about practical benefit are based on the assumption that faster technical recovery enables faster cognitive re-engagement, which requires empirical validation.
 
 \subsection{Future Work}
 
 Several directions extend this work:
 
-\paragraph{User Studies} Conducting randomized controlled trials with developers would provide direct evidence of productivity impact and guide usability improvements.
+\paragraph{Real-World Validation} Deploying models in production environments and collecting actual failure data would validate external generalizability. Online learning approaches could adapt models to real-world failure patterns.
 
-\paragraph{IDE Integration} Integrating UWS with VS Code or other IDEs would reduce context switching and improve adoption.
+\paragraph{Cross-System Generalization} Testing the same predictive methodology on other workflow systems (LangGraph, AutoGen, CrewAI) would strengthen external validity. Our framework comparison benchmark provides a starting point for this investigation.
 
-\paragraph{Collaborative Workflows} Extending UWS for multi-user projects with conflict resolution and shared context would enable team AI-assisted development.
+\paragraph{SHAP Analysis} Applying SHapley Additive exPlanations (SHAP) would provide deeper interpretability into model predictions, enabling understanding of individual predictions rather than aggregate feature importance.
 
-\paragraph{Intelligent Checkpointing} Automatically triggering checkpoints based on activity patterns or time intervals could reduce manual overhead.
+\paragraph{User Studies} Controlled experiments measuring developer productivity with and without recovery prediction would establish the practical value of predictive models.
 
-\paragraph{Knowledge Synthesis} Aggregating insights across checkpoints to build project-specific knowledge bases could further enhance context recovery.
-
-\paragraph{Cross-Agent Generalization} Future research should investigate whether predictive models for workflow recovery generalize across different AI coding assistants (e.g., GitHub Copilot, Cursor, Claude Code). While our models are trained on UWS-generated data, validating transfer learning across AI tools would strengthen external validity claims.
+\paragraph{Adaptive Checkpointing} Using recovery prediction models to optimize checkpoint frequency---creating more checkpoints when predicted recovery success is low---could improve system resilience proactively.
 
 \subsection{Availability}
 
@@ -82,4 +74,6 @@ A complete replication package is available containing: (1) full source code for
 
 \subsection{Closing Remarks}
 
-As AI assistance becomes integral to software development, maintaining context across extended projects grows increasingly important. UWS demonstrates that git-native design provides an effective foundation for context persistence, achieving significant performance improvements with minimal infrastructure requirements. We hope this work inspires further research into resilient, developer-friendly AI collaboration tools.
+As AI-assisted development workflows become more complex and long-running, predicting and optimizing recovery from failures becomes increasingly important. Our work demonstrates that workflow recovery is predictable, with machine learning models achieving AUC=0.912 for success classification on our synthetic benchmark. By releasing our dataset and methodology, we enable the research community to build upon this foundation, developing more sophisticated models and validating generalizability across diverse workflow systems.
+
+The key insight from our feature importance analysis---that corruption level dominates success prediction while checkpoint characteristics dominate time prediction---provides actionable guidance for workflow system designers: prioritize corruption resilience mechanisms and manage checkpoint complexity for optimal recovery.

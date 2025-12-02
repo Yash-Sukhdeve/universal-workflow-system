@@ -1,0 +1,270 @@
+{
+  "by_variant": {
+    "UWS-full": {
+      "n": 210,
+      "success_rate": 100.0,
+      "mean_time_ms": 0.057600299520085434,
+      "std_time_ms": 0.012081540162553585,
+      "mean_completeness": 52.857142857142854,
+      "std_completeness": 7.015265066324013
+    },
+    "UWS-single": {
+      "n": 210,
+      "success_rate": 14.285714285714285,
+      "mean_time_ms": 0.029760385431083187,
+      "std_time_ms": 0.004112767964423804,
+      "mean_completeness": 10.0,
+      "std_completeness": 24.553427732134043
+    },
+    "UWS-no-handoff": {
+      "n": 210,
+      "success_rate": 14.285714285714285,
+      "mean_time_ms": 0.0443574813072614,
+      "std_time_ms": 0.009814171244174297,
+      "mean_completeness": 18.571428571428573,
+      "std_completeness": 21.045795198972037
+    },
+    "UWS-binary": {
+      "n": 210,
+      "success_rate": 14.285714285714285,
+      "mean_time_ms": 0.0544818761963619,
+      "std_time_ms": 0.018951787371353456,
+      "mean_completeness": 22.857142857142858,
+      "std_completeness": 31.56869279845806
+    }
+  },
+  "by_variant_corruption": {
+    "UWS-full": {
+      "0": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.03459776538268974,
+        "std_time_ms": 0.0034046851540172115,
+        "mean_completeness": 70.0,
+        "std_completeness": 0.0
+      },
+      "5": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.06490403466159478,
+        "std_time_ms": 0.01089397500915805,
+        "mean_completeness": 50.0,
+        "std_completeness": 0.0
+      },
+      "10": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.05994510089900965,
+        "std_time_ms": 0.00625129950660425,
+        "mean_completeness": 50.0,
+        "std_completeness": 0.0
+      },
+      "25": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.06247223403382426,
+        "std_time_ms": 0.007282951386100626,
+        "mean_completeness": 50.0,
+        "std_completeness": 0.0
+      },
+      "50": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.05885513237444684,
+        "std_time_ms": 0.0035837388233106193,
+        "mean_completeness": 50.0,
+        "std_completeness": 0.0
+      },
+      "75": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.0628346325053523,
+        "std_time_ms": 0.01155312070458752,
+        "mean_completeness": 50.0,
+        "std_completeness": 0.0
+      },
+      "90": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.05959319678368047,
+        "std_time_ms": 0.004045711265182104,
+        "mean_completeness": 50.0,
+        "std_completeness": 0.0
+      }
+    },
+    "UWS-single": {
+      "0": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.034345699047359325,
+        "std_time_ms": 0.0020251917108573313,
+        "mean_completeness": 70.0,
+        "std_completeness": 0.0
+      },
+      "5": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.031226800153187167,
+        "std_time_ms": 0.0063707937095723345,
+        "mean_completeness": 0.0,
+        "std_completeness": 0.0
+      },
+      "10": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.02782583226993059,
+        "std_time_ms": 0.0017105171749919607,
+        "mean_completeness": 0.0,
+        "std_completeness": 0.0
+      },
+      "25": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.028011767426505685,
+        "std_time_ms": 0.0017445834009225064,
+        "mean_completeness": 0.0,
+        "std_completeness": 0.0
+      },
+      "50": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.03002546679150934,
+        "std_time_ms": 0.0048116649182063116,
+        "mean_completeness": 0.0,
+        "std_completeness": 0.0
+      },
+      "75": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.027945765274732064,
+        "std_time_ms": 0.0014749596942589425,
+        "mean_completeness": 0.0,
+        "std_completeness": 0.0
+      },
+      "90": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.028941367054358125,
+        "std_time_ms": 0.0032765663051352776,
+        "mean_completeness": 0.0,
+        "std_completeness": 0.0
+      }
+    },
+    "UWS-no-handoff": {
+      "0": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.03506150145161276,
+        "std_time_ms": 0.007228824139806226,
+        "mean_completeness": 70.0,
+        "std_completeness": 0.0
+      },
+      "5": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.043914000949977584,
+        "std_time_ms": 0.001872883998339298,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "10": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.04847589928734427,
+        "std_time_ms": 0.009025454330863197,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "25": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.04783743206644431,
+        "std_time_ms": 0.019697307779246827,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "50": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.04437233534796784,
+        "std_time_ms": 0.0026387890913290683,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "75": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.04607039882102981,
+        "std_time_ms": 0.004213821153236787,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "90": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.04477080122645324,
+        "std_time_ms": 0.00461985599342147,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      }
+    },
+    "UWS-binary": {
+      "0": {
+        "n": 30,
+        "success_rate": 100.0,
+        "mean_time_ms": 0.024245066742878407,
+        "std_time_ms": 0.00390711269863727,
+        "mean_completeness": 100.0,
+        "std_completeness": 0.0
+      },
+      "5": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.0453591007196034,
+        "std_time_ms": 0.011355567642399119,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "10": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.04650829893459255,
+        "std_time_ms": 0.011148414930636782,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "25": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.060204368007058896,
+        "std_time_ms": 0.01742511043026974,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "50": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.06353883363772184,
+        "std_time_ms": 0.011650639199118117,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "75": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.07157839912300308,
+        "std_time_ms": 0.009740940798243206,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      },
+      "90": {
+        "n": 30,
+        "success_rate": 0.0,
+        "mean_time_ms": 0.06993906620967512,
+        "std_time_ms": 0.004452019842410333,
+        "mean_completeness": 10.0,
+        "std_completeness": 0.0
+      }
+    }
+  }
+}

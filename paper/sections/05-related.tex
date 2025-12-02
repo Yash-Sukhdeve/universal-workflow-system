@@ -46,6 +46,18 @@ Research on context and memory in AI systems informs UWS's design:
 
 \paragraph{Developer Interruption} Studies show developers require 15--25 minutes to recover focus after interruptions~\cite{mark2008cost, parnin2011programmer}. UWS directly addresses this recovery cost through structured context checkpointing.
 
+\subsection{Related Datasets}
+
+Our synthetic benchmark complements existing software engineering datasets:
+
+\paragraph{KaVE/FeedBaG++}~\cite{amann2018feedbag} provides 11 million IDE interaction events from 81 developers, capturing fine-grained behavior (code completion, navigation). While valuable for behavioral analysis, KaVE does not include recovery scenarios or controlled corruption---developers in the dataset did not experience systematic state failures.
+
+\paragraph{DevGPT}~\cite{xiao2024devgpt} contains 29,778 ChatGPT conversations from developers, capturing AI-assisted development patterns. DevGPT reveals how developers interact with LLMs but does not address workflow persistence or recovery.
+
+\paragraph{Mark et al.}~\cite{mark2008cost} measured cognitive recovery time (23 minutes average) after workplace interruptions. Their observational study informs our understanding of recovery costs but does not provide data for predictive modeling.
+
+\paragraph{Positioning} Our dataset fills a gap: \textbf{no existing dataset} enables systematic study of workflow recovery under controlled state corruption. While KaVE and DevGPT capture what developers \textit{do}, our benchmark captures how systems \textit{fail and recover}. This enables causal analysis---we can measure how 30\% corruption affects recovery success, which is impossible with observational data where corruption levels are uncontrolled.
+
 \subsection{Developer Productivity Tools}
 
 Tools enhancing developer productivity relate to UWS:

@@ -47,7 +47,7 @@
 % ============================================================================
 % METADATA
 % ============================================================================
-\title{UWS: A Git-Native Workflow System for Context-Resilient AI-Assisted Development}
+\title{Predicting Workflow Recovery in AI-Assisted Development: A Synthetic Benchmark and Empirical Study}
 
 % Authors (anonymized for review)
 \author{Anonymous Author(s)}
@@ -62,11 +62,13 @@
 % ABSTRACT
 % ============================================================================
 \begin{abstract}
-AI-assisted software development has transformed how developers work, yet context loss during long-term projects remains a critical challenge. When development sessions span weeks or months, interruptions and context window limitations cause developers to spend 15--25 minutes recovering context after each break. We present the Universal Workflow System (UWS), a novel git-native workflow management system that provides persistent context across sessions through checkpoint-based state recovery. UWS introduces a multi-agent architecture with seven specialized roles, a modular skill library, and phase-based workflow management---all built on version-controlled state files.
+Workflow management systems for AI-assisted development must reliably restore saved state from checkpoints after interruptions. State restoration can fail due to file corruption, incomplete writes, or schema changes. We present, to our knowledge, the first predictive models for \textit{system-level} workflow state recovery---predicting whether file parsing and state restoration will succeed and how long it will take. We explicitly scope this to technical state restoration; predicting developer cognitive recovery requires user studies we identify as future work.
 
-We evaluate UWS through comprehensive automated benchmarks comparing context recovery performance against baseline approaches including manual recovery and git-only workflows. Results show UWS achieves average context recovery in 44 milliseconds (vs.\ 15--25 minutes for manual reconstruction based on literature), representing an order-of-magnitude improvement. Reliability testing demonstrates 97\% checkpoint recovery success under failure injection, and ablation studies confirm the contribution of each architectural component. Case studies across ML research, LLM development, and software engineering domains demonstrate generalizability.
+Using the Universal Workflow System (UWS) as an experimental testbed, we generate a synthetic benchmark of 3,000 annotated recovery scenarios with controlled parameters: corruption levels (0--90\%), checkpoint counts (1--200), and interruption types (graceful, crash, timeout). Unlike observational datasets that capture developer behavior, our benchmark enables causal analysis of how specific factors affect system recovery outcomes.
 
-Our contributions include: (1) a novel git-native state persistence mechanism for workflow systems, (2) a complete open-source implementation with comprehensive test suite, (3) empirical evaluation demonstrating significant performance improvements, and (4) a replication package enabling reproducibility.
+We train and evaluate machine learning models achieving: (1) MAE of 1.1ms for system recovery time prediction (Gradient Boosting, $R^2=0.756$), (2) AUC-ROC of 0.912 for recovery success classification, and (3) MAE of 8.79\% for state completeness prediction. Feature importance analysis reveals that corruption level dominates success prediction ($r=-0.475$), while checkpoint characteristics dominate time prediction.
+
+Our contributions include: (1) a synthetic benchmark for system-level workflow recovery research, (2) predictive models enabling adaptive checkpointing and proactive failure warnings, (3) feature importance analysis identifying key factors affecting recovery, (4) a controlled component study demonstrating that redundant human-readable storage improves recovery success by 85+ percentage points under corruption, and (5) a public dataset with replication package. This work fills a gap in SE tooling: predicting when workflow state restoration will fail before developers encounter errors.
 \end{abstract}
 
 % ============================================================================
@@ -90,7 +92,7 @@ Our contributions include: (1) a novel git-native state persistence mechanism fo
 \ccsdesc[500]{Software and its engineering~Software development techniques}
 \ccsdesc[500]{Software and its engineering~Software development process management}
 
-\keywords{workflow systems, context management, developer productivity, multi-agent systems, version control}
+\keywords{predictive models, synthetic benchmark, workflow recovery, context persistence, AI-assisted development}
 
 % ============================================================================
 % DOCUMENT
@@ -100,7 +102,7 @@ Our contributions include: (1) a novel git-native state persistence mechanism fo
 \maketitle
 
 % Include sections
-\input{sections/01-introduction}
+\input{sections/01-introduction-promise}
 \input{sections/02-background}
 \input{sections/03-approach}
 \input{sections/04-evaluation}

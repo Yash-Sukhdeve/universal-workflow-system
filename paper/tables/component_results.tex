@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\caption{Recovery Success Rate (\%) by Variant and Corruption Level}
+\label{tab:component-results}
+\begin{tabular}{lrrrrrrr}
+\toprule
+\textbf{Variant} & \multicolumn{7}{c}{\textbf{Corruption Level (\%)}} \\
+\cmidrule(lr){2-8}
+ & \textbf{0} & \textbf{5} & \textbf{10} & \textbf{25} & \textbf{50} & \textbf{75} & \textbf{90} \\
+\midrule
+full & 100 & 100 & 100 & 100 & 100 & 100 & 100 \\
+single & 100 & 0 & 0 & 0 & 0 & 0 & 0 \\
+no-handoff & 100 & 0 & 0 & 0 & 0 & 0 & 0 \\
+binary & 100 & 0 & 0 & 0 & 0 & 0 & 0 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item Success defined as state completeness $\geq$ 50\%.
+\item n=30 trials per condition, 840 total experiments.
+\end{tablenotes}
+\end{table}

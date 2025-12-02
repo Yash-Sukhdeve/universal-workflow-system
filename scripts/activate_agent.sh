@@ -1,22 +1,39 @@
 #!/bin/bash
 
-# Agent Activation and Management Script
+# Agent Activation and Management Script - RWF Enhanced
 # Activate, deactivate, and manage workflow agents
+# RWF Compliance: R1 (Truthfulness), R3 (State Safety), R4 (Error-Free)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
+
 AGENT_NAME="${1:-}"
 COMMAND="${2:-activate}"
 
-# Source utility libraries
-if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
-    source "${SCRIPT_DIR}/lib/validation_utils.sh"
-fi
+# Source utility libraries in dependency order
+source_lib() {
+    local lib="$1"
+    if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
+        source "${SCRIPT_LIB_DIR}/${lib}"
+        return 0
+    fi
+    return 1
+}
 
-if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
-    source "${SCRIPT_DIR}/lib/yaml_utils.sh"
-fi
+# Core utilities
+source_lib "yaml_utils.sh" || true
+source_lib "validation_utils.sh" || true
+
+# RWF utilities
+source_lib "timestamp_utils.sh" || true
+source_lib "logging_utils.sh" || true
+source_lib "error_utils.sh" || true
+source_lib "precondition_utils.sh" || true
+source_lib "atomic_utils.sh" || true
+source_lib "decision_utils.sh" || true
+source_lib "schema_utils.sh" || true
 
 # Color codes
 readonly GREEN='\033[0;32m'
@@ -51,22 +68,37 @@ if [[ -z "$AGENT_NAME" ]]; then
     show_usage
 fi
 
-# Ensure workflow is initialized
-if ! validate_workflow_initialized 2>/dev/null; then
+# Set error context for better diagnostics (RWF R4)
+if declare -f set_error_context > /dev/null 2>&1; then
+    set_error_context "agent activation"
+fi
+
+# Ensure workflow is initialized using preconditions (RWF R1)
+if declare -f require_workflow_initialized > /dev/null 2>&1; then
+    if ! require_workflow_initialized; then
+        exit 1
+    fi
+elif ! validate_workflow_initialized 2>/dev/null; then
     if [[ ! -d .workflow ]]; then
         echo -e "${RED}Error: Workflow not initialized. Run ./scripts/init_workflow.sh first${NC}"
         exit 1
     fi
 fi
 
-# Validate agent name against registry
-if declare -f validate_agent > /dev/null 2>&1; then
+# Validate agent name using RWF preconditions (RWF R1 - Truthfulness)
+if declare -f require_agent_valid > /dev/null 2>&1; then
+    if ! require_agent_valid "$AGENT_NAME"; then
+        echo ""
+        echo -e "${YELLOW}Available agents:${NC}"
+        echo "  researcher, architect, implementer, experimenter, optimizer, deployer, documenter"
+        exit 1
+    fi
+elif declare -f validate_agent > /dev/null 2>&1; then
     if ! validate_agent "$AGENT_NAME" .workflow/agents/registry.yaml; then
         echo ""
         echo -e "${YELLOW}Available agents:${NC}"
         if [[ -f ".workflow/agents/registry.yaml" ]]; then
             grep "^[a-z_]*:" .workflow/agents/registry.yaml | sed 's/:$//' | while read -r agent; do
-                # Get description if available
                 desc=$(sed -n "/^${agent}:/,/^[^ ]/ {/description:/ s/.*description: //p}" .workflow/agents/registry.yaml | head -1)
                 printf "  %-15s %s\n" "$agent" "${desc:-}"
             done
@@ -80,87 +112,147 @@ fi
 # Create agent directories if they don't exist
 mkdir -p .workflow/agents/{configs,memory}
 
-# Function to activate an agent
+# Function to activate an agent (RWF R3 - State Safety with atomic operations)
 activate_agent() {
     local agent=$1
     echo -e "${BLUE}🤖 Activating ${agent} agent...${NC}"
-    
-    # Create active agent file
-    cat > .workflow/agents/active.yaml << EOF
-# Active Agent Configuration
-# Generated: $(date -Iseconds)
 
-current_agent: "${agent}"
-activated_at: "$(date -Iseconds)"
+    # Get timestamp using utility or fallback
+    local timestamp
+    if declare -f get_iso_timestamp > /dev/null 2>&1; then
+        timestamp=$(get_iso_timestamp)
+    else
+        timestamp=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+    fi
+
+    # Get current phase and checkpoint
+    local current_phase current_checkpoint
+    if declare -f yaml_get > /dev/null 2>&1; then
+        current_phase=$(yaml_get .workflow/state.yaml "current_phase" 2>/dev/null || echo "unknown")
+        current_checkpoint=$(yaml_get .workflow/state.yaml "current_checkpoint" 2>/dev/null || echo "unknown")
+    else
+        current_phase=$(grep 'current_phase:' .workflow/state.yaml 2>/dev/null | cut -d':' -f2 | xargs || echo "unknown")
+        current_checkpoint=$(grep 'current_checkpoint:' .workflow/state.yaml 2>/dev/null | cut -d':' -f2 | xargs || echo "unknown")
+    fi
+
+    # Build agent config content
+    local agent_config="# Active Agent Configuration
+# Generated: ${timestamp}
+# RWF R3: State tracked for reproducibility
+
+current_agent: \"${agent}\"
+activated_at: \"${timestamp}\"
 agent_state:
-  task: "initialized"
+  task: \"initialized\"
   progress: 0
-  last_action: "Agent activated"
-  next_action: "Review requirements and context"
-  
+  last_action: \"Agent activated\"
+  next_action: \"Review requirements and context\"
+
 context:
-  phase: "$(grep 'current_phase:' .workflow/state.yaml | cut -d':' -f2 | xargs)"
-  checkpoint: "$(grep 'current_checkpoint:' .workflow/state.yaml | cut -d':' -f2 | xargs)"
-  
+  phase: \"${current_phase}\"
+  checkpoint: \"${current_checkpoint}\"
+
 workspace:
-  directory: "workspace/${agent}"
-  
-capabilities:
-  $(case $agent in
-    researcher)
-      echo "- literature_review"
-      echo "  - hypothesis_formation"
-      echo "  - experimental_design"
-      echo "  - result_analysis"
-      ;;
-    architect)
-      echo "- system_design"
-      echo "  - api_design"
-      echo "  - database_schema"
-      echo "  - architecture_patterns"
-      ;;
-    implementer)
-      echo "- code_development"
-      echo "  - prototype_building"
-      echo "  - model_training"
-      echo "  - integration"
-      ;;
-    experimenter)
-      echo "- experiment_execution"
-      echo "  - benchmarking"
-      echo "  - ablation_studies"
-      echo "  - performance_testing"
-      ;;
-    optimizer)
-      echo "- model_compression"
-      echo "  - quantization"
-      echo "  - pruning"
-      echo "  - performance_tuning"
-      ;;
-    deployer)
-      echo "- containerization"
-      echo "  - ci_cd_setup"
-      echo "  - cloud_deployment"
-      echo "  - monitoring"
-      ;;
-    documenter)
-      echo "- technical_writing"
-      echo "  - paper_writing"
-      echo "  - api_documentation"
-      echo "  - tutorial_creation"
-      ;;
-  esac)
-EOF
-    
+  directory: \"workspace/${agent}\"
+
+capabilities:"
+
+    # Add capabilities based on agent type
+    case $agent in
+        researcher)
+            agent_config+="
+  - literature_review
+  - hypothesis_formation
+  - experimental_design
+  - result_analysis"
+            ;;
+        architect)
+            agent_config+="
+  - system_design
+  - api_design
+  - database_schema
+  - architecture_patterns"
+            ;;
+        implementer)
+            agent_config+="
+  - code_development
+  - prototype_building
+  - model_training
+  - integration"
+            ;;
+        experimenter)
+            agent_config+="
+  - experiment_execution
+  - benchmarking
+  - ablation_studies
+  - performance_testing"
+            ;;
+        optimizer)
+            agent_config+="
+  - model_compression
+  - quantization
+  - pruning
+  - performance_tuning"
+            ;;
+        deployer)
+            agent_config+="
+  - containerization
+  - ci_cd_setup
+  - cloud_deployment
+  - monitoring"
+            ;;
+        documenter)
+            agent_config+="
+  - technical_writing
+  - paper_writing
+  - api_documentation
+  - tutorial_creation"
+            ;;
+    esac
+
+    # Write atomically (RWF R3)
+    if declare -f atomic_write > /dev/null 2>&1; then
+        atomic_write .workflow/agents/active.yaml "$agent_config"
+    else
+        echo "$agent_config" > .workflow/agents/active.yaml
+    fi
+
     # Create agent workspace
-    mkdir -p workspace/${agent}
-    
+    mkdir -p "workspace/${agent}"
+
     # Load agent-specific skills
-    load_agent_skills $agent
-    
-    # Log activation
-    echo "$(date -Iseconds) | AGENT_ACTIVATED | ${agent}" >> .workflow/checkpoints.log
-    
+    load_agent_skills "$agent"
+
+    # Update state file with active agent info
+    if declare -f yaml_set > /dev/null 2>&1; then
+        yaml_set .workflow/state.yaml "active_agent.name" "$agent" 2>/dev/null || true
+        yaml_set .workflow/state.yaml "active_agent.status" "active" 2>/dev/null || true
+        yaml_set .workflow/state.yaml "active_agent.activated_at" "$timestamp" 2>/dev/null || true
+    fi
+
+    # Log activation using RWF logging
+    if declare -f log_agent > /dev/null 2>&1; then
+        log_agent "$agent" "activated" "Agent activated in phase ${current_phase}"
+    fi
+
+    # Also log to checkpoints.log for backward compatibility
+    if declare -f atomic_append > /dev/null 2>&1; then
+        atomic_append .workflow/checkpoints.log "${timestamp} | AGENT_ACTIVATED | ${agent}"
+    else
+        echo "${timestamp} | AGENT_ACTIVATED | ${agent}" >> .workflow/checkpoints.log
+    fi
+
+    # Log decision (RWF R1 - Truthfulness, track all decisions)
+    if declare -f log_decision > /dev/null 2>&1; then
+        log_decision \
+            "Activated ${agent} agent" \
+            "workflow" \
+            "Agent needed for current phase (${current_phase})" \
+            "" \
+            "$agent" \
+            "$current_checkpoint" > /dev/null 2>&1 || true
+    fi
+
     echo -e "${GREEN}✓ ${agent} agent activated${NC}"
     echo ""
     echo -e "Agent workspace: ${YELLOW}workspace/${agent}${NC}"

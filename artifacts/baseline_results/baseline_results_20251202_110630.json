@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "generated": "2025-12-02T11:06:30.041190",
+    "dataset_size": 3000,
+    "random_seed": 42
+  },
+  "classification_baselines": {
+    "random_majority_class": {
+      "strategy": "predict_majority_class",
+      "majority_class": 1,
+      "class_distribution": {
+        "class_0": 441,
+        "class_1": 2559
+      },
+      "accuracy": 0.853,
+      "precision": 0.853,
+      "recall": 1.0,
+      "f1_score": 0.9206691851052348,
+      "auc_roc": 0.5
+    },
+    "corruption_threshold_30": {
+      "strategy": "predict_success_if_corruption_level_<=_0.3",
+      "feature": "corruption_level",
+      "threshold": 0.3,
+      "confusion_matrix": [
+        [
+          441,
+          0
+        ],
+        [
+          1725,
+          834
+        ]
+      ],
+      "accuracy": 0.425,
+      "precision": 1.0,
+      "recall": 0.32590855803048063,
+      "f1_score": 0.4916003536693192,
+      "auc_roc": 0.8740406674588553
+    },
+    "corruption_threshold_50": {
+      "strategy": "predict_success_if_corruption_level_<=_0.5",
+      "feature": "corruption_level",
+      "threshold": 0.5,
+      "confusion_matrix": [
+        [
+          441,
+          0
+        ],
+        [
+          1725,
+          834
+        ]
+      ],
+      "accuracy": 0.425,
+      "precision": 1.0,
+      "recall": 0.32590855803048063,
+      "f1_score": 0.4916003536693192,
+      "auc_roc": 0.8740406674588553
+    },
+    "corruption_threshold_70": {
+      "strategy": "predict_success_if_corruption_level_<=_0.7",
+      "feature": "corruption_level",
+      "threshold": 0.7,
+      "confusion_matrix": [
+        [
+          441,
+          0
+        ],
+        [
+          1725,
+          834
+        ]
+      ],
+      "accuracy": 0.425,
+      "precision": 1.0,
+      "recall": 0.32590855803048063,
+      "f1_score": 0.4916003536693192,
+      "auc_roc": 0.8740406674588553
+    }
+  },
+  "regression_baselines": {
+    "random_mean": {
+      "strategy": "predict_mean",
+      "predicted_value": 29.400716299000003,
+      "mae": 2.3636992866906663,
+      "rmse": 3.4538905164082667,
+      "r_squared": 0.0
+    },
+    "corruption_completeness": {
+      "strategy": "corruption_based_prediction",
+      "target": "state_completeness_percent",
+      "mae": 3415.0075,
+      "rmse": 4647.406972576213,
+      "r_squared": -38622.65068270207
+    }
+  }
+}

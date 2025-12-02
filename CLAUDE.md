@@ -43,6 +43,8 @@ python3 tests/benchmarks/generate_paper_tables.py
 python3 tests/benchmarks/ablation_study.py
 python3 tests/benchmarks/sensitivity_analysis.py
 python3 tests/benchmarks/baseline_benchmark.py
+python3 tests/benchmarks/analyze_results.py
+python3 tests/benchmarks/repository_mining_study.py
 ```
 
 ### Workflow Operations
@@ -120,9 +122,30 @@ PROMISE 2026 submission with:
 3. Create checkpoints at milestones: `./scripts/checkpoint.sh "description"`
 4. Update `handoff.md` before ending session with next actions and blockers
 
+## Python Dependencies
+
+For benchmarks and predictive modeling (install from `replication/requirements.txt`):
+```bash
+pip install -r replication/requirements.txt
+```
+Key packages: scikit-learn, pandas, scipy, numpy, statsmodels
+
+## Replication Package (`replication/`)
+
+Dockerized environment for reproducing paper results:
+```bash
+cd replication && docker build -t uws-replication . && docker run uws-replication
+```
+Contains pre-collected benchmark data organized as:
+- `data/raw/` - Raw benchmark measurements (JSON)
+- `data/processed/` - Statistical summaries and paper data
+- `data/baselines/` - Baseline comparison results
+- `data/ablation/` - Ablation study results
+- `data/sensitivity/` - Sensitivity analysis results
+- `expected_outputs/` - Expected values for validation
+
 ## Key Conventions
 
 - Checkpoint before/after major changes
 - State YAML uses `yq` when available, falls back to grep/sed
-- Scripts source `lib/yaml_utils.sh` and `lib/validation_utils.sh` for shared utilities
-- Benchmark JSON results enable statistical analysis with confidence intervals
+- Benchmark JSON results in `artifacts/benchmark_results/` enable statistical analysis with confidence intervals

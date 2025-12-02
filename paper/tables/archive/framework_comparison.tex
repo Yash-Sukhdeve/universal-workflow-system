@@ -1,0 +1,21 @@
+\begin{table}[t]
+    \centering
+    \caption{Framework Recovery Comparison Under Controlled Corruption}
+    \label{tab:framework-comparison}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Framework} & \textbf{Success Rate} & \textbf{Time (ms)}$^\ddagger$ & \textbf{Completeness} & \textbf{Simulated?} \\
+        \midrule
+        UWS (ours) & \textbf{100\%} & \textbf{44} & 59.6\%$^\dagger$ & No \\
+        LangGraph & 67\% & 0.06 & 36.4\% & Yes* \\
+        CrewAI & 53\% & 63.0 & 29.1\% & Yes* \\
+        AutoGen & 47\% & 126.7 & 25.5\% & Yes* \\
+        \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item *Results for LangGraph, AutoGen, CrewAI are \textbf{simulated} based on documented framework behavior. These establish methodology; actual performance may vary.
+    \item $^\dagger$UWS completeness at 0\% corruption. At higher corruption, graceful degradation via handoff.md fallback.
+    \item $^\ddagger$UWS measures full file-based recovery (44ms); LangGraph measures in-memory retrieval (0.06ms)---different operations, not directly comparable.
+    \end{tablenotes}
+\end{table}

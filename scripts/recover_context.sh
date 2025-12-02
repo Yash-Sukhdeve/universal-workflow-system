@@ -1,20 +1,35 @@
 #!/bin/bash
 
-# Context Recovery Script
+# Context Recovery Script - RWF Enhanced
 # Quickly restore context after a session break or context loss
+# RWF Compliance: R5 (Reproducibility) - Any agent must continue from saved state
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
 
-# Source utility libraries
-if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
-    source "${SCRIPT_DIR}/lib/validation_utils.sh"
-fi
+# Source utility libraries in dependency order
+source_lib() {
+    local lib="$1"
+    if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
+        source "${SCRIPT_LIB_DIR}/${lib}"
+        return 0
+    fi
+    return 1
+}
 
-if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
-    source "${SCRIPT_DIR}/lib/yaml_utils.sh"
-fi
+# Core utilities
+source_lib "yaml_utils.sh" || true
+source_lib "validation_utils.sh" || true
+
+# RWF utilities
+source_lib "timestamp_utils.sh" || true
+source_lib "logging_utils.sh" || true
+source_lib "error_utils.sh" || true
+source_lib "precondition_utils.sh" || true
+source_lib "completeness_utils.sh" || true
+source_lib "checksum_utils.sh" || true
 
 # Color codes for output
 readonly RED='\033[0;31m'
@@ -26,19 +41,65 @@ readonly CYAN='\033[0;36m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
+# Get recovery start time
+RECOVERY_START_TIME=$(date +%s%3N 2>/dev/null || date +%s)
+
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${BOLD}           📡 CONTEXT RECOVERY SYSTEM${NC}"
+echo -e "${BOLD}           📡 CONTEXT RECOVERY SYSTEM (RWF Enhanced)${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# Check if workflow is initialized
-if ! validate_workflow_initialized 2>/dev/null; then
+# Log recovery start
+if declare -f log_recovery > /dev/null 2>&1; then
+    log_recovery "start" "" "context_recovery"
+fi
+
+# Check if workflow is initialized using preconditions
+if declare -f require_workflow_initialized > /dev/null 2>&1; then
+    if ! require_workflow_initialized; then
+        echo -e "${RED}❌ Error: Workflow not initialized${NC}"
+        echo -e "   Run: ${CYAN}./scripts/init_workflow.sh${NC} first"
+        exit 1
+    fi
+elif ! validate_workflow_initialized 2>/dev/null; then
     if [[ ! -f .workflow/state.yaml ]]; then
         echo -e "${RED}❌ Error: Workflow not initialized${NC}"
         echo -e "   Run: ${CYAN}./scripts/init_workflow.sh${NC} first"
         exit 1
     fi
 fi
+
+# Calculate and display recovery completeness
+echo -e "${BLUE}📊 Recovery Completeness:${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+if declare -f calculate_completeness_score > /dev/null 2>&1; then
+    COMPLETENESS_SCORE=$(calculate_completeness_score 2>/dev/null || echo "0")
+
+    # Determine color based on score
+    if (( COMPLETENESS_SCORE >= 80 )); then
+        SCORE_COLOR="${GREEN}"
+        SCORE_STATUS="GOOD"
+    elif (( COMPLETENESS_SCORE >= 50 )); then
+        SCORE_COLOR="${YELLOW}"
+        SCORE_STATUS="PARTIAL"
+    else
+        SCORE_COLOR="${RED}"
+        SCORE_STATUS="INCOMPLETE"
+    fi
+
+    echo -e "  Score: ${SCORE_COLOR}${COMPLETENESS_SCORE}%${NC} [${SCORE_STATUS}]"
+
+    # Show missing items if incomplete
+    if (( COMPLETENESS_SCORE < 80 )); then
+        MISSING_FILES=$(check_required_files 2>/dev/null || echo "")
+        if [[ -n "$MISSING_FILES" ]]; then
+            echo -e "  ${YELLOW}Missing: ${MISSING_FILES}${NC}"
+        fi
+    fi
+else
+    echo -e "  ${YELLOW}(Completeness check not available)${NC}"
+fi
+echo ""
 
 # Function to extract YAML values using utilities
 get_yaml_value() {
@@ -210,7 +271,38 @@ else
     echo -e "$WARNINGS"
 fi
 
+# Calculate recovery time
+RECOVERY_END_TIME=$(date +%s%3N 2>/dev/null || date +%s)
+RECOVERY_TIME_MS=$((RECOVERY_END_TIME - RECOVERY_START_TIME))
+
+# Update session state to mark context as recovered
+if declare -f get_iso_timestamp > /dev/null 2>&1; then
+    RECOVERY_TIMESTAMP=$(get_iso_timestamp)
+else
+    RECOVERY_TIMESTAMP=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+fi
+
+if declare -f yaml_set > /dev/null 2>&1; then
+    yaml_set .workflow/state.yaml "session.context_recovered" "true" 2>/dev/null || true
+    yaml_set .workflow/state.yaml "session.last_recovery" "$RECOVERY_TIMESTAMP" 2>/dev/null || true
+    yaml_set .workflow/state.yaml "session.recovery_time_ms" "$RECOVERY_TIME_MS" 2>/dev/null || true
+fi
+
+# Log successful recovery
+if declare -f log_recovery > /dev/null 2>&1; then
+    log_recovery "success" "$COMPLETENESS_SCORE" "context_recovery" 2>/dev/null || true
+fi
+
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  Recovery Time: ${GREEN}${RECOVERY_TIME_MS}ms${NC}"
+if [[ -n "${COMPLETENESS_SCORE:-}" ]]; then
+    echo -e "  Completeness:  ${SCORE_COLOR}${COMPLETENESS_SCORE}%${NC}"
+fi
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
 echo -e "  Run ${CYAN}./scripts/status.sh --verbose${NC} for detailed information"
+echo -e "  Run ${CYAN}./scripts/checkpoint.sh completeness${NC} for full report"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"

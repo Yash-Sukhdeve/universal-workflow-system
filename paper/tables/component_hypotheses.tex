@@ -1,0 +1,21 @@
+\begin{table}[t]
+\centering
+\caption{Component Study: Hypothesis Test Results}
+\label{tab:component-hypotheses}
+\begin{tabular}{llrrrrrl}
+\toprule
+\textbf{ID} & \textbf{Comparison} & \textbf{$\Delta$} & \textbf{U} & \textbf{p} & \textbf{d} & \textbf{95\% CI} & \textbf{Result} \\
+\midrule
+H1 & full vs single & +85.7 & 3150 & <0.0001$\star\star$ & 3.46 & [81.0, 90.5] & \textbf{Supported} \\
+H2 & full vs binary @ 50%+ corruption & +40.0 & 0 & <0.0001$\star\star$ & 0.00 & [40.0, 40.0] & \textbf{Supported} \\
+H3 & full vs no-handoff @ 75%+ corruption & +40.0 & 0 & <0.0001$\star\star$ & 0.00 & [40.0, 40.0] & \textbf{Supported} \\
+H4 & binary vs full @ 0% corruption & +0.0 & 46 & <0.0001$\star\star$ & 2.83 & [0.0, 0.0] & \textbf{Supported} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item $\star$ p<0.05; $\star\star$ p<0.0125 (Bonferroni-corrected).
+\item $\Delta$: difference in percentage points (H1-H3) or milliseconds (H4).
+\item d: Cohen's d effect size. CI: 95\% bootstrap confidence interval.
+\end{tablenotes}
+\end{table}

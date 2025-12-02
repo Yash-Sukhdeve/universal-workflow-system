@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\caption{UWS Design Variants Under Test}
+\label{tab:component-variants}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Variant} & \textbf{Encoding} & \textbf{Handoff} & \textbf{Log} & \textbf{Redundancy} \\
+\midrule
+UWS-full & YAML (text) & \checkmark & \checkmark & Full \\
+UWS-single & YAML (text) & -- & -- & None \\
+UWS-no-handoff & YAML (text) & -- & \checkmark & Partial \\
+UWS-binary & MessagePack & -- & \checkmark & Partial \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item Handoff: human-readable markdown document for graceful degradation.
+\item Log: append-only checkpoint log for recovery point identification.
+\end{tablenotes}
+\end{table}

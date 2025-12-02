@@ -4,204 +4,127 @@
 \section{Approach}
 \label{sec:approach}
 
-This section describes UWS's architecture, design decisions, and key components. We emphasize the technical challenges solved and the rationale behind design choices.
+This section describes our predictive modeling methodology, followed by the experimental platform used to generate recovery scenarios.
 
-\subsection{Architecture Overview}
+\subsection{Predictive Modeling Methodology}
+\label{sec:ml-methodology}
 
-Figure~\ref{fig:architecture} shows UWS's high-level architecture. The system consists of four main components:
+We develop predictive models for three workflow recovery outcomes: recovery time, recovery success, and state completeness.
 
+\subsubsection{Dataset Generation}
+
+We generate synthetic recovery scenarios by systematically varying parameters:
+\begin{itemize}
+    \item \textbf{Checkpoint count}: 1--200 (log-uniform distribution)
+    \item \textbf{Corruption level}: 0\%, 10\%, 30\%, 50\%, 70\%, 90\%
+    \item \textbf{Interruption type}: graceful, abrupt, crash, timeout
+    \item \textbf{Project type}: research, web, ml, devops, data, mobile, fullstack
+\end{itemize}
+
+We generate 1,000 unique parameter combinations and execute 3 independent trials per combination, yielding 3,000 annotated scenarios. Each trial runs the actual \texttt{recover\_context.sh} script and records ground-truth outcomes.
+
+\subsubsection{Feature Engineering}
+
+We extract 18 features from each recovery scenario (Table~\ref{tab:features}):
+
+\begin{table}[t]
+\caption{Feature Descriptions (18 total: 13 numerical, 5 categorical)}
+\label{tab:features}
+\small
+\begin{tabular}{llp{4.5cm}}
+\toprule
+\textbf{Feature} & \textbf{Type} & \textbf{Description} \\
+\midrule
+checkpoint\_count & Num. & Number of checkpoints in log \\
+corruption\_level & Num. & Fraction of bytes corrupted (0--1) \\
+handoff\_chars & Num. & Character count in handoff.md \\
+state\_yaml\_size & Num. & Size of state.yaml in bytes \\
+phase\_progress & Num. & Progress percentage (0--100) \\
+interruption\_type & Cat. & Type of simulated interruption \\
+project\_type & Cat. & Category of workflow \\
+agent\_state & Cat. & Active agent when interrupted \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Categorical features (5 total: project\_type, agent\_state, interruption\_type, state\_complexity, handoff\_size) are encoded using scikit-learn's LabelEncoder~\cite{pedregosa2011scikit}.
+
+\subsubsection{Data Preprocessing}
+
+We apply StandardScaler to all numerical features before model training, transforming each feature to zero mean and unit variance. Missing values (rare, $<$0.1\% of data) are imputed with zeros using \texttt{np.nan\_to\_num}. We use stratified sampling for train-test split (80\%/20\%) to preserve class distribution in the binary classification task.
+
+\subsubsection{Model Selection}
+
+We evaluate four model families:
 \begin{enumerate}
-    \item \textbf{State Management Layer}: Git-native persistence via YAML files
-    \item \textbf{Agent System}: Seven specialized agents with handoff protocols
-    \item \textbf{Skill Library}: Modular capabilities loaded dynamically
-    \item \textbf{Workflow Engine}: Phase-based execution with checkpoint integration
+    \item \textbf{Linear Regression / Logistic Regression}: Baseline assuming linear relationships between features and targets.
+    \item \textbf{Ridge Regression}: L2-regularized linear model ($\alpha=1.0$).
+    \item \textbf{Random Forest}: Ensemble of 100 decision trees with bagging.
+    \item \textbf{Gradient Boosting}: Sequential ensemble of 100 weak learners.
 \end{enumerate}
 
-% Architecture diagram placeholder
-\begin{figure}[t]
-    \centering
-    \fbox{\parbox{0.9\columnwidth}{
-        \centering
-        \textbf{Architecture Diagram}\\[1em]
-        \small
-        [State Layer] $\rightarrow$ [Agent System] $\rightarrow$ [Skill Library]\\
-        $\downarrow$\\
-        [Git Repository] $\leftarrow$ [Checkpoint System]
-    }}
-    \caption{UWS Architecture: Git-native state persistence enables checkpoint-based recovery across sessions.}
-    \label{fig:architecture}
-\end{figure}
+We use scikit-learn~\cite{pedregosa2011scikit} implementations with default hyperparameters (n\_estimators=100, random\_state=42) for reproducibility. While hyperparameter tuning could improve results marginally, our goal is to establish baseline predictive performance rather than optimize for competition accuracy.
 
-\subsection{Git-Native State Persistence}
+\subsubsection{Target Variables}
 
-UWS's core innovation is storing all workflow state in version-controlled files:
+We predict three outcomes:
+\begin{enumerate}
+    \item \textbf{Recovery Time} (continuous): Milliseconds to complete recovery script execution.
+    \item \textbf{Recovery Success} (binary): 1 if state\_completeness $>$ 50\%, else 0.
+    \item \textbf{State Completeness} (continuous): Percentage of original state recovered (0--100\%).
+\end{enumerate}
+
+\subsubsection{Evaluation Metrics}
+
+For regression tasks: Mean Absolute Error (MAE), Root Mean Squared Error (RMSE), and coefficient of determination ($R^2$).
+
+For classification: Area Under ROC Curve (AUC-ROC), F1 score, and accuracy.
+
+We report 95\% confidence intervals computed via t-distribution from 5-fold cross-validation results.
+
+\subsubsection{Baseline Comparisons}
+
+To demonstrate that ML models learn non-trivial patterns, we compare against:
+\begin{itemize}
+    \item \textbf{Random Baseline}: Predict mean (regression) or majority class (classification)
+    \item \textbf{Single-Feature Heuristic}: Predict failure if corruption\_level $>$ 0.5
+\end{itemize}
+
+% ============================================================================
+% EXPERIMENTAL PLATFORM (Compressed UWS Description)
+% ============================================================================
+\subsection{Experimental Platform: UWS}
+\label{sec:uws}
+
+We use the Universal Workflow System (UWS) as our experimental platform for generating recovery scenarios. UWS provides:
+
+\begin{enumerate}
+    \item \textbf{Git-native state persistence}: All workflow state stored in version-controlled YAML files, enabling checkpoint-based recovery.
+    \item \textbf{Structured checkpoints}: Each checkpoint captures project phase, agent state, and human-readable handoff notes.
+    \item \textbf{Fallback mechanism}: When primary state is corrupted, UWS attempts recovery from handoff documents (human-readable Markdown).
+\end{enumerate}
 
 \paragraph{State Files} The \texttt{.workflow/} directory contains:
 \begin{itemize}
     \item \texttt{state.yaml}: Current phase, checkpoint ID, metadata
-    \item \texttt{config.yaml}: Project configuration, enabled features
     \item \texttt{checkpoints.log}: Timestamped checkpoint history
     \item \texttt{handoff.md}: Human-readable context for session continuity
 \end{itemize}
 
-\paragraph{Checkpoint Mechanism} Creating a checkpoint involves:
+\paragraph{Checkpoint Mechanism} Creating a checkpoint involves: (1) updating \texttt{state.yaml} with current context, (2) appending to \texttt{checkpoints.log} with timestamp and description, and (3) optionally committing changes via git.
+
+\paragraph{Recovery Process} Context recovery reads checkpoint files and restores state by loading \texttt{state.yaml}, parsing \texttt{checkpoints.log} for recent history, and extracting context from \texttt{handoff.md}.
+
+\paragraph{Implementation} UWS is implemented in Bash (2,000 LOC) with no external dependencies beyond git and standard Unix utilities. The full implementation, including 356 tests (93\% pass rate for core functionality, 76\% for experimental features), is available in our replication package.
+
+\paragraph{Why UWS as Platform} We chose UWS because: (1) its file-based state enables controlled corruption experiments, (2) its checkpoint mechanism provides ground-truth recovery outcomes, and (3) its open-source implementation enables full reproducibility.
+
+\paragraph{Corruption Simulation} To generate training data, we simulate corruption by:
 \begin{enumerate}
-    \item Updating \texttt{state.yaml} with current context
-    \item Appending to \texttt{checkpoints.log} with timestamp and description
-    \item Optionally committing changes via git
+    \item Creating valid checkpoint state
+    \item Applying byte-level random corruption at specified levels (0--90\%)
+    \item Executing recovery and measuring outcomes
 \end{enumerate}
 
-Listing~\ref{lst:checkpoint} shows the checkpoint creation process:
+This controlled methodology enables causal analysis of factors affecting recovery, which is impossible with observational data from production systems.
 
-\begin{lstlisting}[language=bash,caption={Checkpoint creation},label={lst:checkpoint}]
-# Create checkpoint with descriptive message
-./scripts/checkpoint.sh "Completed model training"
-
-# Checkpoint log format:
-# 2024-01-15T14:30:00Z | CP_2_5 | Completed model training
-\end{lstlisting}
-
-\paragraph{Recovery Process} Context recovery reads checkpoint files and restores state:
-\begin{enumerate}
-    \item Load \texttt{state.yaml} to determine current phase
-    \item Read \texttt{checkpoints.log} to show recent history
-    \item Parse \texttt{handoff.md} for critical context
-    \item Display suggested next actions
-\end{enumerate}
-
-The \texttt{recover\_context.sh} script completes this in under 5 minutes, compared to 15+ minutes for manual context rebuilding.
-
-\subsection{Technical Challenges}
-
-Implementing git-native state persistence required solving several challenges:
-
-\paragraph{State Serialization} Agent context must be serializable to YAML. We limit state to:
-\begin{itemize}
-    \item Primitive types (strings, numbers, booleans)
-    \item Nested structures (maps, lists)
-    \item References to files (paths, not contents)
-\end{itemize}
-
-Large data (models, datasets) remain external; only references are checkpointed.
-
-\paragraph{Atomic Operations} Checkpoint creation must be atomic to prevent corruption. We use:
-\begin{itemize}
-    \item Write to temporary file, then rename (atomic on POSIX)
-    \item Validate YAML syntax before committing
-    \item Backup previous state before modification
-\end{itemize}
-
-\paragraph{Conflict Resolution} Collaborative workflows may create git conflicts in state files. UWS:
-\begin{itemize}
-    \item Uses YAML's line-based format for easier merging
-    \item Provides conflict detection warnings
-    \item Suggests resolution strategies
-\end{itemize}
-
-\subsection{Multi-Agent System}
-
-UWS's agent system implements role-based collaboration:
-
-\paragraph{Agent Registry} The \texttt{.workflow/agents/registry.yaml} defines available agents with:
-\begin{itemize}
-    \item Capabilities and specializations
-    \item Default skills
-    \item Transition rules
-\end{itemize}
-
-\paragraph{Activation} Agents are activated via:
-\begin{lstlisting}[language=bash]
-./scripts/activate_agent.sh researcher
-\end{lstlisting}
-
-This updates \texttt{.workflow/agents/active.yaml} with the current agent, loads relevant skills, and creates the agent's workspace directory.
-
-\paragraph{Handoff Protocol} Transitioning between agents follows a structured protocol:
-\begin{enumerate}
-    \item Current agent creates handoff notes
-    \item Checkpoint is created with transition context
-    \item New agent is activated
-    \item New agent loads predecessor's notes
-\end{enumerate}
-
-\subsection{Skill Library}
-
-Skills are modular capabilities that agents can use:
-
-\paragraph{Skill Catalog} The \texttt{.workflow/skills/catalog.yaml} organizes skills by category:
-\begin{itemize}
-    \item Research: literature\_review, experimental\_design
-    \item Development: code\_development, testing
-    \item ML/AI: model\_training, hyperparameter\_tuning
-    \item Deployment: containerization, ci\_cd
-\end{itemize}
-
-\paragraph{Skill Chains} Complex workflows use predefined chains:
-\begin{itemize}
-    \item \texttt{full\_research\_pipeline}: literature $\rightarrow$ design $\rightarrow$ validation
-    \item \texttt{ml\_optimization}: profiling $\rightarrow$ quantization $\rightarrow$ benchmarking
-\end{itemize}
-
-\paragraph{Dynamic Loading} Skills are enabled via:
-\begin{lstlisting}[language=bash]
-./scripts/enable_skill.sh quantization pruning
-\end{lstlisting}
-
-This updates \texttt{.workflow/skills/enabled.yaml} and makes capabilities available to the active agent.
-
-\subsection{Phase-Based Execution}
-
-UWS structures work into phases:
-
-\paragraph{Phase Transitions} Moving between phases:
-\begin{enumerate}
-    \item Verify phase completion criteria
-    \item Create transition checkpoint
-    \item Update \texttt{state.yaml} with new phase
-    \item Activate appropriate agent for new phase
-\end{enumerate}
-
-\paragraph{Phase Workspaces} Each phase has a dedicated directory:
-\begin{itemize}
-    \item \texttt{phases/phase\_1\_planning/}: Requirements, scope docs
-    \item \texttt{phases/phase\_2\_implementation/}: Source code
-    \item \texttt{phases/phase\_3\_validation/}: Test results, metrics
-\end{itemize}
-
-\subsection{Implementation Details}
-
-UWS is implemented in Bash for maximum portability:
-
-\paragraph{Dependencies} Required: Bash 4+, git. Optional: yq (YAML processing).
-
-\paragraph{Utility Libraries} Core functionality is provided by:
-\begin{itemize}
-    \item \texttt{yaml\_utils.sh}: YAML parsing with yq fallback
-    \item \texttt{validation\_utils.sh}: Input validation and sanitization
-\end{itemize}
-
-\paragraph{Error Handling} All scripts use \texttt{set -euo pipefail} for strict error handling, with graceful degradation for optional features.
-
-\subsection{Usage Example}
-
-A typical UWS session:
-
-\begin{lstlisting}[language=bash]
-# Initialize workflow
-./scripts/init_workflow.sh
-
-# Activate researcher agent
-./scripts/activate_agent.sh researcher
-
-# Work on literature review...
-# Create checkpoint
-./scripts/checkpoint.sh "Literature review complete"
-
-# Transition to implementer
-./scripts/activate_agent.sh implementer
-
-# After a break, recover context
-./scripts/recover_context.sh
-\end{lstlisting}
-
-Recovery displays current state, recent checkpoints, active agent, and suggested next actions---enabling quick resumption of work.

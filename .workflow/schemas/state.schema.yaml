@@ -1,0 +1,77 @@
+# State File Schema - UWS RWF Enhancement
+# Schema version: 2.0
+# Validates .workflow/state.yaml structure
+
+schema_version: "2.0"
+description: "Universal Workflow System state file schema"
+
+# Required fields (must exist and not be null after initialization)
+required:
+  - current_phase
+  - current_checkpoint
+  - metadata.schema_version
+  - metadata.last_updated
+  - project.type
+
+# Field type definitions
+types:
+  current_phase: "string"
+  current_checkpoint: "string"
+  checkpoint_count: "integer"
+  project.name: "string"
+  project.type: "string"
+  project.initialized: "boolean"
+  active_agent.name: "string_or_null"
+  active_agent.status: "string"
+  enabled_skills: "array"
+  session.id: "string_or_null"
+  session.context_recovered: "boolean"
+  health.status: "string"
+  metadata.schema_version: "string"
+  metadata.last_updated: "iso8601"
+  features.experimental_enabled: "boolean"
+  features.debug_mode: "boolean"
+  features.dry_run: "boolean"
+
+# Pattern validation (regex)
+patterns:
+  current_phase: "^phase_[1-5]_(planning|implementation|validation|delivery|maintenance)$"
+  current_checkpoint: "^CP_([1-5]|INIT)(_[0-9]+)?$"
+  project.type: "^(research|ml|software|llm|optimization|deployment|hybrid)$"
+  active_agent.status: "^(active|inactive|suspended)$"
+  health.status: "^(healthy|degraded|critical)$"
+  metadata.schema_version: "^[0-9]+\\.[0-9]+$"
+
+# Allowed values (enum)
+enums:
+  project.type:
+    - research
+    - ml
+    - software
+    - llm
+    - optimization
+    - deployment
+    - hybrid
+  active_agent.status:
+    - active
+    - inactive
+    - suspended
+  health.status:
+    - healthy
+    - degraded
+    - critical
+
+# Phase status values
+phase_status:
+  allowed:
+    - active
+    - completed
+    - pending
+    - skipped
+
+# Cross-field consistency rules
+consistency:
+  - rule: "active_agent.status == 'active' implies active_agent.name != null"
+    description: "Active agent must have a name"
+  - rule: "project.initialized == true implies project.init_date != null"
+    description: "Initialized project must have init date"

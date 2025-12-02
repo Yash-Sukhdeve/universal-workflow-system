@@ -43,15 +43,23 @@ Existing systems manage state in various ways:
 
 \paragraph{File-Based State} Some tools use JSON or YAML files for state persistence. While simple, these approaches rarely integrate with version control systems and lack standardized recovery mechanisms.
 
-\paragraph{Git-Native State} UWS uniquely stores all state in version-controlled YAML files within the project's git repository. This provides:
+\paragraph{Git-Native State (UWS's Novel Approach)} UWS introduces a design innovation: storing \emph{all} workflow state in version-controlled YAML files within the project's git repository. Unlike prior approaches, UWS combines three elements that, to our knowledge, have not been integrated before:
 
+\begin{enumerate}
+    \item \textbf{Dual-layer persistence}: Structured state (YAML) paired with human-readable handoff (Markdown), enabling both machine parsing and human comprehension.
+    \item \textbf{Fallback recovery}: When primary state files are corrupted, UWS automatically attempts recovery from the human-readable handoff document, providing graceful degradation.
+    \item \textbf{Zero-infrastructure design}: No external database, message queue, or container runtime required---only git and standard Unix utilities (bash, grep, sed).
+\end{enumerate}
+
+This design enables:
 \begin{itemize}
     \item \textbf{Natural versioning}: Every checkpoint is a git commit
-    \item \textbf{Diffing}: State changes are visible via \texttt{git diff}
+    \item \textbf{Diffing}: State changes visible via \texttt{git diff}
     \item \textbf{Branching}: Experimental workflows via git branches
-    \item \textbf{Collaboration}: Team workflows via standard git operations
-    \item \textbf{Familiarity}: Developers already know git
+    \item \textbf{Portability}: Works on any system with git and bash
 \end{itemize}
+
+The key insight is that by treating workflow state as \emph{source code}---versioned, diffable, and human-readable---we inherit decades of version control best practices for free.
 
 \subsection{Workflow Phases}
 

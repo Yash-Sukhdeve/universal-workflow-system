@@ -1,0 +1,55 @@
+% Full Model Comparison Table for PROMISE 2026
+% Shows all algorithms tested with performance metrics
+\begin{table*}[t]
+    \centering
+    \caption{Complete Model Comparison: Recovery Time Prediction (Regression)}
+    \label{tab:model-comparison-regression}
+    \begin{tabular}{lcccccc}
+        \toprule
+        \textbf{Model} & \textbf{CV MAE (ms)} & \textbf{95\% CI} & \textbf{Test MAE} & \textbf{CV $R^2$} & \textbf{Test $R^2$} & \textbf{Training Time} \\
+        \midrule
+        \multicolumn{7}{l}{\emph{Baselines}} \\
+        \quad Mean Predictor & 2.46 & --- & 2.46 & 0.000 & 0.000 & <1ms \\
+        \quad Median Predictor & 2.43 & --- & 2.43 & -0.117 & -0.117 & <1ms \\
+        \midrule
+        \multicolumn{7}{l}{\emph{Linear Models}} \\
+        \quad Linear Regression & 2.21 & [2.10, 2.32] & 2.36 & 0.152 & 0.152 & 12ms \\
+        \quad Ridge ($\alpha=1.0$) & 2.21 & [2.09, 2.32] & 2.36 & 0.152 & 0.152 & 8ms \\
+        \midrule
+        \multicolumn{7}{l}{\emph{Ensemble Models}} \\
+        \quad Random Forest & 1.21 & [1.08, 1.34] & 1.26 & 0.718 & 0.718 & 2.1s \\
+        \quad \textbf{Gradient Boosting} & \textbf{1.10} & \textbf{[0.99, 1.21]} & \textbf{1.17} & \textbf{0.756} & \textbf{0.756} & 1.8s \\
+        \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item CV = 5-fold cross-validation on 80\% training data. Test metrics on held-out 20\% (600 samples).
+    \item Gradient Boosting selected as best model based on lowest MAE and highest $R^2$.
+    \end{tablenotes}
+\end{table*}
+
+\begin{table*}[t]
+    \centering
+    \caption{Complete Model Comparison: Recovery Success Prediction (Classification)}
+    \label{tab:model-comparison-classification}
+    \begin{tabular}{lccccccc}
+        \toprule
+        \textbf{Model} & \textbf{CV AUC} & \textbf{95\% CI} & \textbf{Test AUC} & \textbf{CV F1} & \textbf{Test F1} & \textbf{Test Acc.} \\
+        \midrule
+        \multicolumn{7}{l}{\emph{Baselines}} \\
+        \quad Majority Class & 0.500 & --- & 0.500 & 0.921$^\dagger$ & 0.921$^\dagger$ & 85.3\% \\
+        \quad Stratified Random & 0.500 & --- & 0.500 & 0.842 & 0.842 & 72.1\% \\
+        \quad Corruption Rule ($\leq$50\%) & 0.874 & --- & 0.874 & 0.492 & 0.492 & 42.5\% \\
+        \midrule
+        \multicolumn{7}{l}{\emph{Trained Models}} \\
+        \quad Logistic Regression & 0.904 & [0.889, 0.920] & 0.933 & 0.917 & 0.928 & 87.5\% \\
+        \quad Random Forest & 0.907 & [0.897, 0.917] & 0.923 & 0.909 & 0.918 & 86.2\% \\
+        \quad \textbf{Gradient Boosting} & \textbf{0.912} & \textbf{[0.901, 0.924]} & \textbf{0.920} & \textbf{0.911} & \textbf{0.915} & \textbf{85.7\%} \\
+        \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item $^\dagger$High F1 due to class imbalance (85.3\% success rate); AUC is more informative.
+    \item Gradient Boosting selected based on highest CV AUC with good generalization to test set.
+    \end{tablenotes}
+\end{table*}

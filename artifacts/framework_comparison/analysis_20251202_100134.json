@@ -1,0 +1,162 @@
+{
+  "UWS": {
+    "is_simulated": false,
+    "overall": {
+      "success_rate": 1.0,
+      "mean_time_ms": 0.04453733175372084,
+      "mean_completeness": 11.919191919191919
+    },
+    "by_corruption_level": {
+      "0.0": {
+        "success_rate": 1.0,
+        "mean_time_ms": 0.04877999405531833,
+        "std_time_ms": 0.007730773098539606,
+        "mean_completeness": 59.59595959595959
+      },
+      "0.1": {
+        "success_rate": 1.0,
+        "mean_time_ms": 0.043656667306398354,
+        "std_time_ms": 0.002035193259564539,
+        "mean_completeness": 0.0
+      },
+      "0.3": {
+        "success_rate": 1.0,
+        "mean_time_ms": 0.04186000054081281,
+        "std_time_ms": 0.0018644388864090574,
+        "mean_completeness": 0.0
+      },
+      "0.5": {
+        "success_rate": 1.0,
+        "mean_time_ms": 0.04361333170284828,
+        "std_time_ms": 0.005216521397682511,
+        "mean_completeness": 0.0
+      },
+      "0.9": {
+        "success_rate": 1.0,
+        "mean_time_ms": 0.044776665163226426,
+        "std_time_ms": 0.005325974164672455,
+        "mean_completeness": 0.0
+      }
+    }
+  },
+  "LangGraph": {
+    "is_simulated": true,
+    "overall": {
+      "success_rate": 0.6666666666666666,
+      "mean_time_ms": 13.431420765954567,
+      "mean_completeness": 36.36363636363637
+    },
+    "by_corruption_level": {
+      "0.0": {
+        "success_rate": 0.6666666666666666,
+        "mean_time_ms": 9.986196486727964,
+        "std_time_ms": 5.069288898762891,
+        "mean_completeness": 36.36363636363637
+      },
+      "0.1": {
+        "success_rate": 1.0,
+        "mean_time_ms": 14.153544178746873,
+        "std_time_ms": 5.0532805415733355,
+        "mean_completeness": 54.54545454545455
+      },
+      "0.3": {
+        "success_rate": 0.3333333333333333,
+        "mean_time_ms": 15.77716015492711,
+        "std_time_ms": 3.379650747398057,
+        "mean_completeness": 18.181818181818183
+      },
+      "0.5": {
+        "success_rate": 1.0,
+        "mean_time_ms": 12.495635987495614,
+        "std_time_ms": 5.764596692159409,
+        "mean_completeness": 54.54545454545455
+      },
+      "0.9": {
+        "success_rate": 0.3333333333333333,
+        "mean_time_ms": 14.74456702187527,
+        "std_time_ms": 3.0225170113076363,
+        "mean_completeness": 18.181818181818183
+      }
+    }
+  },
+  "AutoGen": {
+    "is_simulated": true,
+    "overall": {
+      "success_rate": 0.4666666666666667,
+      "mean_time_ms": 126.70667557422227,
+      "mean_completeness": 25.454545454545457
+    },
+    "by_corruption_level": {
+      "0.0": {
+        "success_rate": 0.3333333333333333,
+        "mean_time_ms": 119.05357762045342,
+        "std_time_ms": 60.75698761749541,
+        "mean_completeness": 18.181818181818183
+      },
+      "0.1": {
+        "success_rate": 0.6666666666666666,
+        "mean_time_ms": 135.11711771324758,
+        "std_time_ms": 68.27078703216213,
+        "mean_completeness": 36.36363636363637
+      },
+      "0.3": {
+        "success_rate": 0.3333333333333333,
+        "mean_time_ms": 110.44404291645876,
+        "std_time_ms": 51.98339714612697,
+        "mean_completeness": 18.181818181818183
+      },
+      "0.5": {
+        "success_rate": 0.6666666666666666,
+        "mean_time_ms": 128.14411243053053,
+        "std_time_ms": 39.65398931187246,
+        "mean_completeness": 36.36363636363637
+      },
+      "0.9": {
+        "success_rate": 0.3333333333333333,
+        "mean_time_ms": 140.77452719042108,
+        "std_time_ms": 52.53625732550014,
+        "mean_completeness": 18.181818181818183
+      }
+    }
+  },
+  "CrewAI": {
+    "is_simulated": true,
+    "overall": {
+      "success_rate": 0.5333333333333333,
+      "mean_time_ms": 63.02736833289907,
+      "mean_completeness": 29.09090909090909
+    },
+    "by_corruption_level": {
+      "0.0": {
+        "success_rate": 0.3333333333333333,
+        "mean_time_ms": 54.05868203065212,
+        "std_time_ms": 26.434245083181928,
+        "mean_completeness": 18.181818181818183
+      },
+      "0.1": {
+        "success_rate": 0.6666666666666666,
+        "mean_time_ms": 40.5031475678723,
+        "std_time_ms": 9.378628606733846,
+        "mean_completeness": 36.36363636363637
+      },
+      "0.3": {
+        "success_rate": 0.6666666666666666,
+        "mean_time_ms": 77.22944282307071,
+        "std_time_ms": 21.032136131018756,
+        "mean_completeness": 36.36363636363637
+      },
+      "0.5": {
+        "success_rate": 0.3333333333333333,
+        "mean_time_ms": 73.53342892995212,
+        "std_time_ms": 9.03670636336069,
+        "mean_completeness": 18.181818181818183
+      },
+      "0.9": {
+        "success_rate": 0.6666666666666666,
+        "mean_time_ms": 69.81214031294812,
+        "std_time_ms": 14.614596040780645,
+        "mean_completeness": 36.36363636363637
+      }
+    }
+  }
+}

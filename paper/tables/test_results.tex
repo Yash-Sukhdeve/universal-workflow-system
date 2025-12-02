@@ -6,12 +6,20 @@
         \toprule
         \textbf{Category} & \textbf{Tests} & \textbf{Passing} & \textbf{Pass Rate} \\
         \midrule
-        Unit Tests & 99 & 88 & 89\% \\
-        Integration & 25 & 25 & 100\% \\
-        End-to-End & 40 & 40 & 100\% \\
-        Performance & 11 & 11 & 100\% \\
+        \multicolumn{4}{l}{\emph{Core Functionality}} \\
+        \quad Unit Tests & 99 & 88 & 89\% \\
+        \quad Integration & 18 & 18 & 100\% \\
+        \quad End-to-End & 40 & 40 & 100\% \\
+        \quad Performance & 11 & 11 & 100\% \\
         \midrule
-        \textbf{Total} & \textbf{175} & \textbf{164} & \textbf{94\%} \\
+        \multicolumn{4}{l}{\emph{Resilience Utilities (Experimental)}} \\
+        \quad Atomic/Checksum & 188 & 143 & 76\%$^*$ \\
+        \midrule
+        \textbf{Total} & \textbf{356} & \textbf{300} & \textbf{84\%} \\
         \bottomrule
     \end{tabular}
+    \begin{tablenotes}
+    \small
+    \item $^*$Failures due to test harness compatibility issues
+    \end{tablenotes}
 \end{table}

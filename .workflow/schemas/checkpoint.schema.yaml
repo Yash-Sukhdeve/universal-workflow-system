@@ -1,0 +1,44 @@
+# Checkpoint Metadata Schema - UWS RWF Enhancement
+# Validates checkpoint metadata.yaml files
+
+schema_version: "2.0"
+description: "Checkpoint metadata file schema"
+
+# Required fields
+required:
+  - checkpoint_id
+  - created
+  - message
+  - phase
+
+# Field types
+types:
+  checkpoint_id: "string"
+  created: "iso8601"
+  message: "string"
+  git_commit: "string_or_null"
+  git_branch: "string_or_null"
+  files_changed: "integer"
+  phase: "string"
+  version: "string"
+
+# Pattern validation
+patterns:
+  checkpoint_id: "^CP_([1-5]|INIT)(_[0-9]+)?$"
+  phase: "^phase_[1-5]_(planning|implementation|validation|delivery|maintenance)$"
+  git_commit: "^[a-f0-9]{7,40}$"
+  version: "^[0-9]+\\.[0-9]+$"
+
+# Snapshot manifest (v2 format)
+manifest:
+  required:
+    - snapshot_id
+    - created
+    - version
+    - files
+    - combined_checksum
+  file_entry:
+    required:
+      - path
+      - checksum
+      - required

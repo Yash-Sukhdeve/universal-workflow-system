@@ -1,0 +1,602 @@
+[
+  {
+    "framework": "UWS",
+    "corruption_level": 0.0,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 0.054329997510649264,
+    "completeness_percent": 91.28787878787878,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.0,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 0.052059986046515405,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.0,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 0.03994999860879034,
+    "completeness_percent": 87.5,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.1,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 0.043370004277676344,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.1,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 0.045819993829354644,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.1,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 0.04178000381216407,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.3,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 0.0415499962400645,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.3,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 0.04386001091916114,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.3,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 0.04016999446321279,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.5,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 0.04961999366059899,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.5,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 0.04021999484393746,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.5,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 0.04100000660400838,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.9,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 0.04416999581735581,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.9,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 0.039780003135092556,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "UWS",
+    "corruption_level": 0.9,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 0.05037999653723091,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": false
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.0,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 15.387796311764525,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.0,
+    "trial": 2,
+    "success": false,
+    "recovery_time_ms": 5.332263338420473,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.0,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 9.238529809998894,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.1,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 8.384560482494395,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.1,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 17.796168314883275,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.1,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 16.27990373886295,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.3,
+    "trial": 1,
+    "success": false,
+    "recovery_time_ms": 18.892843101988497,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.3,
+    "trial": 2,
+    "success": false,
+    "recovery_time_ms": 16.254368804718048,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.3,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 12.184268558074782,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.5,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 15.75111974701671,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.5,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 5.839778740932511,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.5,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 15.89600947453762,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.9,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 17.172937809500937,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.9,
+    "trial": 2,
+    "success": false,
+    "recovery_time_ms": 11.35946694249813,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "LangGraph",
+    "corruption_level": 0.9,
+    "trial": 3,
+    "success": false,
+    "recovery_time_ms": 15.701296313626743,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.0,
+    "trial": 1,
+    "success": false,
+    "recovery_time_ms": 59.36921087895898,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.0,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 116.96233306132464,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.0,
+    "trial": 3,
+    "success": false,
+    "recovery_time_ms": 180.82918892107665,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.1,
+    "trial": 1,
+    "success": false,
+    "recovery_time_ms": 160.41367916481113,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.1,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 57.8084677800735,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.1,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 187.12920619485814,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.3,
+    "trial": 1,
+    "success": false,
+    "recovery_time_ms": 110.07690500045977,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.3,
+    "trial": 2,
+    "success": false,
+    "recovery_time_ms": 58.645187092952156,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.3,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 162.61003665596434,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.5,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 170.68132648820432,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.5,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 92.19974533603352,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.5,
+    "trial": 3,
+    "success": false,
+    "recovery_time_ms": 121.55126546735374,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.9,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 123.1775661963659,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.9,
+    "trial": 2,
+    "success": false,
+    "recovery_time_ms": 199.85042365726002,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "AutoGen",
+    "corruption_level": 0.9,
+    "trial": 3,
+    "success": false,
+    "recovery_time_ms": 99.29559171763731,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.0,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 68.58043313816917,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.0,
+    "trial": 2,
+    "success": false,
+    "recovery_time_ms": 23.546820009730027,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.0,
+    "trial": 3,
+    "success": false,
+    "recovery_time_ms": 70.04879294405717,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.1,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 37.43011815604771,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.1,
+    "trial": 2,
+    "success": false,
+    "recovery_time_ms": 33.0465514539074,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.1,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 51.03277309366178,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.3,
+    "trial": 1,
+    "success": true,
+    "recovery_time_ms": 99.20202918895043,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.3,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 75.20165601838231,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.3,
+    "trial": 3,
+    "success": false,
+    "recovery_time_ms": 57.284643261879395,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.5,
+    "trial": 1,
+    "success": false,
+    "recovery_time_ms": 64.8891908257501,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.5,
+    "trial": 2,
+    "success": false,
+    "recovery_time_ms": 72.79393533428959,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.5,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 82.91716062981669,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.9,
+    "trial": 1,
+    "success": false,
+    "recovery_time_ms": 59.71818287826367,
+    "completeness_percent": 0.0,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.9,
+    "trial": 2,
+    "success": true,
+    "recovery_time_ms": 86.57109729680387,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  },
+  {
+    "framework": "CrewAI",
+    "corruption_level": 0.9,
+    "trial": 3,
+    "success": true,
+    "recovery_time_ms": 63.14714076377682,
+    "completeness_percent": 54.54545454545455,
+    "error_message": null,
+    "is_simulated": true
+  }
+]
