@@ -1,7 +1,0 @@
-checkpoint_id: "CP_1_004"
-created: "2025-11-21T15:22:40-05:00"
-message: "Final FSE 2026 submission ready: all benchmarks, tables, replication package complete Manual checkpoint"
-git_commit: "a3ed5ae"
-git_branch: "master"
-files_changed: 25
-phase: "phase_1_planning"

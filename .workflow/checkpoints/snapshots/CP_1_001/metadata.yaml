@@ -1,7 +1,0 @@
-checkpoint_id: "CP_1_001"
-created: "2025-11-21T13:19:28-05:00"
-message: "Research execution complete: benchmarks, analysis, paper updated Manual checkpoint"
-git_commit: "9d4f60d"
-git_branch: "master"
-files_changed: 10
-phase: "phase_1_planning"

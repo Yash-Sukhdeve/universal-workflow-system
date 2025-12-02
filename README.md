@@ -1,265 +1,188 @@
-# Universal Workflow System
+# Universal Workflow System (UWS)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](#)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-A domain-agnostic, git-based workflow system with intelligent agents and skills for reproducible research and development. Maintains context across sessions, survives context resets, and adapts to any project type.
+**Context-preserving workflow system for AI-assisted development.** Maintains state across sessions, survives context resets, and works with any project type.
 
-## 🚀 Quick Start
+---
+
+## Quick Start with Claude Code
 
 ```bash
-# Navigate to your project directory
-cd your-project
+# In your project directory:
+curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
 
-# Copy workflow system scripts to your project
-# (or clone into a separate directory and copy scripts/)
+# Start Claude Code
+claude
 
-# Initialize for your project
-./scripts/init_workflow.sh
-
-# Or use auto-detection
-./scripts/detect_and_configure.sh
+# Your context loads automatically. Use these commands:
+/uws:status              # Check current state
+/uws:checkpoint "msg"    # Save progress
+/uws:recover             # Full context recovery
+/uws:handoff             # Prepare for session end
 ```
 
-## 🔌 Claude Code Integration (NEW!)
+**[Full Getting Started Guide →](claude-code-integration/GETTING_STARTED.md)**
 
-One-liner to add UWS to any project with full Claude Code integration:
+---
+
+## What UWS Does
+
+| Problem | UWS Solution |
+|---------|--------------|
+| Context lost after session break | **Auto-loads context** on session start |
+| Forgot where you left off | **Handoff document** preserves priorities |
+| Context window fills up | **Auto-checkpoints** before compaction |
+| Manual state tracking | **Structured state** in git-native YAML |
+
+## Features
+
+- **Context Persistence** - State survives any context window reset
+- **Auto-Checkpointing** - Saves before context compaction
+- **Multi-Agent System** - 7 specialized agents for different tasks
+- **Skill Library** - 26 reusable skills across 6 categories
+- **Git Native** - Everything tracked in version control
+- **Zero Dependencies** - Pure Bash, works anywhere
+
+---
+
+## Installation Options
+
+### Option 1: Claude Code Integration (Recommended)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
 ```
 
-**What you get:**
-- **Auto context loading** - Claude knows your project state on session start
-- **Auto checkpointing** - State saved before context window resets
-- **Slash commands** - `/uws:status`, `/uws:checkpoint`, `/uws:recover`, `/uws:handoff`
+### Option 2: Standalone Scripts
 
-**Usage:**
 ```bash
-# Start Claude Code in your project
-claude
+git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git
+cd your-project
+/path/to/universal-workflow-system/scripts/init_workflow.sh
+```
+
+---
+
+## Repository Structure
+
+```
+universal-workflow-system/
+├── claude-code-integration/   # Claude Code plug-and-play installer
+│   ├── install.sh             # One-liner installer
+│   └── GETTING_STARTED.md     # Detailed guide
+├── scripts/                   # Core workflow scripts
+│   ├── init_workflow.sh       # Initialize workflow
+│   ├── checkpoint.sh          # Create/restore checkpoints
+│   ├── recover_context.sh     # Recover after breaks
+│   ├── status.sh              # Show current state
+│   └── activate_agent.sh      # Switch agents
+├── .workflow/                 # Workflow state (template)
+│   ├── state.yaml             # Current phase/checkpoint
+│   ├── handoff.md             # Human-readable context
+│   ├── agents/                # Agent definitions
+│   └── skills/                # Skill catalog
+├── tests/                     # BATS test suite
+└── research/                  # Academic research (PROMISE 2026)
+```
+
+---
+
+## Agents & Skills
+
+### 7 Specialized Agents
+
+| Agent | Purpose |
+|-------|---------|
+| 🔬 **Researcher** | Literature review, experiments, statistics |
+| 🏗️ **Architect** | System design, APIs, schemas |
+| 💻 **Implementer** | Code development, testing |
+| 🧪 **Experimenter** | Benchmarks, ablations, A/B tests |
+| ⚡ **Optimizer** | Quantization, pruning, performance |
+| 🚀 **Deployer** | Containers, CI/CD, monitoring |
+| 📚 **Documenter** | Papers, docs, presentations |
+
+### 26 Skills in 6 Categories
+
+- **Research**: literature_review, experimental_design, statistical_validation
+- **Development**: code_generation, debugging, testing, refactoring
+- **ML/AI**: model_development, fine_tuning, quantization, pruning
+- **Optimization**: profiling, benchmarking, hyperparameter_tuning
+- **Deployment**: containerization, ci_cd, monitoring, scaling
+- **Documentation**: technical_writing, paper_writing, visualization
+
+---
+
+## Core Commands
+
+```bash
+# Initialize workflow
+./scripts/init_workflow.sh
 
 # Check status
-/uws:status
-
-# Create checkpoint
-/uws:checkpoint "Completed feature X"
-
-# Prepare handoff before ending
-/uws:handoff
-```
-
-📖 **[Full Getting Started Guide](claude-code-integration/GETTING_STARTED.md)**
-
----
-
-## 📋 Features
-
-- **Context Persistence**: State survives any context window reset
-- **Multi-Agent System**: Specialized agents for different tasks
-- **Skill Library**: Reusable skills across projects
-- **Domain Agnostic**: Works for ML research, software development, LLM projects, etc.
-- **Git Native**: Everything tracked in version control
-- **Checkpoint System**: Clear progress markers and recovery points
-- **Knowledge Accumulation**: Learns patterns across projects
-
-## 🏗️ Architecture
-
-```
-your_project/
-├── .workflow/          # Core workflow system
-│   ├── state.yaml     # Current state
-│   ├── agents/        # Agent definitions
-│   ├── skills/        # Skill library
-│   └── knowledge/     # Accumulated patterns
-├── phases/            # Project phases
-├── artifacts/         # Generated outputs
-└── workspace/         # Working directory
-```
-
-## 🤖 Available Agents
-
-| Agent | Purpose | Use Cases |
-|-------|---------|-----------|
-| **Researcher** | Literature review, hypothesis formation | Papers, surveys, analysis |
-| **Architect** | System design, architecture planning | APIs, databases, pipelines |
-| **Implementer** | Code development, model building | Prototypes, production code |
-| **Experimenter** | Running experiments, benchmarks | A/B tests, ablations |
-| **Optimizer** | Performance optimization | Quantization, pruning, tuning |
-| **Deployer** | Deployment and DevOps | Cloud, edge, containers |
-| **Documenter** | Documentation and papers | Technical docs, papers, guides |
-
-## 🛠️ Skill Categories
-
-### Research Skills
-- Literature Review
-- Experimental Design
-- Statistical Validation
-- Paper Writing
-
-### ML/AI Skills
-- Model Development
-- Model Optimization (Quantization, Pruning)
-- LLM Specialization
-- Fine-tuning
-
-### Software Engineering Skills
-- Architecture Design
-- Production Readiness
-- Testing Suites
-- CI/CD Pipelines
-
-### Deployment Skills
-- Containerization
-- Cloud Deployment
-- Monitoring Setup
-- Scaling Strategies
-
-## 📖 Usage Examples
-
-### Research Project
-```bash
-# Activate research workflow
-./scripts/activate_agent.sh researcher
-
-# Enable relevant skills
-./scripts/enable_skill.sh literature_review experimental_design
-
-# Check current state
 ./scripts/status.sh
-```
 
-### LLM Development
-```bash
-# Initialize workflow and configure as LLM project
-./scripts/init_workflow.sh
-# (select option 4 for LLM/Transformer Project)
-
-# Start optimization
-./scripts/activate_agent.sh optimizer
-./scripts/enable_skill.sh quantization pruning
-```
-
-### Production Software
-```bash
-# Setup production workflow
-./scripts/init_workflow.sh
-# (select option 3 for Software Development)
-
-# Enable CI/CD
-./scripts/enable_skill.sh ci_cd_setup deployment_pipeline
-```
-
-## 🔄 Context Recovery
-
-Lost context? No problem:
-
-```bash
-# Recover full context
+# Recover context after break
 ./scripts/recover_context.sh
 
-# Shows:
-# - Current phase and checkpoint
-# - Active agents and skills
-# - Next actions
-# - Critical context
-```
-
-## 📊 Progress Tracking
-
-```bash
-# View current progress
-./scripts/status.sh
-
-# Verbose status with details
-./scripts/status.sh --verbose
-
 # Create checkpoint
-./scripts/checkpoint.sh "Completed model training"
+./scripts/checkpoint.sh "Completed feature X"
 
-# View checkpoint history
-cat .workflow/checkpoints.log
+# Activate agent
+./scripts/activate_agent.sh implementer
+
+# Enable skills
+./scripts/enable_skill.sh testing debugging
 ```
-
-## 🧠 Knowledge System
-
-The system learns from your patterns:
-
-```yaml
-# .workflow/knowledge/learned_patterns.yaml
-- pattern: "LLM memory issues"
-  solution: "Use gradient checkpointing"
-  success_rate: 0.95
-```
-
-## 🔧 Configuration
-
-### Project Types
-- `research` - Academic research projects
-- `software` - Production software development
-- `llm` - LLM/transformer projects
-- `optimization` - Model optimization work
-- `deployment` - DevOps and deployment
-- `hybrid` - Mixed projects
-
-### Customization
-
-Edit `.workflow/config.yaml` to customize:
-- Default agents
-- Skill preferences
-- Checkpoint frequency
-- Git integration settings
-
-## 📚 Documentation
-
-- [Agent Registry](.workflow/agents/registry.yaml) - Complete agent definitions and capabilities
-- [Skill Catalog](.workflow/skills/catalog.yaml) - All available skills and chains
-- [Workflow Examples](.workflow/templates/workflow_examples.yaml) - Template workflows
-- [CLAUDE.md](CLAUDE.md) - Integration guide for Claude Code
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-### Adding New Skills
-
-1. Create skill definition in `.workflow/skills/definitions/`
-2. Add to skill catalog
-3. Create execution logic
-4. Submit PR with examples
-
-### Adding New Agents
-
-1. Define agent in `.workflow/agents/registry.yaml`
-2. Create agent configuration
-3. Add handoff protocols
-4. Submit PR with use cases
-
-## 📄 License
-
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Inspired by reproducible research principles
-- Built for researchers and developers who context-switch
-- Designed for real-world, complex projects
-
-## 📮 Support
-
-For issues and questions:
-- Review [CLAUDE.md](CLAUDE.md) for Claude Code integration
-- Check [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines
-- Examine workflow configuration files in `.workflow/` directory
-
-## 🚦 Status
-
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Development](https://img.shields.io/badge/status-active-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 
-**Remember**: The workflow adapts to YOU, not the other way around. Start simple, evolve as needed.
+## Workflow Phases
+
+UWS tracks your project through 5 phases:
+
+1. **Planning** - Requirements, design decisions
+2. **Implementation** - Building and coding
+3. **Validation** - Testing, benchmarking
+4. **Delivery** - Deployment, release
+5. **Maintenance** - Support, iteration
+
+---
+
+## Running Tests
+
+```bash
+# Run all tests (requires BATS)
+./tests/run_all_tests.sh
+
+# Run specific category
+./tests/run_all_tests.sh -c unit
+./tests/run_all_tests.sh -c integration
+```
+
+---
+
+## Research
+
+The `research/` directory contains academic work validating UWS design decisions:
+
+- **PROMISE 2026 Paper**: Predictive models for workflow recovery
+- **Component Study**: 840 experiments testing design variants
+- **Replication Package**: Docker environment for reproducibility
+
+See [research/README.md](research/README.md) for details.
+
+---
+
+## Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT License - see [LICENSE](LICENSE).
+
+---
+
+**Remember**: UWS adapts to you, not the other way around. Start simple, evolve as needed.

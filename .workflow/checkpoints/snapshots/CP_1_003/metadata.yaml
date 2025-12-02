@@ -1,7 +1,0 @@
-checkpoint_id: "CP_1_003"
-created: "2025-11-21T15:11:16-05:00"
-message: "TIER 1-3 complete: baselines, statistics, repository mining, ablation, sensitivity Manual checkpoint"
-git_commit: "a3ed5ae"
-git_branch: "master"
-files_changed: 16
-phase: "phase_1_planning"
