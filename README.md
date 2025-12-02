@@ -22,6 +22,38 @@ cd your-project
 ./scripts/detect_and_configure.sh
 ```
 
+## 🔌 Claude Code Integration (NEW!)
+
+One-liner to add UWS to any project with full Claude Code integration:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
+```
+
+**What you get:**
+- **Auto context loading** - Claude knows your project state on session start
+- **Auto checkpointing** - State saved before context window resets
+- **Slash commands** - `/uws:status`, `/uws:checkpoint`, `/uws:recover`, `/uws:handoff`
+
+**Usage:**
+```bash
+# Start Claude Code in your project
+claude
+
+# Check status
+/uws:status
+
+# Create checkpoint
+/uws:checkpoint "Completed feature X"
+
+# Prepare handoff before ending
+/uws:handoff
+```
+
+📖 **[Full Getting Started Guide](claude-code-integration/GETTING_STARTED.md)**
+
+---
+
 ## 📋 Features
 
 - **Context Persistence**: State survives any context window reset
