@@ -27,8 +27,8 @@ source_lib() {
 }
 
 # Core utilities (always required)
-source_lib "yaml_utils.sh" || true
-source_lib "validation_utils.sh" || true
+source_lib "yaml_utils.sh" || { echo -e "${RED}Error: yaml_utils.sh not found${NC}"; exit 1; }
+source_lib "validation_utils.sh" || { echo -e "${RED}Error: validation_utils.sh not found${NC}"; exit 1; }
 
 # RWF utilities (enhanced functionality)
 source_lib "atomic_utils.sh" || true
@@ -113,7 +113,10 @@ generate_checkpoint_id() {
 
 # Function to create checkpoint (v2 format with manifests and checksums)
 create_checkpoint() {
-    local message="$1"
+    local raw_message="$1"
+    # Sanitize message: remove newlines and pipes to protect log format
+    local message
+    message=$(echo "$raw_message" | tr '\n' ' ' | tr '|' '-')
     local checkpoint_id
 
     # Set error context for better diagnostics

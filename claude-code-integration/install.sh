@@ -54,10 +54,16 @@ echo ""
 echo -e "${BLUE}[1/6]${NC} Creating directory structure..."
 
 mkdir -p "${UWS_DIR}/hooks"
+# Set restrictive permissions for UWS directory
+chmod 700 "${UWS_DIR}" 2>/dev/null || true
+
 mkdir -p "${WORKFLOW_DIR}"
+# Set restrictive permissions for Workflow directory if created
+chmod 700 "${WORKFLOW_DIR}" 2>/dev/null || true
+
 mkdir -p "${CLAUDE_DIR}/commands"
 
-echo -e "  ${GREEN}✓${NC} Directories created"
+echo -e "  ${GREEN}✓${NC} Directories created (with restricted permissions)"
 
 # ============================================================================
 # Step 2: Create hook scripts

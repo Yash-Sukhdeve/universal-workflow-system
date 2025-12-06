@@ -16,13 +16,23 @@ fi
 # Check if yq is available
 HAS_YQ=false
 if command -v yq &> /dev/null; then
-    HAS_YQ=true
+    # Check if it is mikefarah/yq (supported version)
+    if yq --version 2>&1 | grep -q "mikefarah"; then
+        HAS_YQ=true
+    elif yq --help 2>&1 | grep -q "mikefarah"; then
+        HAS_YQ=true
+    else
+        # It might be kislyuk/yq or other variant which uses different syntax
+        # We fallback to safe internal implementation for consistency
+        if [[ "${YAML_UTILS_QUIET:-false}" != "true" ]]; then
+            echo -e "${YELLOW}Note: Incompatible yq version detected. Using internal fallback.${NC}" >&2
+        fi
+    fi
 fi
 
 # Display warning if yq is not available
 if [[ "$HAS_YQ" == "false" ]] && [[ "${YAML_UTILS_QUIET:-false}" != "true" ]]; then
-    echo -e "${YELLOW}Warning: yq not found. Using fallback YAML parsing.${NC}" >&2
-    echo -e "${YELLOW}Install yq for better performance: https://github.com/mikefarah/yq${NC}" >&2
+    echo -e "${YELLOW}Warning: Using fallback YAML parsing (install mikefarah/yq for better performance)${NC}" >&2
 fi
 
 #######################################
@@ -131,7 +141,11 @@ yaml_set() {
             }
         else
             # Top-level key
-            sed -i.tmp "s/^${key}:.*/${key}: ${value}/" "$file" || {
+            # Escape slashes and ampersands for sed safety
+            local escaped_value
+            escaped_value=$(echo "$value" | sed 's/[\/&]/\\&/g')
+
+            sed -i.tmp "s/^${key}:.*/${key}: ${escaped_value}/" "$file" || {
                 echo "Error: Failed to set ${key} in $file" >&2
                 mv "${file}.backup" "$file"
                 return 1
