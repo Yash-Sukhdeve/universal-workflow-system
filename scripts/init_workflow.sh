@@ -107,6 +107,9 @@ create_workflow_structure() {
     mkdir -p phases/{phase_1_planning,phase_2_implementation,phase_3_validation,phase_4_delivery,phase_5_maintenance}
     mkdir -p {artifacts,workspace,archive}
     
+    # Set restrictive permissions for the workflow directory (RWF Security)
+    chmod 700 .workflow
+
     echo "  ✓ Directory structure created"
 }
 
