@@ -1,0 +1,17 @@
+{
+  "name": "Universal Workflow System",
+  "shortDescription": "Context-resilient workflow management for AI development",
+  "description": "Complete workflow system featuring 7 specialized agents, skill chains, checkpoint snapshots with integrity verification, and automatic context recovery. Survives context resets and maintains continuity across sessions.",
+  "category": "workflow-management",
+  "tags": [
+    "workflow",
+    "context",
+    "agents",
+    "checkpoints",
+    "recovery",
+    "git-native",
+    "multi-agent"
+  ],
+  "screenshots": [],
+  "support": "https://github.com/lab2208/universal-workflow-system/issues"
+}

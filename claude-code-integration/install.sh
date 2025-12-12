@@ -30,7 +30,7 @@ CLAUDE_DIR="${PROJECT_DIR}/.claude"
 echo -e "${BOLD}${BLUE}"
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║     UWS - Universal Workflow System for Claude Code          ║"
-echo "║                    Version ${UWS_VERSION}                              ║"
+echo "║                    Version ${UWS_VERSION}                    ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
