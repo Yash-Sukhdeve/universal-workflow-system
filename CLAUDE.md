@@ -122,6 +122,42 @@ PROMISE 2026 submission with:
 3. Create checkpoints at milestones: `./scripts/checkpoint.sh "description"`
 4. Update `handoff.md` before ending session with next actions and blockers
 
+## Claude Code Plugin
+
+UWS includes a Claude Code plugin for seamless integration. The plugin provides slash commands, automated hooks, and autonomous skills.
+
+### Slash Commands
+```
+/uws-status              # Show workflow status (phase, agent, checkpoint)
+/uws-checkpoint <msg>    # Create checkpoint with message
+/uws-recover             # Recover context after session break
+/uws-agent <name>        # Activate agent (researcher, architect, implementer, etc.)
+/uws-skill <name>        # Enable/disable skills
+/uws-handoff             # Prepare session handoff notes
+```
+
+### Automated Hooks
+- **SessionStart**: Auto-runs `recover_context.sh` when Claude Code starts
+- **PreCompact**: Auto-creates checkpoint before context compaction
+
+### Skills (Autonomous Usage)
+Claude can autonomously use these capabilities when appropriate:
+- `workflow-checkpoint`: Creates checkpoints after completing major work
+- `workflow-recovery`: Recovers context when state seems stale
+- `workflow-status`: Checks state before major operations
+
+### Plugin Files
+```
+.claude/
+├── commands/           # Slash command definitions
+├── skills/             # Autonomous skill definitions
+└── settings.json       # Hook configuration
+
+.claude-plugin/
+├── plugin.json         # Plugin manifest
+└── marketplace.json    # Distribution metadata
+```
+
 ## Python Dependencies
 
 For benchmarks and predictive modeling (install from `replication/requirements.txt`):

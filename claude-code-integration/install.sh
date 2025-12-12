@@ -30,7 +30,7 @@ CLAUDE_DIR="${PROJECT_DIR}/.claude"
 echo -e "${BOLD}${BLUE}"
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║     UWS - Universal Workflow System for Claude Code          ║"
-echo "║                    Version ${UWS_VERSION}                              ║"
+echo "║                    Version ${UWS_VERSION}                    ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -296,7 +296,51 @@ Then update it with fresh information from this session. Make sure to:
 - Focus on actionable next steps
 CMD_EOF
 
+
+# /uws:sdlc command
+cat > "${CLAUDE_DIR}/commands/uws-sdlc" << 'CMD_EOF'
+---
+description: "Manage SDLC status"
+allowed-tools:
+  - "Bash(./scripts/sdlc.sh:*)"
+---
+
+# UWS SDLC Management
+
+Manage the Software Development Life Cycle.
+
+Usage:
+- Status: \`./scripts/sdlc.sh status\`
+- Start: \`./scripts/sdlc.sh start\`
+- Next Phase: \`./scripts/sdlc.sh next\`
+- Report Failure: \`./scripts/sdlc.sh fail "details"\`
+
+Execute the appropriate command based on user request.
+CMD_EOF
+
+# /uws:research command
+cat > "${CLAUDE_DIR}/commands/uws-research" << 'CMD_EOF'
+---
+description: "Manage Research workflow"
+allowed-tools:
+  - "Bash(./scripts/research.sh:*)"
+---
+
+# UWS Research Management
+
+Manage the Research Methodology lifecycle.
+
+Usage:
+- Status: \`./scripts/research.sh status\`
+- Start: \`./scripts/research.sh start\`
+- Next Phase: \`./scripts/research.sh next\`
+- Reject Hypothesis: \`./scripts/research.sh reject\`
+
+Execute the appropriate command based on user request.
+CMD_EOF
+
 echo -e "  ${GREEN}✓${NC} Slash commands created"
+
 
 # ============================================================================
 # Step 4: Initialize workflow state
@@ -409,6 +453,8 @@ cat > "$SETTINGS_FILE" << 'SETTINGS_EOF'
   "permissions": {
     "allow": [
       "Bash(./.uws/hooks/*:*)",
+      "Bash(./scripts/sdlc.sh:*)",
+      "Bash(./scripts/research.sh:*)",
       "Bash(cat .workflow/*:*)",
       "Bash(grep:*)",
       "Bash(tail:*)",
