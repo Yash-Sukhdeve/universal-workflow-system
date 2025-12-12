@@ -50,3 +50,5 @@ health:
 metadata:
   schema_version: "1.0"
   last_updated: "2024-01-01T00:00:00Z"
+sdlc_phase: "design"
+research_phase: hypothesis
