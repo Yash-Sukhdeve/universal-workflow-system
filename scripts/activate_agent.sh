@@ -273,25 +273,25 @@ load_agent_skills() {
     # Define skills for each agent
     case $agent in
         researcher)
-            skills=("literature_review" "experimental_design" "statistical_validation")
+            skills=("literature_review" "experimental_design" "statistical_validation" "review_cl" "risk_analysis")
             ;;
         architect)
-            skills=("system_design" "api_design" "architecture_patterns")
+            skills=("system_design" "api_design" "architecture_patterns" "review_cl")
             ;;
         implementer)
-            skills=("code_generation" "debugging" "testing")
+            skills=("code_generation" "debugging" "testing" "submit_cl")
             ;;
         experimenter)
-            skills=("experiment_execution" "benchmarking" "data_analysis")
+            skills=("experiment_execution" "benchmarking" "data_analysis" "submit_cl")
             ;;
         optimizer)
-            skills=("quantization" "pruning" "profiling")
+            skills=("quantization" "pruning" "profiling" "submit_cl")
             ;;
         deployer)
-            skills=("containerization" "ci_cd" "monitoring")
+            skills=("containerization" "ci_cd" "monitoring" "submit_cl")
             ;;
         documenter)
-            skills=("technical_writing" "visualization" "presentation")
+            skills=("technical_writing" "visualization" "presentation" "submit_cl")
             ;;
         *)
             skills=()

@@ -339,7 +339,82 @@ Usage:
 Execute the appropriate command based on user request.
 CMD_EOF
 
+
+# /uws:spiral command
+cat > "${CLAUDE_DIR}/commands/uws-spiral" << 'CMD_EOF'
+---
+description: "Manage Spiral SDLC"
+allowed-tools:
+  - "Bash(./scripts/spiral.sh:*)"
+---
+
+# UWS Spiral SDLC
+
+Manage the Risk-Driven Spiral Lifecycle.
+
+Usage:
+- Status: \`./scripts/spiral.sh status\`
+- Start Cycle: \`./scripts/spiral.sh start-cycle\`
+- Next Quadrant: \`./scripts/spiral.sh next\`
+
+CMD_EOF
+
+# /uws:pm command
+cat > "${CLAUDE_DIR}/commands/uws-pm" << 'CMD_EOF'
+---
+description: "Project Management (Issues/board)"
+allowed-tools:
+  - "Bash(./scripts/pm.sh:*)"
+---
+
+# UWS Project Management
+
+Manage tickets and boards.
+
+Usage:
+- List: \`./scripts/pm.sh list\`
+- Create: \`./scripts/pm.sh create "Title" "Type" "Priority"\`
+- Move: \`./scripts/pm.sh move TASK-XXX "Status"\`
+- Generate Board: \`./scripts/pm.sh board\`
+
+CMD_EOF
+
+# /uws:submit command
+cat > "${CLAUDE_DIR}/commands/uws-submit" << 'CMD_EOF'
+---
+description: "Submit Code (Generate CL)"
+allowed-tools:
+  - "Bash(./scripts/submit.sh:*)"
+---
+
+# UWS Code Submission
+
+Submit work for review.
+
+Usage: \`./scripts/submit.sh "Message" "TASK-ID"\`
+CMD_EOF
+
+# /uws:review command
+cat > "${CLAUDE_DIR}/commands/uws-review" << 'CMD_EOF'
+---
+description: "Review/Approve CLs"
+allowed-tools:
+  - "Bash(./scripts/review.sh:*)"
+---
+
+# UWS Code Review
+
+Review and Approve/Reject changes.
+
+Usage:
+- List: \`./scripts/review.sh list\`
+- Approve: \`./scripts/review.sh approve CR-XXX\`
+- Reject: \`./scripts/review.sh reject CR-XXX\`
+CMD_EOF
+
 echo -e "  ${GREEN}✓${NC} Slash commands created"
+
+
 
 
 # ============================================================================
@@ -455,6 +530,10 @@ cat > "$SETTINGS_FILE" << 'SETTINGS_EOF'
       "Bash(./.uws/hooks/*:*)",
       "Bash(./scripts/sdlc.sh:*)",
       "Bash(./scripts/research.sh:*)",
+      "Bash(./scripts/spiral.sh:*)",
+      "Bash(./scripts/pm.sh:*)",
+      "Bash(./scripts/submit.sh:*)",
+      "Bash(./scripts/review.sh:*)",
       "Bash(cat .workflow/*:*)",
       "Bash(grep:*)",
       "Bash(tail:*)",

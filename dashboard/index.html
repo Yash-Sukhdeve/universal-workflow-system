@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UWS Company OS</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">C</div>
+                <span>Company OS</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#inbox" class="nav-item active" onclick="switchView('inbox')">
+                    <span class="icon">📫</span> Inbox <span class="badge" id="inbox-count">0</span>
+                </a>
+                <a href="#board" class="nav-item" onclick="switchView('board')">
+                    <span class="icon">📋</span> Board
+                </a>
+                <a href="#agents" class="nav-item" onclick="switchView('agents')">
+                    <span class="icon">🤖</span> Agents
+                </a>
+            </nav>
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-dot green"></span>
+                    <span id="system-status">System Healthy</span>
+                </div>
+                <div class="status-item">
+                    <span class="icon-small">⚡</span>
+                    <span id="active-agent">Idle</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            
+            <!-- Inbox View -->
+            <section id="view-inbox" class="view active">
+                <header class="view-header">
+                    <h1>Code Review Inbox</h1>
+                    <button class="btn-refresh" onclick="fetchData()">🔄 Refresh</button>
+                </header>
+                <div class="grid-container" id="inbox-list">
+                    <!-- CR Cards go here -->
+                </div>
+            </section>
+
+            <!-- Board View -->
+            <section id="view-board" class="view hidden">
+                <header class="view-header">
+                    <h1>Project Board</h1>
+                    <button class="btn-refresh" onclick="fetchData()">🔄 Refresh</button>
+                </header>
+                <div class="board-columns">
+                    <div class="board-column" id="col-todo">
+                        <h2>To Do</h2>
+                        <div class="column-content"></div>
+                    </div>
+                    <div class="board-column" id="col-inprogress">
+                        <h2>In Progress</h2>
+                        <div class="column-content"></div>
+                    </div>
+                    <div class="board-column" id="col-review">
+                        <h2>Review</h2>
+                        <div class="column-content"></div>
+                    </div>
+                    <div class="board-column" id="col-done">
+                        <h2>Done</h2>
+                        <div class="column-content"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agents View -->
+            <section id="view-agents" class="view hidden">
+                <header class="view-header">
+                    <h1>Active Agents</h1>
+                </header>
+                <div class="agent-card-large">
+                    <div class="agent-avatar">🤖</div>
+                    <div class="agent-details">
+                        <h2 id="agent-name">Unknown</h2>
+                        <p class="agent-role">Currently Active</p>
+                        <div class="agent-metrics">
+                            <div class="metric">
+                                <span class="label">Status</span>
+                                <span class="value green">Online</span>
+                            </div>
+                            <div class="metric">
+                                <span class="label">Workspace</span>
+                                <span class="value" id="agent-workspace">...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
