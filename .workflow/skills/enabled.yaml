@@ -1,0 +1,5 @@
+enabled_skills: []
+  - code_generation
+  - debugging
+  - testing
+  - submit_cl
