@@ -264,6 +264,16 @@ load_agent_skills() {
     local agent=$1
     
     echo -e "${BLUE}Loading skills for ${agent}...${NC}"
+
+    # 1. Load Persona (The "Senior" Upgrade)
+    PERSONA_FILE="docs/personas/${agent}.md"
+    if [[ -f "$PERSONA_FILE" ]]; then
+        echo -e "${YELLOW}📜 Loading Persona: ${agent} (Senior Mode)${NC}"
+        # Inject persona into active.yaml (append)
+        echo "" >> .workflow/agents/active.yaml
+        echo "persona: |" >> .workflow/agents/active.yaml
+        sed 's/^/  /' "$PERSONA_FILE" >> .workflow/agents/active.yaml
+    fi
     
     # Create enabled skills file if it doesn't exist
     if [ ! -f .workflow/skills/enabled.yaml ]; then
@@ -301,6 +311,14 @@ load_agent_skills() {
     # Add skills to enabled list
     for skill in "${skills[@]}"; do
         echo -e "  + Enabling skill: ${GREEN}${skill}${NC}"
+        
+        # Check for Expert Guide
+        SKILL_DEF=".workflow/skills/definitions/${skill}.md"
+        if [[ -f "$SKILL_DEF" ]]; then
+            echo -e "    ${YELLOW}📘 Expert Guide Loaded${NC}"
+            # You could append this to context, but for now we just notify
+        fi
+
         # Add to YAML file (simple append for now)
         if ! grep -q "  - ${skill}" .workflow/skills/enabled.yaml; then
             echo "  - ${skill}" >> .workflow/skills/enabled.yaml
