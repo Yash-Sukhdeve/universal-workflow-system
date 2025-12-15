@@ -3,3 +3,7 @@ enabled_skills: []
   - debugging
   - testing
   - submit_cl
+  - system_design
+  - api_design
+  - architecture_patterns
+  - review_cl
