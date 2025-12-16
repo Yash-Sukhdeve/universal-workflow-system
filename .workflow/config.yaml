@@ -7,7 +7,7 @@
 # Project Information
 project:
   name: "Universal Workflow System"
-  type: "software"  # Options: research, ml, software, llm, optimization, deployment, hybrid
+  type: "hybrid"
   version: "1.0.0"
   description: "Domain-agnostic git-based workflow system"
 

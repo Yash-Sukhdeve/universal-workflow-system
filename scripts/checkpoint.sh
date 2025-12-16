@@ -9,9 +9,33 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
 
-COMMAND="${1:-create}"
-CHECKPOINT_MSG="${2:-Manual checkpoint}"
-CHECKPOINT_ID="${2:-}"
+# Smart argument parsing: support both `checkpoint.sh "msg"` and `checkpoint.sh create "msg"`
+if [[ "${1:-}" =~ ^(create|list|restore|status|verify|help|--help|-h)$ ]]; then
+    COMMAND="${1:-create}"
+    CHECKPOINT_MSG="${2:-}"
+    CHECKPOINT_ID="${2:-}"
+    # Handle missing message for create command
+    if [[ "$COMMAND" == "create" && -z "$CHECKPOINT_MSG" ]]; then
+        echo "Using default message for checkpoint"
+        CHECKPOINT_MSG="Manual checkpoint"
+    fi
+elif [[ -n "${1:-}" ]]; then
+    # If first arg is not a command, treat it as a message
+    COMMAND="create"
+    CHECKPOINT_MSG="${1}"
+    CHECKPOINT_ID=""
+    # Handle empty message string
+    if [[ -z "$CHECKPOINT_MSG" ]]; then
+        echo "Using default message for checkpoint"
+        CHECKPOINT_MSG="Manual checkpoint"
+    fi
+else
+    # No arguments provided
+    COMMAND="create"
+    echo "Using default message for checkpoint"
+    CHECKPOINT_MSG="Manual checkpoint"
+    CHECKPOINT_ID=""
+fi
 
 # Checkpoint format version
 readonly CHECKPOINT_VERSION="2.0"
@@ -156,14 +180,27 @@ create_checkpoint() {
         }
         yaml_set .workflow/state.yaml "metadata.last_updated" "$timestamp"
     else
-        # Fallback to sed with backup
+        # Fallback to sed with backup - using safe escaping
         cp .workflow/state.yaml .workflow/state.yaml.bak
-        sed -i "s/current_checkpoint:.*/current_checkpoint: \"${checkpoint_id}\"/" .workflow/state.yaml
-        sed -i "s/last_updated:.*/last_updated: \"${timestamp}\"/" .workflow/state.yaml
+        if declare -f safe_sed_replace > /dev/null 2>&1; then
+            safe_sed_replace .workflow/state.yaml "current_checkpoint" "${checkpoint_id}"
+            safe_sed_replace .workflow/state.yaml "last_updated" "${timestamp}"
+        else
+            # Ultimate fallback with manual escaping
+            local escaped_id escaped_ts
+            escaped_id=$(printf '%s\n' "${checkpoint_id}" | sed 's/[&/\]/\\&/g')
+            escaped_ts=$(printf '%s\n' "${timestamp}" | sed 's/[&/\]/\\&/g')
+            sed -i "s|^current_checkpoint:.*|current_checkpoint: \"${escaped_id}\"|" .workflow/state.yaml
+            sed -i "s|^last_updated:.*|last_updated: \"${escaped_ts}\"|" .workflow/state.yaml
+        fi
         rm -f .workflow/state.yaml.bak
     fi
 
     # Add to checkpoint log atomically
+    # First ensure file ends with newline to prevent concatenation
+    if [[ -s .workflow/checkpoints.log ]] && [[ "$(tail -c1 .workflow/checkpoints.log | wc -l)" -eq 0 ]]; then
+        echo "" >> .workflow/checkpoints.log
+    fi
     if declare -f atomic_append > /dev/null 2>&1; then
         atomic_append .workflow/checkpoints.log "${timestamp} | ${checkpoint_id} | ${message}"
     else
@@ -716,14 +753,14 @@ verify_checkpoint() {
         echo -e "  ${GREEN}✓${NC} state.yaml"
     else
         echo -e "  ${RED}✗${NC} state.yaml (MISSING)"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     if [[ -f "$snapshot_dir/metadata.yaml" ]]; then
         echo -e "  ${GREEN}✓${NC} metadata.yaml"
     else
         echo -e "  ${YELLOW}○${NC} metadata.yaml (optional)"
-        ((warnings++))
+        warnings=$((warnings + 1))
     fi
 
     if [[ -f "$snapshot_dir/handoff.md" ]]; then
@@ -742,7 +779,7 @@ verify_checkpoint() {
             echo -e "  ${GREEN}✓${NC} manifest.yaml"
         else
             echo -e "  ${RED}✗${NC} manifest.yaml (MISSING for v2)"
-            ((errors++))
+            errors=$((errors + 1))
         fi
 
         if [[ -d "$snapshot_dir/active_state" ]]; then
@@ -769,7 +806,7 @@ verify_checkpoint() {
                 echo -e "  ${GREEN}✓${NC} All checksums valid"
             else
                 echo -e "  ${RED}✗${NC} Checksum verification failed"
-                ((errors++))
+                errors=$((errors + 1))
             fi
         else
             echo -e "  ${YELLOW}○${NC} Checksum verification not available"

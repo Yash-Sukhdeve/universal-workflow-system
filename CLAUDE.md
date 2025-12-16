@@ -57,6 +57,28 @@ python3 tests/benchmarks/repository_mining_study.py
 ./scripts/init_workflow.sh              # Initialize workflow system
 ```
 
+### SDLC Workflow (Company OS)
+```bash
+./scripts/sdlc.sh status                # Show current SDLC phase
+./scripts/sdlc.sh start                 # Begin SDLC at requirements phase
+./scripts/sdlc.sh next                  # Advance to next phase
+./scripts/sdlc.sh fail "reason"         # Report failure (triggers regression)
+./scripts/sdlc.sh reset                 # Reset SDLC state
+```
+
+**SDLC Phases**: `requirements` → `design` → `implementation` → `verification` → `deployment` → `maintenance`
+
+### Research Workflow (Scientific Method)
+```bash
+./scripts/research.sh status            # Show current research phase
+./scripts/research.sh start             # Begin research at hypothesis phase
+./scripts/research.sh next              # Advance to next phase
+./scripts/research.sh reject "reason"   # Hypothesis rejected (triggers refinement)
+./scripts/research.sh reset             # Reset research state
+```
+
+**Research Phases**: `hypothesis` → `experiment_design` → `data_collection` → `analysis` → `publication`
+
 ### Paper/LaTeX
 ```bash
 cd paper && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex

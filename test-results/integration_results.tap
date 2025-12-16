@@ -1,0 +1,176 @@
+1..175
+ok 1 Can activate researcher agent
+ok 2 Can transition from researcher to architect
+ok 3 Can transition from architect to implementer
+ok 4 Can transition through research_to_implementation pattern
+ok 5 Agent activation persists after checkpoint
+ok 6 Checkpoint preserves agent state
+ok 7 Multiple transitions maintain state consistency
+ok 8 Agent handoff creates handoff record
+ok 9 Handoff contains agent context
+ok 10 Full ML pipeline transition pattern
+ok 11 Production software pattern transitions
+ok 12 Can recover from failed transition
+ok 13 State remains consistent after failed operations
+ok 14 Agent transition creates workspace directory
+ok 15 Multiple agents have separate workspaces
+ok 16 Rapid agent switches maintain consistency
+ok 17 Agent transition completes within 2 seconds
+ok 18 Full pipeline transition completes within 10 seconds
+ok 19 all 9 workflow files exist in antigravity-integration/workflows/
+ok 20 workflows have valid markdown format
+ok 21 workflows contain execution instructions
+ok 22 uws-status workflow can execute status.sh
+ok 23 uws-checkpoint workflow can execute checkpoint.sh
+ok 24 uws-recover workflow can execute recover_context.sh
+ok 25 uws-agent workflow can execute activate_agent.sh
+ok 26 uws-skill workflow can execute enable_skill.sh
+ok 27 uws-handoff workflow can access handoff.md
+ok 28 uws-init workflow can execute init_workflow.sh
+ok 29 uws-sdlc workflow can manage SDLC phases
+ok 30 uws-research workflow can manage research phases
+ok 31 workflows handle missing .workflow/ gracefully
+ok 32 workflows handle corrupted state gracefully
+ok 33 workflow output format is consistent with Claude commands
+ok 34 workflows reference same underlying scripts as Claude commands
+ok 35 all 9 command files exist in .claude/commands/
+ok 36 commands have valid YAML frontmatter with description
+ok 37 commands have valid allowed-tools specification
+ok 38 uws-status command delegates to status.sh
+ok 39 uws-checkpoint command delegates to checkpoint.sh
+ok 40 uws-recover command delegates to recover_context.sh
+ok 41 uws-agent command delegates to activate_agent.sh
+ok 42 uws-skill command delegates to enable_skill.sh
+ok 43 uws-handoff command updates handoff notes
+ok 44 uws-init command runs init_workflow.sh
+ok 45 uws-sdlc command delegates to sdlc.sh
+ok 46 uws-research command delegates to research.sh
+ok 47 commands handle missing .workflow/ gracefully
+ok 48 commands handle corrupted state.yaml gracefully
+ok 49 status command shows phase information
+ok 50 status command shows checkpoint information
+ok 51 checkpoint command outputs checkpoint ID
+ok 52 settings.json exists in .claude directory
+ok 53 settings.json is valid JSON
+ok 54 settings.json has hooks object
+ok 55 SessionStart hook is configured
+ok 56 SessionStart hook references recover_context.sh
+ok 57 SessionStart hook triggers context recovery
+ok 58 PreCompact hook is configured
+ok 59 PreCompact hook references checkpoint.sh
+ok 60 PreCompact hook triggers checkpoint creation
+ok 61 hooks use || true for graceful failure handling
+ok 62 hook failure doesn't crash session
+ok 63 SessionStart hook captures recovery output
+ok 64 PreCompact hook captures checkpoint output
+ok 65 hooks complete within reasonable time
+ok 66 hooks operate on workflow directory safely
+ok 67 check Gemini CLI installation status
+ok 68 get Gemini CLI version
+ok 69 Gemini can read .workflow/state.yaml
+ok 70 Gemini can read .workflow/handoff.md
+ok 71 Gemini can execute workflow commands
+ok 72 Gemini output includes UWS context markers
+ok 73 Gemini respects checkpoint state
+ok 74 Gemini session creates handoff notes
+ok 75 Gemini updates state.yaml correctly
+ok 76 Gemini creates valid checkpoints
+ok 77 Gemini-created state readable by Claude
+ok 78 mock mode produces valid responses
+ok 79 mock mode handles all action types
+ok 80 Claude → Gemini → Claude preserves state
+ok 81 Gemini → Claude → Gemini preserves state
+ok 82 5-way handoff chain maintains integrity
+ok 83 Checkpoint count preserved across tools
+ok 84 Phase transitions valid across tools
+ok 85 Agent transitions valid across tools
+ok 86 Skill state consistent across tools
+ok 87 Health status reflects handoff history
+ok 88 Metadata timestamps correct
+ok 89 Git commit references valid
+ok 90 Claude creates checkpoint, Gemini reads it
+ok 91 Claude's state.yaml readable by Gemini
+ok 92 Claude's handoff.md parsed by Gemini
+ok 93 Claude's agent state preserved
+ok 94 Claude's enabled skills preserved
+ok 95 Claude's phase progress preserved
+ok 96 Claude's checkpoint history accessible
+ok 97 Gemini recovers full context from Claude state
+ok 98 Gemini can continue from Claude's phase
+ok 99 Gemini can complete Claude's TODO items
+ok 100 Gemini inherits Claude's workspace state
+ok 101 Recovery completeness score >= 80%
+ok 102 Handoff time < 5 seconds
+ok 103 No state corruption after handoff
+ok 104 Multiple handoffs maintain integrity
+ok 105 Gemini creates checkpoint, Claude reads it
+ok 106 Gemini's state.yaml readable by Claude
+ok 107 Gemini's handoff.md parsed by Claude
+ok 108 Gemini's agent state preserved
+ok 109 Gemini's enabled skills preserved
+ok 110 Gemini's phase progress preserved
+ok 111 Gemini's checkpoint history accessible
+ok 112 Claude recovers full context from Gemini state
+ok 113 Claude can continue from Gemini's phase
+ok 114 Claude can complete Gemini's TODO items
+ok 115 Claude inherits Gemini's workspace state
+ok 116 Recovery completeness score >= 80%
+ok 117 Handoff time < 5 seconds
+ok 118 No state corruption after handoff
+ok 119 Multiple handoffs maintain integrity
+ok 120 10 rapid handoffs in 60 seconds
+ok 121 No race conditions on state.yaml
+ok 122 No duplicate checkpoints created
+ok 123 Lock file prevents concurrent writes
+ok 124 Atomic operations prevent corruption
+ok 125 research.sh exists and is executable
+ok 126 research.sh has proper shebang and strict mode
+ok 127 research status shows 'not started' initially
+ok 128 research status command is default action
+ok 129 research start begins at hypothesis phase
+ok 130 research start updates state file
+ok 131 research start fails if already started
+ok 132 research progresses through all phases in order
+ok 133 research next from hypothesis goes to experiment_design
+ok 134 research next from experiment_design goes to data_collection
+ok 135 research next from data_collection goes to analysis
+ok 136 research next from analysis goes to publication
+ok 137 research next fails when not started
+ok 138 research reject in analysis returns to experiment_design
+ok 139 research reject in data_collection returns to experiment_design
+ok 140 research reject in publication returns to analysis
+ok 141 research reject at hypothesis stays at hypothesis
+ok 142 research reject includes details message
+ok 143 research reset clears state
+ok 144 research reset allows new start
+ok 145 research help shows usage
+ok 146 research --help shows usage
+ok 147 research handles unknown action gracefully
+ok 148 complete research cycle from hypothesis to publication
+ok 149 research cycle with rejection and refinement
+ok 150 multiple rejection cycles allowed
+ok 151 research provides phase-specific guidance
+ok 152 research mentions negative results value on reject
+ok 153 sdlc.sh exists and is executable
+ok 154 sdlc.sh has proper shebang and strict mode
+ok 155 sdlc status shows 'not started' initially
+ok 156 sdlc status command is default action
+ok 157 sdlc start begins at requirements phase
+ok 158 sdlc start updates state file
+ok 159 sdlc start fails if already started
+ok 160 sdlc progresses through all phases in order
+ok 161 sdlc next from requirements goes to design
+ok 162 sdlc next from design goes to implementation
+ok 163 sdlc next from implementation goes to verification
+ok 164 sdlc next fails when not started
+ok 165 sdlc fail in verification regresses to implementation
+ok 166 sdlc fail in deployment regresses to verification
+ok 167 sdlc fail in early phase doesn't regress
+ok 168 sdlc fail includes details message
+ok 169 sdlc reset clears state
+ok 170 sdlc reset allows new start
+ok 171 sdlc help shows usage
+ok 172 sdlc --help shows usage
+ok 173 sdlc handles unknown action gracefully
+ok 174 complete SDLC cycle from start to maintenance
+ok 175 SDLC cycle with failure and recovery

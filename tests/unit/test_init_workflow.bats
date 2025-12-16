@@ -210,19 +210,27 @@ teardown() {
 # ============================================================================
 
 @test "init_workflow.sh handles missing git gracefully" {
-    # Create a mock PATH without git
+    # Create a mock git that always fails
     local mock_dir="${TEST_TMP_DIR}/mock_bin"
     mkdir -p "${mock_dir}"
+
+    # Create a mock git script that returns failure
+    cat > "${mock_dir}/git" << 'EOF'
+#!/bin/bash
+exit 1
+EOF
+    chmod +x "${mock_dir}/git"
 
     # This test checks that the script handles git absence
     # Most scripts should work without git (just skip git-specific features)
     rm -rf "${TEST_TMP_DIR}/.workflow"
 
-    # Should still create basic structure even without git
-    PATH="${mock_dir}" run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
+    # Prepend mock dir to PATH so our broken git is found first
+    PATH="${mock_dir}:${PATH}" run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    # Either succeeds or fails gracefully with message
-    [[ -d "${TEST_TMP_DIR}/.workflow" ]] || [[ "$output" =~ "git" ]]
+    # Script should succeed - git features are optional
+    # Either succeeds and creates workflow, or output mentions git issue
+    [[ -d "${TEST_TMP_DIR}/.workflow" ]] || [[ "$output" =~ "git" ]] || [[ "$output" =~ "Git" ]]
 }
 
 @test "init_workflow.sh creates checkpoints.log" {

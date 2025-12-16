@@ -112,6 +112,47 @@ fi
 # Create agent directories if they don't exist
 mkdir -p .workflow/agents/{configs,memory}
 
+# Create default registry if missing
+if [[ ! -f ".workflow/agents/registry.yaml" ]]; then
+    cat > .workflow/agents/registry.yaml << 'REGISTRY_EOF'
+# Agent Registry - Default Configuration
+researcher:
+  description: "Literature review, hypothesis formation"
+  capabilities: ["research", "analysis", "writing"]
+  primary_skills: ["literature_review", "experimental_design", "statistical_validation"]
+
+architect:
+  description: "System design, architecture planning"
+  capabilities: ["design", "documentation", "planning"]
+  primary_skills: ["system_design", "api_design", "data_modeling"]
+
+implementer:
+  description: "Code development, model building"
+  capabilities: ["coding", "testing", "debugging"]
+  primary_skills: ["code_generation", "debugging", "testing"]
+
+experimenter:
+  description: "Experiments, benchmarks, testing"
+  capabilities: ["testing", "analysis", "automation"]
+  primary_skills: ["experiment_design", "benchmarking", "data_analysis"]
+
+optimizer:
+  description: "Performance optimization, compression"
+  capabilities: ["optimization", "profiling", "tuning"]
+  primary_skills: ["performance_profiling", "memory_optimization", "algorithm_optimization"]
+
+deployer:
+  description: "Deployment, DevOps, monitoring"
+  capabilities: ["deployment", "automation", "monitoring"]
+  primary_skills: ["ci_cd", "containerization", "monitoring"]
+
+documenter:
+  description: "Documentation, papers, guides"
+  capabilities: ["writing", "documentation", "communication"]
+  primary_skills: ["technical_writing", "api_documentation", "user_guides"]
+REGISTRY_EOF
+fi
+
 # Function to activate an agent (RWF R3 - State Safety with atomic operations)
 activate_agent() {
     local agent=$1
@@ -387,10 +428,17 @@ prepare_handoff() {
     echo -e "${BLUE}📤 Preparing handoff from ${from_agent}...${NC}"
     
     if [ -z "$to_agent" ]; then
-        echo -e "${YELLOW}Specify target agent:${NC}"
-        echo "  researcher, architect, implementer, experimenter,"
-        echo "  optimizer, deployer, documenter"
-        read -p "Target agent: " to_agent
+        if [ -t 0 ]; then
+            # Interactive mode - prompt for input
+            echo -e "${YELLOW}Specify target agent:${NC}"
+            echo "  researcher, architect, implementer, experimenter,"
+            echo "  optimizer, deployer, documenter"
+            read -p "Target agent: " to_agent
+        else
+            # Non-interactive mode - use placeholder
+            to_agent="unspecified"
+            echo -e "${YELLOW}Note: No target agent specified, use handoff record to set.${NC}"
+        fi
     fi
     
     # Create handoff record
@@ -435,7 +483,7 @@ case $COMMAND in
         show_agent_status $AGENT_NAME
         ;;
     handoff)
-        prepare_handoff $AGENT_NAME $3
+        prepare_handoff $AGENT_NAME "${3:-}"
         ;;
     *)
         echo -e "${RED}Unknown command: ${COMMAND}${NC}"

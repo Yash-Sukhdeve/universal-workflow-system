@@ -1,0 +1,71 @@
+1..70
+ok 1 100 checkpoint operations
+ok 2 50 agent activations
+ok 3 20 skill enable/disable cycles
+ok 4 Large state.yaml (>100KB)
+ok 5 Large handoff.md (>50KB)
+ok 6 Concurrent checkpoint attempts
+ok 7 Interrupt during handoff recovery
+ok 8 Corrupted state recovery
+ok 9 Missing file recovery
+ok 10 Network timeout simulation (Gemini API)
+ok 11 E2E: ML project type is correctly detected
+ok 12 E2E: Complete ML workflow initialization
+ok 13 E2E: State file contains correct ML project type
+ok 14 E2E: Agent registry loaded correctly
+ok 15 E2E: ML pipeline agent transition - researcher to implementer
+ok 16 E2E: Checkpoint creation during ML workflow
+ok 17 E2E: Status displays ML workflow correctly
+ok 18 E2E: Full ML pipeline - 5 phase progression
+ok 19 E2E: ML workflow state persistence
+ok 20 E2E: Create ML experiment artifacts
+ok 21 E2E: ML workflow context recovery simulation
+ok 22 E2E: Simulate complete ML training workflow
+ok 23 Claude starts hypothesis, checkpoints, Gemini continues
+ok 24 Gemini experiment design, checkpoints, Claude continues
+ok 25 Claude data collection, checkpoints, Gemini continues
+ok 26 Gemini analysis, checkpoints, Claude continues
+ok 27 Claude publication, complete workflow
+ok 28 Research rejection with tool switch
+ok 29 Multi-iteration research cycle
+ok 30 Full research cycle completion time < 60s
+ok 31 Research artifacts preserved across tools
+ok 32 Final research state validates against schema
+ok 33 E2E: Research project structure created
+ok 34 E2E: Research state contains RQs
+ok 35 E2E: Research workflow - Literature Review Phase
+ok 36 E2E: Research workflow - Experiment Design Phase
+ok 37 E2E: Research workflow - Data Collection Phase
+ok 38 E2E: Research workflow - Analysis Phase
+ok 39 E2E: Research workflow - Paper Writing Phase
+ok 40 E2E: Research workflow - Figure Generation
+ok 41 E2E: Research workflow - Complete RQ evaluation
+ok 42 E2E: Research workflow - Checkpoint progression
+ok 43 E2E: Research workflow - Agent transitions follow pattern
+ok 44 E2E: Research workflow - Handoff document tracks progress
+ok 45 E2E: Research workflow - Complete phase deliverables
+ok 46 Claude starts Phase 1 planning, checkpoints, Gemini continues
+ok 47 Gemini Phase 2 implementation, checkpoints, Claude continues
+ok 48 Claude Phase 3 validation, checkpoints, Gemini continues
+ok 49 Gemini Phase 4 delivery, checkpoints, Claude continues
+ok 50 Claude Phase 5 maintenance, complete workflow
+ok 51 Phase regression with tool switch handled
+ok 52 Multi-agent workflow with handoff
+ok 53 Full cycle completion time < 60s
+ok 54 All deliverables tracked across tools
+ok 55 Final state validates against schema
+ok 56 E2E: Software project type detected
+ok 57 E2E: Software project structure created
+ok 58 E2E: Software workflow - Requirements Phase
+ok 59 E2E: Software workflow - Architecture Design Phase
+ok 60 E2E: Software workflow - Implementation Phase
+ok 61 E2E: Software workflow - Testing Phase
+ok 62 E2E: Software workflow - CI/CD Configuration
+ok 63 E2E: Software workflow - Deployment Configuration
+ok 64 E2E: Software workflow - Documentation
+ok 65 E2E: Software workflow - Agent transitions
+ok 66 E2E: Software workflow - Sprint tracking
+ok 67 E2E: Software workflow - Checkpoint at key milestones
+ok 68 E2E: Software workflow - Complete handoff document
+ok 69 E2E: Software workflow - Artifact generation
+ok 70 E2E: Software workflow - Full lifecycle simulation

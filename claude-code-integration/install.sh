@@ -436,22 +436,67 @@ elif [[ -d "paper" ]] || [[ -d "experiments" ]]; then
     PROJECT_TYPE="research"
 fi
 
-# Create state.yaml if not exists
+# Get project name from directory
+PROJECT_NAME=$(basename "${PROJECT_DIR}")
+TIMESTAMP=$(date -Iseconds)
+
+# Create state.yaml if not exists (Full v2.0 Schema)
 if [[ ! -f "${WORKFLOW_DIR}/state.yaml" ]]; then
     cat > "${WORKFLOW_DIR}/state.yaml" << EOF
-# UWS Workflow State
-# Auto-generated on $(date -Iseconds)
+# UWS Workflow State (Schema v2.0)
+# Auto-generated on ${TIMESTAMP}
 
-project_type: "${PROJECT_TYPE}"
+# Current workflow position
 current_phase: "phase_1_planning"
-current_checkpoint: "CP_1_001"
-last_updated: "$(date -Iseconds)"
+current_checkpoint: "CP_INIT"
 
+# Project metadata
+project:
+  name: "${PROJECT_NAME}"
+  type: "${PROJECT_TYPE}"
+  initialized: true
+  init_date: "${TIMESTAMP}"
+
+# Active agent tracking
+active_agent:
+  name: null
+  activated_at: null
+  status: "inactive"
+
+# Enabled skills
+enabled_skills: []
+
+# Phase progress tracking
+phases:
+  phase_1_planning:
+    status: "active"
+    progress: 0
+    started_at: "${TIMESTAMP}"
+  phase_2_implementation:
+    status: "pending"
+    progress: 0
+  phase_3_validation:
+    status: "pending"
+    progress: 0
+  phase_4_delivery:
+    status: "pending"
+    progress: 0
+  phase_5_maintenance:
+    status: "pending"
+    progress: 0
+
+# System health
 health:
   status: "healthy"
-  last_check: "$(date -Iseconds)"
+  last_check: "${TIMESTAMP}"
+
+# Schema metadata
+metadata:
+  schema_version: "2.0"
+  last_updated: "${TIMESTAMP}"
+  created_by: "claude-code-integration"
 EOF
-    echo -e "  ${GREEN}✓${NC} Created state.yaml (${PROJECT_TYPE} project)"
+    echo -e "  ${GREEN}✓${NC} Created state.yaml (${PROJECT_TYPE} project, schema v2.0)"
 else
     echo -e "  ${YELLOW}→${NC} state.yaml already exists, keeping"
 fi

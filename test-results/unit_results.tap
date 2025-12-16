@@ -1,0 +1,362 @@
+1..361
+ok 1 activate_agent.sh exists and is executable
+ok 2 activate_agent.sh activates researcher agent
+ok 3 activate_agent.sh activates implementer agent
+ok 4 activate_agent.sh activates architect agent
+ok 5 activate_agent.sh activates experimenter agent
+ok 6 activate_agent.sh activates optimizer agent
+ok 7 activate_agent.sh activates deployer agent
+ok 8 activate_agent.sh activates documenter agent
+ok 9 activate_agent.sh creates active.yaml
+ok 10 active.yaml contains current_agent field
+ok 11 active.yaml shows correct agent name
+ok 12 activate_agent.sh updates existing active.yaml
+ok 13 activate_agent.sh rejects unknown agent
+ok 14 activate_agent.sh requires agent name
+ok 15 activate_agent.sh validates against registry
+ok 16 activate_agent.sh fails without initialized workflow
+ok 17 activate_agent.sh handles missing registry gracefully
+ok 18 activate_agent.sh handles case sensitivity
+ok 19 activate_agent.sh status shows current agent
+ok 20 activate_agent.sh deactivate removes active agent
+ok 21 activate_agent.sh creates agent workspace
+ok 22 activate_agent.sh handoff prepares transition
+ok 23 activate_agent.sh handles switching agents
+ok 24 activate_agent.sh loads agent skills
+ok 25 activate_agent.sh --help shows usage
+ok 26 activate_agent.sh -h shows usage
+ok 27 activate_agent.sh completes within 3 seconds
+ok 28 list_agents.sh exists # skip list_agents.sh not implemented
+ok 29 list_agents.sh shows all available agents # skip list_agents.sh not implemented
+ok 30 atomic_write creates new file
+ok 31 atomic_write overwrites existing file
+ok 32 atomic_write creates parent directories
+ok 33 atomic_write leaves no temp files on success
+ok 34 atomic_write reads from stdin with -
+ok 35 atomic_append adds to existing file
+ok 36 atomic_append creates file if not exists
+ok 37 atomic_append_line adds newline
+ok 38 safe_backup creates backup copy
+ok 39 safe_backup returns empty for non-existent file
+ok 40 safe_backup preserves file permissions
+ok 41 atomic_begin starts transaction
+ok 42 atomic_begin fails if transaction already active
+ok 43 atomic_commit cleans up backups
+ok 44 atomic_commit fails without active transaction
+ok 45 atomic_rollback restores files
+ok 46 atomic_rollback cleans up temp files
+ok 47 atomic_rollback returns success after rollback
+ok 48 nested transactions are rejected
+ok 49 atomic_yaml_set updates yaml value
+ok 50 atomic_yaml_set fails on non-existent file
+ok 51 atomic_yaml_set_multi sets multiple values
+ok 52 atomic_get_checksum returns hash
+ok 53 atomic_get_checksum returns empty for non-existent file
+ok 54 atomic_verify_checksum succeeds with correct hash
+ok 55 atomic_verify_checksum fails with wrong hash
+ok 56 atomic_cleanup_stale removes old files
+ok 57 atomic_write completes within 100ms
+ok 58 transaction with 10 operations completes within 500ms
+ok 59 rollback_on_error handles trap correctly
+ok 60 multiple safe_backup calls in transaction are tracked
+ok 61 checkpoint.sh exists and is executable
+ok 62 checkpoint.sh creates checkpoint with message
+ok 63 checkpoint.sh appends to checkpoints.log
+ok 64 checkpoint.sh includes message in log
+ok 65 checkpoint.sh includes timestamp in log
+ok 66 checkpoint.sh increments checkpoint ID
+ok 67 checkpoint.sh updates state.yaml checkpoint field
+ok 68 checkpoint.sh updates last_updated timestamp
+ok 69 checkpoint.sh requires message argument
+ok 70 checkpoint.sh fails without initialized workflow
+ok 71 checkpoint.sh handles missing state.yaml
+ok 72 checkpoint.sh handles missing checkpoints.log gracefully
+ok 73 checkpoint log uses pipe delimiter
+ok 74 checkpoint log has three fields per line
+ok 75 checkpoint ID follows naming convention
+ok 76 checkpoint ID includes phase number
+ok 77 checkpoint.sh handles message with spaces
+ok 78 checkpoint.sh handles message with special characters
+ok 79 checkpoint.sh handles empty message gracefully
+ok 80 checkpoint.sh --list shows checkpoints
+ok 81 checkpoint.sh works with git repository
+ok 82 checkpoint.sh handles dirty git state
+ok 83 checkpoint.sh handles rapid successive calls
+ok 84 checkpoint.sh completes within 5 seconds
+ok 85 calculate_checksum produces 64-character hex string
+ok 86 calculate_checksum returns empty for missing file
+ok 87 calculate_checksum is deterministic
+ok 88 calculate_checksum detects content changes
+ok 89 calculate_checksum different for different files
+ok 90 calculate_state_checksum combines multiple files
+ok 91 calculate_state_checksum changes when any file changes
+ok 92 calculate_state_checksum handles missing optional files
+ok 93 store_checksums creates checksums.yaml
+ok 94 store_checksums includes timestamp
+ok 95 store_checksums includes algorithm
+ok 96 store_checksums includes file entries
+ok 97 store_checksums includes combined checksum
+ok 98 verify_checksums succeeds with valid checksums
+ok 99 verify_checksums fails when file modified
+ok 100 verify_checksums fails when file deleted
+ok 101 verify_checksums warns when checksums.yaml missing
+ok 102 verify_file_checksum succeeds with correct hash
+ok 103 verify_file_checksum fails with wrong hash
+ok 104 verify_file_checksum fails for missing file
+ok 105 create_snapshot_manifest creates manifest.yaml
+ok 106 create_snapshot_manifest includes version
+ok 107 create_snapshot_manifest includes file checksums
+ok 108 create_snapshot_manifest includes file count
+ok 109 create_snapshot_manifest includes combined checksum
+ok 110 create_snapshot_manifest fails for nonexistent directory
+ok 111 verify_snapshot_manifest succeeds for valid snapshot
+ok 112 verify_snapshot_manifest fails when file tampered
+ok 113 verify_snapshot_manifest handles v1 checkpoints gracefully
+ok 114 get_checksums_json returns valid JSON structure
+ok 115 get_checksums_json includes timestamp
+ok 116 checksums handle empty files
+ok 117 checksums handle large files
+ok 118 checksums handle special characters in content
+ok 119 checksums handle files with spaces in path
+ok 120 check_required_files returns empty when all present
+ok 121 check_required_files lists missing state.yaml
+ok 122 check_required_files lists missing checkpoints.log
+ok 123 check_required_files lists multiple missing files
+ok 124 check_optional_files returns 0 when none present
+ok 125 check_optional_files counts present files
+ok 126 check_optional_files counts all optional files
+ok 127 check_required_fields returns empty when all present
+ok 128 check_required_fields lists missing current_phase
+ok 129 check_required_fields lists missing current_checkpoint
+ok 130 check_required_fields lists missing metadata.last_updated
+ok 131 check_required_fields handles missing file
+ok 132 calculate_file_score returns 0-100
+ok 133 calculate_file_score gives 70% for required files only
+ok 134 calculate_file_score gives 0 for no files
+ok 135 calculate_file_score increases with optional files
+ok 136 calculate_state_score returns 0-100
+ok 137 calculate_state_score returns 0 for missing file
+ok 138 calculate_state_score increases with more fields
+ok 139 calculate_completeness_score returns 0-100
+ok 140 calculate_completeness_score combines file and state scores
+ok 141 calculate_completeness_score uses custom directory
+ok 142 check_state_consistency returns 0 for valid state
+ok 143 check_state_consistency warns for orphan checkpoint
+ok 144 check_state_consistency handles missing files
+ok 145 generate_completeness_report produces output
+ok 146 generate_completeness_report shows overall score
+ok 147 generate_completeness_report shows component scores
+ok 148 generate_completeness_report lists missing files
+ok 149 is_recovery_complete returns 0 when above threshold
+ok 150 is_recovery_complete returns 1 when below threshold
+ok 151 is_recovery_complete uses default threshold
+ok 152 get_completeness_summary produces markdown
+ok 153 get_completeness_summary includes score
+ok 154 get_completeness_summary includes status
+ok 155 get_completeness_summary lists missing items
+ok 156 get_completeness_json produces valid structure
+ok 157 get_completeness_json includes thresholds
+ok 158 get_completeness_json includes missing items
+ok 159 get_completeness_json includes consistency flag
+ok 160 get_completeness_json includes is_complete flag
+ok 161 completeness handles empty state file
+ok 162 completeness handles malformed YAML
+ok 163 completeness handles unicode content
+ok 164 completeness thresholds are configurable
+ok 165 log_recovery_completeness logs status
+ok 166 log_recovery_completeness includes score
+ok 167 detect_and_configure detects Python project with requirements.txt
+ok 168 detect_and_configure detects Node.js project with package.json
+ok 169 detect_and_configure detects ML project with torch in requirements
+ok 170 detect_and_configure detects Research project with paper directory
+ok 171 detect_and_configure detects Rust project with Cargo.toml
+ok 172 detect_and_configure detects Go project with go.mod
+ok 173 detect_and_configure defaults to hybrid for empty project
+ok 174 detect_and_configure updates state.yaml with detected type
+ok 175 detect_and_configure updates config.yaml with detected type
+ok 176 detect_and_configure provides recommendations for research project
+ok 177 detect_and_configure --help shows usage
+ok 178 detect_and_configure --verbose shows debug output
+ok 179 detect_and_configure --force skips existing config check
+ok 180 detect_and_configure --auto skips confirmation prompts
+ok 181 detect_and_configure handles hybrid projects with multiple indicators
+ok 182 detect_and_configure preserves other config values
+ok 183 detect_and_configure works in git repository
+ok 184 detect_and_configure detects Docker in deployment projects
+ok 185 detect_and_configure detects GitHub Actions
+ok 186 detect_and_configure handles permission issues gracefully
+ok 187 detect_and_configure handles invalid arguments
+ok 188 detect_and_configure detects LLM project with transformers
+ok 189 enable_skill adds skill to enabled_skills list
+ok 190 enable_skill creates skill definition file
+ok 191 enable_skill logs to checkpoints.log
+ok 192 enable_skill handles already enabled skill gracefully
+ok 193 enable_skill creates definition for research skills
+ok 194 enable_skill creates definition for development skills
+ok 195 enable_skill creates definition for ML skills
+ok 196 disable_skill removes skill from enabled list
+ok 197 disable_skill logs to checkpoints.log
+ok 198 disable_skill handles non-enabled skill gracefully
+ok 199 execute_skill runs enabled skill
+ok 200 execute_skill fails for non-enabled skill
+ok 201 execute_skill creates execution log
+ok 202 execute_skill logs to checkpoints.log
+ok 203 list_skills shows available skills
+ok 204 list_skills shows enabled skills
+ok 205 list_skills handles empty enabled list
+ok 206 status shows skill is enabled
+ok 207 status shows skill is disabled
+ok 208 status shows skill definition info
+ok 209 status without skill name lists all skills
+ok 210 enable_skill fails without workflow directory
+ok 211 enable_skill shows usage on invalid command
+ok 212 enable_skill handles special characters in skill name
+ok 213 skill definition includes parameters
+ok 214 skill definition includes outputs
+ok 215 skill definition includes dependencies
+ok 216 custom skill gets generic definition
+ok 217 enabled skills persist after script exit
+ok 218 skill definitions persist after script exit
+ok 219 execution logs persist after skill execution
+ok 220 enable skill creates chains directory
+ok 221 skill dependencies shown on enable
+ok 222 enable_skill handles empty skill name
+ok 223 multiple skills can be enabled sequentially
+ok 224 duplicate enable does not duplicate entry
+ok 225 init_workflow.sh exists and is executable
+ok 226 init_workflow.sh creates .workflow directory
+ok 227 init_workflow.sh creates state.yaml
+ok 228 init_workflow.sh creates config.yaml
+ok 229 init_workflow.sh creates agents directory
+ok 230 init_workflow.sh creates skills directory
+ok 231 init_workflow.sh accepts 'software' project type
+ok 232 init_workflow.sh accepts 'research' project type
+ok 233 init_workflow.sh accepts 'ml' project type
+ok 234 init_workflow.sh accepts 'llm' project type
+ok 235 state.yaml contains current_phase
+ok 236 state.yaml contains current_checkpoint
+ok 237 state.yaml initializes to phase_1
+ok 238 state.yaml contains metadata section
+ok 239 init_workflow.sh creates workspace directory
+ok 240 init_workflow.sh creates phases directory
+ok 241 init_workflow.sh creates artifacts directory
+ok 242 init_workflow.sh warns if already initialized
+ok 243 init_workflow.sh does not overwrite existing state
+ok 244 init_workflow.sh handles missing git gracefully
+ok 245 init_workflow.sh creates checkpoints.log
+ok 246 init_workflow.sh creates agent registry
+ok 247 agent registry contains researcher agent
+ok 248 agent registry contains implementer agent
+ok 249 init_workflow.sh creates skill catalog
+ok 250 init_workflow.sh works in git repository
+ok 251 init_workflow.sh works in non-git directory
+ok 252 R1: Precondition validation catches uninitialized workflow
+ok 253 R1: Invalid checkpoint ID is rejected
+ok 254 R1: Invalid agent name is rejected
+ok 255 R1: Valid agents are accepted
+ok 256 R1: State consistency check validates cross-field integrity
+ok 257 R2: Completeness score calculation works
+ok 258 R2: Missing required files reduce completeness score
+ok 259 R2: Required files check identifies missing files
+ok 260 R2: JSON completeness report is valid
+ok 261 R3: Atomic write creates file atomically
+ok 262 R3: Atomic write with invalid path fails gracefully
+ok 263 R3: Safe backup creates backup file
+ok 264 R3: Transaction commit applies all changes
+ok 265 R3: Checkpoint creates v2 snapshot with manifest
+ok 266 R4: Error handler captures and logs errors
+ok 267 R4: capture_error replaces silent 2>/dev/null
+ok 268 R4: warn_on_failure logs but continues
+ok 269 R4: require_success fails on command failure
+ok 270 R4: Assertion catches false condition
+ok 271 R4: assert_file_exists catches missing file
+ok 272 R4: Error stack tracks multiple errors
+ok 273 R5: Checksum calculation is deterministic
+ok 274 R5: Checksums change when content changes
+ok 275 R5: Store and verify checksums round-trip
+ok 276 R5: Checksum verification detects tampering
+ok 277 R5: Snapshot manifest is created for checkpoints
+ok 278 R5: Manifest verification validates snapshot integrity
+ok 279 R5: Recovery completeness is measurable
+ok 280 R5: Completeness summary generates markdown
+ok 281 Timestamps are ISO 8601 formatted
+ok 282 Timestamp validation accepts valid formats
+ok 283 Timestamp validation rejects invalid formats
+ok 284 Decision logging creates entries
+ok 285 Blocker logging creates entries with severity
+ok 286 Open blockers can be retrieved
+ok 287 validate_state_schema passes for valid state
+ok 288 validate_state_schema fails for missing file
+ok 289 validate_state_schema detects invalid phase
+ok 290 validate_state_schema detects invalid checkpoint format
+ok 291 validate_state_schema accepts all valid project types
+ok 292 validate_state_schema detects invalid project type
+ok 293 validate_state_schema validates agent status consistency
+ok 294 validate_checkpoint_schema passes for valid metadata
+ok 295 validate_checkpoint_schema fails for missing required field
+ok 296 validate_checkpoint_schema validates git commit format
+ok 297 validate_checkpoint_schema accepts valid short git hash
+ok 298 validate_checkpoint_schema accepts valid long git hash
+ok 299 validate_agent_schema accepts all valid agents
+ok 300 validate_agent_schema rejects invalid agent
+ok 301 validate_agent_transition allows researcher to architect
+ok 302 validate_agent_transition allows researcher to implementer
+ok 303 validate_agent_transition allows any agent to documenter
+ok 304 validate_agent_transition rejects invalid transition
+ok 305 validate_agent_transition allows implementer to experimenter
+ok 306 validate_agent_transition allows optimizer to deployer
+ok 307 validate_agent_transition allows first activation (no current agent)
+ok 308 validate_pattern matches valid phase pattern
+ok 309 validate_pattern fails on invalid pattern
+ok 310 validate_pattern skips empty values
+ok 311 validate_pattern skips null values
+ok 312 validate_type accepts valid integer
+ok 313 validate_type rejects non-integer
+ok 314 validate_type accepts valid boolean values
+ok 315 validate_type accepts valid iso8601 date
+ok 316 validate_type accepts iso8601 date only format
+ok 317 validate_type rejects invalid iso8601
+ok 318 validate_type accepts string_or_null
+ok 319 schema_clear_results resets errors and warnings
+ok 320 schema_error_count returns correct count
+ok 321 schema_get_errors_json returns valid JSON
+ok 322 schema_get_errors_json returns empty array when no errors
+ok 323 validate_all_schemas validates workflow directory
+ok 324 validate_all_schemas handles missing directory
+ok 325 schema validation handles special characters in values
+ok 326 schema validation handles unicode in messages
+ok 327 safe_sed_replace function exists
+ok 328 safe_sed_replace handles forward slash in value
+ok 329 safe_sed_replace handles ampersand in value
+ok 330 safe_sed_replace handles backslash in value
+ok 331 safe_sed_replace handles mixed special characters
+ok 332 checkpoint handles message with forward slashes
+ok 333 checkpoint handles message with ampersand
+ok 334 checkpoint handles message with special regex characters
+ok 335 checkpoint does not execute embedded commands
+ok 336 checkpoint does not execute backtick commands
+ok 337 sdlc.sh handles special characters in failure details
+ok 338 sdlc.sh does not execute embedded commands
+ok 339 research.sh handles special characters in rejection details
+ok 340 research.sh does not execute embedded commands
+ok 341 state.yaml remains valid after special character operations
+ok 342 checkpoints.log remains valid after special character operations
+ok 343 yaml_utils.sh exists and is sourceable
+ok 344 yaml_get function exists after sourcing
+ok 345 yaml_set function exists after sourcing
+ok 346 yaml_get retrieves simple string value
+ok 347 yaml_get retrieves nested value
+ok 348 yaml_get returns null for missing key
+ok 349 yaml_get handles numeric values
+ok 350 yaml_get handles boolean values
+ok 351 yaml_set creates new key
+ok 352 yaml_set updates existing key
+ok 353 yaml_validate function exists
+ok 354 yaml_validate accepts valid YAML
+ok 355 yaml_get handles empty file
+ok 356 yaml_get handles file with comments
+ok 357 yaml_get handles special characters in values
+ok 358 yaml_get handles multiword values
+ok 359 yaml_utils works without yq (fallback mode)
+ok 360 yaml_get handles array access
+ok 361 yaml_get completes within 1 second

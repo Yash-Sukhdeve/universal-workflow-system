@@ -14,7 +14,7 @@ setup() {
 }
 
 teardown() {
-    cleanup_test_environment
+    teardown_test_environment
 }
 
 # =============================================================================
@@ -267,9 +267,7 @@ EOF
 @test "check_state_consistency returns 0 for valid state" {
     create_full_test_environment
 
-    # Add checkpoint to log matching state
-    echo "2025-01-15T10:00:00 | CP_1_001 | Test" >> .workflow/checkpoints.log
-
+    # State has CP_INIT by default, which matches the log from create_full_test_environment
     run check_state_consistency
     [ "$status" -eq 0 ]
 }

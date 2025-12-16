@@ -13,7 +13,7 @@ setup() {
 }
 
 teardown() {
-    cleanup_test_environment
+    teardown_test_environment
 }
 
 # =============================================================================
