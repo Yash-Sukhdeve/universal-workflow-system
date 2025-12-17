@@ -1,0 +1,17 @@
+# Checkpoint Metadata - v2 format
+version: "2.0"
+checkpoint_id: "CP_1_005"
+created: "2025-12-17T09:01:19-05:00"
+message: "Auto-checkpoint before context compaction"
+
+git:
+  commit: "89a942c"
+  branch: "feat/spiral-pm-system"
+  files_changed: 5
+
+workflow:
+  phase: "phase_1_planning"
+
+recovery:
+  compatible_versions: ["1.0", "2.0"]
+  restore_priority: ["state.yaml", "handoff.md", "active_state/agent.yaml"]

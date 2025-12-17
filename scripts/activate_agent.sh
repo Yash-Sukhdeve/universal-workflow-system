@@ -35,6 +35,9 @@ source_lib "atomic_utils.sh" || true
 source_lib "decision_utils.sh" || true
 source_lib "schema_utils.sh" || true
 
+# Session manager for real-time dashboard integration
+source_lib "session_manager.sh" || true
+
 # Color codes
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
@@ -294,10 +297,25 @@ capabilities:"
             "$current_checkpoint" > /dev/null 2>&1 || true
     fi
 
+    # Create dashboard session for real-time monitoring
+    local session_id=""
+    if declare -f create_agent_session > /dev/null 2>&1; then
+        session_id=$(create_agent_session "$agent" "Starting work in phase ${current_phase}")
+        # Store session ID in active.yaml for reference
+        echo "" >> .workflow/agents/active.yaml
+        echo "dashboard_session:" >> .workflow/agents/active.yaml
+        echo "  id: \"${session_id}\"" >> .workflow/agents/active.yaml
+        echo "  started_at: \"${timestamp}\"" >> .workflow/agents/active.yaml
+        echo -e "${BLUE}📊 Dashboard session: ${session_id}${NC}"
+    fi
+
     echo -e "${GREEN}✓ ${agent} agent activated${NC}"
     echo ""
     echo -e "Agent workspace: ${YELLOW}workspace/${agent}${NC}"
     echo -e "View status: ${BLUE}./scripts/activate_agent.sh ${agent} status${NC}"
+    if [[ -n "$session_id" ]]; then
+        echo -e "Dashboard:    ${BLUE}http://localhost:8080/#agents${NC}"
+    fi
 }
 
 # Function to load agent-specific skills
@@ -370,23 +388,31 @@ load_agent_skills() {
 # Function to deactivate an agent
 deactivate_agent() {
     local agent=$1
-    
+
     if [ ! -f .workflow/agents/active.yaml ]; then
         echo -e "${YELLOW}No active agent to deactivate${NC}"
         return
     fi
-    
+
     echo -e "${BLUE}🔄 Deactivating ${agent} agent...${NC}"
-    
+
+    # End dashboard session if exists
+    local session_id=""
+    session_id=$(grep -A1 "dashboard_session:" .workflow/agents/active.yaml 2>/dev/null | grep "id:" | sed 's/.*id: "\([^"]*\)".*/\1/' || true)
+    if [[ -n "$session_id" ]] && declare -f end_agent_session > /dev/null 2>&1; then
+        end_agent_session "$session_id" "success"
+        echo -e "${BLUE}📊 Dashboard session ended: ${session_id}${NC}"
+    fi
+
     # Save agent state to memory
     cp .workflow/agents/active.yaml .workflow/agents/memory/${agent}_$(date +%s).yaml
-    
+
     # Clear active agent
     rm .workflow/agents/active.yaml
-    
+
     # Log deactivation
     echo "$(date -Iseconds) | AGENT_DEACTIVATED | ${agent}" >> .workflow/checkpoints.log
-    
+
     echo -e "${GREEN}✓ ${agent} agent deactivated${NC}"
 }
 

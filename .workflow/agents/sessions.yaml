@@ -1,0 +1,40 @@
+# Multi-Agent Session Tracking
+# Tracks all active and recent agent sessions for dashboard monitoring
+
+sessions:
+  - id: "sess_1765980307_2314611"
+    agent: "experimenter"
+    icon: "🧪"
+    color: "#e67e22"
+    task: "Run unit tests on auth module"
+    status: "active"
+    progress: 0
+    started_at: "2025-12-17T09:05:07-05:00"
+    updated_at: "2025-12-17T09:05:07-05:00"
+  - id: "sess_1765980306_2314593"
+    agent: "implementer"
+    icon: "💻"
+    color: "#2ecc71"
+    task: "Build API endpoints for user auth"
+    status: "active"
+    progress: 25
+    started_at: "2025-12-17T09:05:06-05:00"
+    updated_at: "2025-12-17T09:05:13-05:00"
+  - id: "sess_1765980296_2314535"
+    agent: "researcher"
+    icon: "🔬"
+    color: "#3498db"
+    task: "Analyzing attention mechanisms"
+    status: "active"
+    progress: 45
+    started_at: "2025-12-17T09:04:56-05:00"
+    updated_at: "2025-12-17T09:05:12-05:00"
+
+# Session history (completed sessions for reference)
+history: []
+
+# Configuration
+config:
+  max_concurrent_agents: 10
+  history_retention_days: 7
+  auto_cleanup: true

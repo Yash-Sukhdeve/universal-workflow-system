@@ -230,7 +230,239 @@ body {
 .ticket-id { font-size: 0.75rem; color: var(--accent); margin-bottom: 4px; }
 .ticket-title { font-weight: 500; font-size: 0.95rem; }
 
-/* Agent View */
+/* Agent View - Multi-Agent Grid */
+.agents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+    padding-bottom: 20px;
+}
+
+/* Agent Card */
+.agent-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.agent-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.agent-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--agent-color, var(--accent));
+}
+
+.agent-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.agent-icon {
+    font-size: 2rem;
+    background: rgba(255, 255, 255, 0.1);
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+}
+
+.agent-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+}
+
+.agent-status {
+    margin-left: auto;
+    font-size: 0.85rem;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.status-active {
+    background: rgba(35, 134, 54, 0.2);
+    color: #7ee787;
+}
+
+.status-completing {
+    background: rgba(227, 179, 65, 0.2);
+    color: #e3b341;
+}
+
+.status-idle {
+    background: rgba(139, 148, 158, 0.2);
+    color: #8b949e;
+}
+
+.agent-task {
+    margin-bottom: 15px;
+}
+
+.agent-task label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: 5px;
+}
+
+.agent-task span {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    display: block;
+    line-height: 1.4;
+}
+
+/* Progress Bar */
+.agent-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 40px;
+    text-align: right;
+}
+
+.agent-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
+.elapsed-time {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.session-id {
+    font-family: monospace;
+    opacity: 0.7;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-secondary);
+}
+
+.empty-icon {
+    font-size: 4rem;
+    display: block;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 10px 0;
+    font-size: 1.1rem;
+}
+
+.empty-hint {
+    font-size: 0.9rem !important;
+    opacity: 0.7;
+    font-family: monospace;
+}
+
+/* Connection Status */
+.status-dot.connected {
+    background-color: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+}
+
+.status-dot.disconnected {
+    background-color: var(--text-secondary);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Notifications */
+.notifications-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 1000;
+}
+
+.notification {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    padding: 12px 20px;
+    border-radius: 8px;
+    animation: slideIn 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Header Actions */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Legacy Single Agent View (kept for backwards compatibility) */
 .agent-card-large {
     background-color: var(--bg-card);
     border: 1px solid var(--border);

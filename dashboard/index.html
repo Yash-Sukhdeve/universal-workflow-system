@@ -81,25 +81,20 @@
             <!-- Agents View -->
             <section id="view-agents" class="view hidden">
                 <header class="view-header">
-                    <h1>Active Agents</h1>
-                </header>
-                <div class="agent-card-large">
-                    <div class="agent-avatar">🤖</div>
-                    <div class="agent-details">
-                        <h2 id="agent-name">Unknown</h2>
-                        <p class="agent-role">Currently Active</p>
-                        <div class="agent-metrics">
-                            <div class="metric">
-                                <span class="label">Status</span>
-                                <span class="value green">Online</span>
-                            </div>
-                            <div class="metric">
-                                <span class="label">Workspace</span>
-                                <span class="value" id="agent-workspace">...</span>
-                            </div>
-                        </div>
+                    <h1>🤖 Active Agents <span class="badge" id="agent-count">0</span></h1>
+                    <div class="header-actions">
+                        <span id="connection-status" class="status-dot disconnected" title="Polling mode"></span>
+                        <button class="btn-refresh" onclick="refreshData()">🔄 Refresh</button>
                     </div>
+                </header>
+
+                <!-- Multi-Agent Grid -->
+                <div class="agents-grid" id="agents-list">
+                    <!-- Agent cards will be rendered here by app.js -->
                 </div>
+
+                <!-- Notifications container for real-time updates -->
+                <div id="notifications" class="notifications-container"></div>
             </section>
 
         </main>
