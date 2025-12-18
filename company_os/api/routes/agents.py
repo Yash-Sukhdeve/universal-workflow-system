@@ -94,9 +94,11 @@ async def list_agents(
             for a in agents
         ]
     except Exception as e:
+        import logging
+        logging.error(f"Failed to get agents: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get agents: {e}"
+            detail="Failed to get agents"
         )
 
 
@@ -138,10 +140,18 @@ async def activate_agent(
             metadata=session.metadata
         )
 
+    except ValueError as e:
+        # Input validation errors can be shown to user
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
+        import logging
+        logging.error(f"Failed to activate agent: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to activate agent: {e}"
+            detail="Failed to activate agent"
         )
 
 
@@ -175,9 +185,11 @@ async def list_sessions(
             for s in sessions
         ]
     except Exception as e:
+        import logging
+        logging.error(f"Failed to get sessions: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get sessions: {e}"
+            detail="Failed to get sessions"
         )
 
 
@@ -212,9 +224,11 @@ async def get_session(
     except HTTPException:
         raise
     except Exception as e:
+        import logging
+        logging.error(f"Failed to get session: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get session: {e}"
+            detail="Failed to get session"
         )
 
 
@@ -239,9 +253,11 @@ async def update_session(
 
         return await get_session(session_id, current_user)
     except Exception as e:
+        import logging
+        logging.error(f"Failed to update session: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update session: {e}"
+            detail="Failed to update session"
         )
 
 
@@ -260,9 +276,11 @@ async def end_session(
         await state.uws_adapter.end_session(session_id, result)
         return {"message": "Session ended", "result": result}
     except Exception as e:
+        import logging
+        logging.error(f"Failed to end session: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to end session: {e}"
+            detail="Failed to end session"
         )
 
 
@@ -288,9 +306,11 @@ async def list_skills(
             for s in skills
         ]
     except Exception as e:
+        import logging
+        logging.error(f"Failed to get skills: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get skills: {e}"
+            detail="Failed to get skills"
         )
 
 
@@ -306,9 +326,11 @@ async def list_enabled_skills(
     try:
         return await state.uws_adapter.get_enabled_skills()
     except Exception as e:
+        import logging
+        logging.error(f"Failed to get enabled skills: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get enabled skills: {e}"
+            detail="Failed to get enabled skills"
         )
 
 
@@ -326,9 +348,11 @@ async def enable_skill(
         await state.uws_adapter.enable_skill(skill_name)
         return {"message": f"Skill '{skill_name}' enabled"}
     except Exception as e:
+        import logging
+        logging.error(f"Failed to enable skill: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to enable skill: {e}"
+            detail="Failed to enable skill"
         )
 
 
@@ -346,9 +370,11 @@ async def disable_skill(
         await state.uws_adapter.disable_skill(skill_name)
         return {"message": f"Skill '{skill_name}' disabled"}
     except Exception as e:
+        import logging
+        logging.error(f"Failed to disable skill: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disable skill: {e}"
+            detail="Failed to disable skill"
         )
 
 
@@ -373,9 +399,11 @@ async def get_workflow_status(
             current_checkpoint=status.get("current_checkpoint")
         )
     except Exception as e:
+        import logging
+        logging.error(f"Failed to get workflow status: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get workflow status: {e}"
+            detail="Failed to get workflow status"
         )
 
 
@@ -392,10 +420,17 @@ async def create_checkpoint(
     try:
         checkpoint_id = await state.uws_adapter.create_checkpoint(message)
         return {"checkpoint_id": checkpoint_id, "message": message}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
+        import logging
+        logging.error(f"Failed to create checkpoint: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create checkpoint: {e}"
+            detail="Failed to create checkpoint"
         )
 
 
@@ -411,9 +446,11 @@ async def list_checkpoints(
     try:
         return await state.uws_adapter.list_checkpoints()
     except Exception as e:
+        import logging
+        logging.error(f"Failed to list checkpoints: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list checkpoints: {e}"
+            detail="Failed to list checkpoints"
         )
 
 
@@ -430,7 +467,9 @@ async def recover_context(
         result = await state.uws_adapter.recover_context()
         return result
     except Exception as e:
+        import logging
+        logging.error(f"Failed to recover context: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to recover context: {e}"
+            detail="Failed to recover context"
         )

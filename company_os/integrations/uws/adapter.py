@@ -7,12 +7,48 @@ Bridges Company OS API with UWS workflow system scripts.
 import subprocess
 import json
 import asyncio
+import re
+import shlex
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
 import yaml
+
+
+# Input validation patterns
+SAFE_ARG_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.\s:/@]+$')
+MAX_ARG_LENGTH = 1000
+
+
+def validate_shell_arg(arg: str, arg_name: str = "argument") -> str:
+    """
+    Validate and sanitize shell command arguments to prevent injection.
+
+    Args:
+        arg: The argument to validate
+        arg_name: Name of the argument for error messages
+
+    Returns:
+        Sanitized argument string
+
+    Raises:
+        ValueError: If argument contains dangerous characters
+    """
+    if not arg:
+        return ""
+
+    if len(arg) > MAX_ARG_LENGTH:
+        raise ValueError(f"{arg_name} exceeds maximum length of {MAX_ARG_LENGTH}")
+
+    # Check for shell metacharacters that could enable injection
+    dangerous_chars = ['$', '`', '|', '&', ';', '>', '<', '(', ')', '{', '}', '[', ']', '!', '\\', '\n', '\r']
+    for char in dangerous_chars:
+        if char in arg:
+            raise ValueError(f"{arg_name} contains invalid character: {repr(char)}")
+
+    return arg
 
 
 @dataclass
@@ -128,11 +164,21 @@ class UWSAdapter:
 
         Returns:
             Session ID
+
+        Raises:
+            ValueError: If input validation fails
+            RuntimeError: If agent activation fails
         """
+        # Validate all inputs to prevent command injection
+        safe_agent_type = validate_shell_arg(agent_type, "agent_type")
+        safe_task = validate_shell_arg(task_description, "task_description")
+        safe_org_id = validate_shell_arg(org_id, "org_id")
+        safe_task_id = validate_shell_arg(task_id, "task_id")
+
         # Create session using session_manager
         result = await self._run_script_async(
             "lib/session_manager.sh",
-            ["create", agent_type, task_description]
+            ["create", safe_agent_type, safe_task]
         )
 
         if result.returncode != 0:
@@ -143,13 +189,13 @@ class UWSAdapter:
         # Update session with org/task context
         await self._update_session_metadata(
             session_id,
-            {"org_id": org_id, "task_id": task_id}
+            {"org_id": safe_org_id, "task_id": safe_task_id}
         )
 
         # Activate agent via UWS
         result = await self._run_script_async(
             "activate_agent.sh",
-            [agent_type, "activate"]
+            [safe_agent_type, "activate"]
         )
 
         if result.returncode != 0:
@@ -335,9 +381,11 @@ class UWSAdapter:
 
     async def create_checkpoint(self, message: str) -> str:
         """Create a workflow checkpoint."""
+        safe_message = validate_shell_arg(message, "checkpoint_message")
+
         result = await self._run_script_async(
             "checkpoint.sh",
-            ["create", message]
+            ["create", safe_message]
         )
 
         if result.returncode != 0:

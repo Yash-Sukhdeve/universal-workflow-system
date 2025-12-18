@@ -96,9 +96,12 @@ async def store_memory(
         return {"memory_id": str(memory_id)}
 
     except Exception as e:
+        # Log internal error but don't expose to client
+        import logging
+        logging.error(f"Failed to store memory: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to store memory: {e}"
+            detail="Failed to store memory"
         )
 
 
@@ -148,9 +151,11 @@ async def search_memories(
         ]
 
     except Exception as e:
+        import logging
+        logging.error(f"Failed to search memories: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to search memories: {e}"
+            detail="Failed to search memories"
         )
 
 
@@ -188,9 +193,11 @@ async def build_agent_context(
         )
 
     except Exception as e:
+        import logging
+        logging.error(f"Failed to build context: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to build context: {e}"
+            detail="Failed to build context"
         )
 
 
@@ -233,9 +240,11 @@ async def find_similar_tasks(
         ]
 
     except Exception as e:
+        import logging
+        logging.error(f"Failed to find similar tasks: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to find similar tasks: {e}"
+            detail="Failed to find similar tasks"
         )
 
 
@@ -274,9 +283,11 @@ async def find_decisions(
         ]
 
     except Exception as e:
+        import logging
+        logging.error(f"Failed to find decisions: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to find decisions: {e}"
+            detail="Failed to find decisions"
         )
 
 
@@ -317,9 +328,11 @@ async def find_code_patterns(
         ]
 
     except Exception as e:
+        import logging
+        logging.error(f"Failed to find code patterns: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to find code patterns: {e}"
+            detail="Failed to find code patterns"
         )
 
 
@@ -358,9 +371,22 @@ async def find_errors(
         ]
 
     except Exception as e:
+        import logging
+        logging.error(f"Failed to find errors: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to find errors: {e}"
+            detail="Failed to find errors"
+        )
+
+
+def parse_uuid(value: str, field_name: str = "id") -> UUID:
+    """Parse and validate UUID, raising HTTPException on failure."""
+    try:
+        return UUID(value)
+    except (ValueError, AttributeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} must be a valid UUID"
         )
 
 
@@ -376,9 +402,12 @@ async def update_memory_quality(
     """
     state = get_app_state()
 
+    # Validate UUID format
+    memory_uuid = parse_uuid(memory_id, "memory_id")
+
     try:
         await state.memory_service.update_quality(
-            memory_id=UUID(memory_id),
+            memory_id=memory_uuid,
             quality_score=quality_score,
             feedback=feedback
         )
@@ -388,7 +417,7 @@ async def update_memory_quality(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update quality: {e}"
+            detail="Failed to update quality"
         )
 
 
@@ -423,9 +452,11 @@ async def consolidate_memories(
         return {"merged_count": merged_count}
 
     except Exception as e:
+        import logging
+        logging.error(f"Failed to consolidate: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to consolidate: {e}"
+            detail="Failed to consolidate memories"
         )
 
 
@@ -460,7 +491,9 @@ async def prune_old_memories(
         return {"deleted_count": deleted_count}
 
     except Exception as e:
+        import logging
+        logging.error(f"Failed to prune: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to prune: {e}"
+            detail="Failed to prune memories"
         )

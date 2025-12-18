@@ -282,8 +282,11 @@ async def update_task(
 
     Stores TaskUpdated event.
     """
+    # Validate UUID format
+    task_uuid = parse_uuid(task_id, "task_id")
+
     state = get_app_state()
-    stream_id = f"task-{task_id}"
+    stream_id = f"task-{task_uuid}"
 
     # Get current version
     current_version = await state.event_store.get_stream_version(stream_id)
@@ -294,7 +297,7 @@ async def update_task(
         )
 
     # Build event data with only changed fields
-    event_data = {"id": task_id}
+    event_data = {"id": str(task_uuid)}
     if request.title is not None:
         event_data["title"] = request.title
     if request.description is not None:
@@ -322,7 +325,7 @@ async def update_task(
     for e in events:
         await state.projection_manager.apply_event(e)
 
-    return await get_task(task_id, current_user)
+    return await get_task(str(task_uuid), current_user)
 
 
 @router.post("/{task_id}/assign", response_model=TaskResponse)
@@ -336,8 +339,11 @@ async def assign_task(
 
     If assigning to an agent, activates the agent via UWS.
     """
+    # Validate UUID format
+    task_uuid = parse_uuid(task_id, "task_id")
+
     state = get_app_state()
-    stream_id = f"task-{task_id}"
+    stream_id = f"task-{task_uuid}"
 
     # Validate assignment
     if not request.agent_type and not request.user_id:
@@ -355,10 +361,10 @@ async def assign_task(
         )
 
     # Get task info for agent activation
-    task = await get_task(task_id, current_user)
+    task = await get_task(str(task_uuid), current_user)
 
     event_data = {
-        "id": task_id,
+        "id": str(task_uuid),
         "agent_type": request.agent_type,
         "user_id": request.user_id
     }
@@ -370,7 +376,7 @@ async def assign_task(
                 agent_type=request.agent_type,
                 task_description=task.title,
                 org_id=str(current_user.org_id),
-                task_id=task_id
+                task_id=str(task_uuid)
             )
             event_data["session_id"] = session_id
         except Exception as e:
@@ -396,9 +402,9 @@ async def assign_task(
         await state.projection_manager.apply_event(e)
 
     # Also update status to in_progress
-    await _update_task_status(task_id, "in_progress", current_user)
+    await _update_task_status(str(task_uuid), "in_progress", current_user)
 
-    return await get_task(task_id, current_user)
+    return await get_task(str(task_uuid), current_user)
 
 
 @router.post("/{task_id}/complete")
@@ -410,7 +416,9 @@ async def complete_task(
     """
     Mark a task as completed.
     """
-    return await _update_task_status(task_id, "completed", current_user, result)
+    # Validate UUID format
+    task_uuid = parse_uuid(task_id, "task_id")
+    return await _update_task_status(str(task_uuid), "completed", current_user, result)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -421,8 +429,11 @@ async def delete_task(
     """
     Delete a task.
     """
+    # Validate UUID format
+    task_uuid = parse_uuid(task_id, "task_id")
+
     state = get_app_state()
-    stream_id = f"task-{task_id}"
+    stream_id = f"task-{task_uuid}"
 
     current_version = await state.event_store.get_stream_version(stream_id)
     if current_version < 0:
@@ -433,7 +444,7 @@ async def delete_task(
 
     event = NewEvent(
         event_type="TaskDeleted",
-        event_data={"id": task_id},
+        event_data={"id": str(task_uuid)},
         metadata={"user_id": str(current_user.user_id)}
     )
 

@@ -98,13 +98,23 @@ async def set_org_context(
     """
     state = get_app_state()
 
-    # Set org context for RLS
-    async with state.pool.acquire() as conn:
-        await conn.execute(
-            f"SET app.current_org_id = '{current_user.org_id}'"
+    # Validate org_id format before use
+    try:
+        org_uuid = UUID(current_user.org_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid organization context"
         )
 
-    return UUID(current_user.org_id)
+    # Set org context for RLS using parameterized query (prevents SQL injection)
+    async with state.pool.acquire() as conn:
+        await conn.execute(
+            "SELECT set_config('app.current_org_id', $1, true)",
+            str(org_uuid)
+        )
+
+    return org_uuid
 
 
 class CurrentUser:

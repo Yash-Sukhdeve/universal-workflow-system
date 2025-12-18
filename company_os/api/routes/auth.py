@@ -4,11 +4,12 @@ Authentication Routes.
 User registration, login, and token management.
 """
 
+import re
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 from ..state import get_app_state
 from ..security import get_current_user, get_auth_service
@@ -19,6 +20,35 @@ from ...core.auth.models import TokenPayload
 router = APIRouter()
 
 
+# Password validation constants
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 128
+PASSWORD_REQUIREMENTS = [
+    (r'[a-z]', "at least one lowercase letter"),
+    (r'[A-Z]', "at least one uppercase letter"),
+    (r'[0-9]', "at least one digit"),
+]
+
+
+def validate_password_strength(password: str) -> str:
+    """
+    Validate password meets security requirements.
+
+    Raises ValueError if password is weak.
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+
+    if len(password) > MAX_PASSWORD_LENGTH:
+        raise ValueError(f"Password must not exceed {MAX_PASSWORD_LENGTH} characters")
+
+    for pattern, message in PASSWORD_REQUIREMENTS:
+        if not re.search(pattern, password):
+            raise ValueError(f"Password must contain {message}")
+
+    return password
+
+
 # Request/Response Models
 
 class RegisterRequest(BaseModel):
@@ -27,6 +57,20 @@ class RegisterRequest(BaseModel):
     name: str
     password: str
     org_name: Optional[str] = None
+
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return validate_password_strength(v)
+
+    @field_validator('name')
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Name cannot be empty")
+        if len(v) > 100:
+            raise ValueError("Name must not exceed 100 characters")
+        return v.strip()
 
 
 class LoginRequest(BaseModel):
