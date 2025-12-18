@@ -7,8 +7,8 @@ test.describe('Login Flow', () => {
     // Should redirect to login page
     await expect(page).toHaveURL('/login');
 
-    // Verify login page elements
-    await expect(page.locator('h1')).toContainText('Login');
+    // Verify login page elements - h1 says "Company OS", not "Login"
+    await expect(page.locator('h1')).toContainText('Company OS');
     await expect(page.locator('input[type="email"]')).toBeVisible();
     await expect(page.locator('input[type="password"]')).toBeVisible();
     await expect(page.locator('button[type="submit"]')).toBeVisible();
@@ -27,8 +27,8 @@ test.describe('Login Flow', () => {
     // Should redirect to dashboard
     await expect(page).toHaveURL('/', { timeout: 10000 });
 
-    // Verify we're on the dashboard
-    await expect(page.locator('h1')).toContainText('Dashboard', { timeout: 5000 });
+    // Verify we're on the dashboard (h2 in header, not h1)
+    await expect(page.locator('h2')).toContainText('Dashboard', { timeout: 5000 });
   });
 
   test('should show validation error for empty fields', async ({ page }) => {

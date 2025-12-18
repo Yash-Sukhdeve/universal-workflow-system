@@ -20,7 +20,7 @@ test.describe('Agents Page', () => {
 
   test('should display agent cards', async ({ page }) => {
     // Wait for agents to load
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -34,7 +34,7 @@ test.describe('Agents Page', () => {
   });
 
   test('should display agent status', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -51,7 +51,7 @@ test.describe('Agents Page', () => {
   });
 
   test('should display agent cards with correct information', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for agent cards
     const agentCards = page.locator('[data-testid="agent-card"], .agent-card, article, div').filter({
@@ -77,7 +77,7 @@ test.describe('Agents Page', () => {
   });
 
   test('should have activate/deactivate buttons', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for action buttons
     const actionButtons = page.locator('button').filter({
@@ -94,7 +94,7 @@ test.describe('Agents Page', () => {
   });
 
   test('should toggle agent status', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for toggle buttons
     const toggleButtons = page.locator('button').filter({
@@ -131,7 +131,7 @@ test.describe('Agents Page', () => {
   });
 
   test('should display agent capabilities', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -148,7 +148,7 @@ test.describe('Agents Page', () => {
   });
 
   test('should display multiple agent types', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -167,7 +167,7 @@ test.describe('Agents Page', () => {
   });
 
   test('should show agent metrics or stats', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -184,7 +184,7 @@ test.describe('Agents Page', () => {
   });
 
   test('should handle agent details or expansion', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for details or expand buttons
     const detailButtons = page.locator('button, a').filter({
@@ -206,14 +206,14 @@ test.describe('Agents Page', () => {
   });
 
   test('should persist agent state after reload', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Get initial state
     const initialContent = await page.content();
 
     // Reload page
     await page.reload();
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Get state after reload
     const reloadedContent = await page.content();

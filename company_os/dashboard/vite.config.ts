@@ -12,6 +12,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    watch: {
+      // Use polling if file watchers are exhausted
+      usePolling: process.env.VITE_USE_POLLING === 'true',
+      interval: 1000,
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

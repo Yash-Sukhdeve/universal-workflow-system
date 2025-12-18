@@ -20,7 +20,7 @@ test.describe('Memory Page', () => {
 
   test('should display memory items', async ({ page }) => {
     // Wait for memory items to load
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -54,7 +54,7 @@ test.describe('Memory Page', () => {
   });
 
   test('should display memory item cards or list', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for memory items
     const memoryItems = page.locator('[data-testid="memory-item"], .memory-item, .memory-card, li, article').filter({
@@ -78,7 +78,7 @@ test.describe('Memory Page', () => {
   });
 
   test('should show memory item details', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -96,7 +96,7 @@ test.describe('Memory Page', () => {
   });
 
   test('should display memory item metadata', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -113,7 +113,7 @@ test.describe('Memory Page', () => {
   });
 
   test('should handle memory item actions', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for action buttons
     const actionButtons = page.locator('button').filter({
@@ -131,7 +131,7 @@ test.describe('Memory Page', () => {
   });
 
   test('should display memory statistics', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -146,7 +146,7 @@ test.describe('Memory Page', () => {
   });
 
   test('should filter or sort memory items', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for filter or sort controls
     const filterControls = page.locator('select, button, [role="combobox"]').filter({
@@ -167,7 +167,7 @@ test.describe('Memory Page', () => {
   });
 
   test('should handle empty state', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -183,14 +183,14 @@ test.describe('Memory Page', () => {
   });
 
   test('should persist state after reload', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Get initial state
     const initialContent = await page.content();
 
     // Reload page
     await page.reload();
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Get state after reload
     const reloadedContent = await page.content();
@@ -215,7 +215,7 @@ test.describe('Memory Page', () => {
     });
 
     await page.reload();
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Either API was called or static data is shown
     const pageContent = await page.content();
@@ -239,7 +239,7 @@ test.describe('Memory Page', () => {
   });
 
   test('should handle pagination if present', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for pagination controls
     const paginationControls = page.locator('button, a').filter({

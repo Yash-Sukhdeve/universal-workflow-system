@@ -4,13 +4,14 @@ Mock API Server for Dashboard Testing.
 Simple mock server that responds to frontend API calls without requiring PostgreSQL.
 """
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 import uuid
+import asyncio
 
 app = FastAPI(title="Company OS Mock API")
 
@@ -60,8 +61,9 @@ MOCK_MEMORIES = [
 
 # Models
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = ""
+    password: str = ""
+    username: str = ""  # OAuth2 form compatibility
 
 class RegisterRequest(BaseModel):
     email: str
@@ -88,14 +90,22 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 
 # Routes
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
 @app.get("/health")
 async def health():
     return {"status": "healthy", "version": "0.1.0-mock"}
 
 
-@app.post("/api/auth/login")
-async def login(request: LoginRequest):
-    if request.email and request.password:
+@app.post("/auth/login")
+async def login(
+    username: str = Form(default=""),
+    password: str = Form(default=""),
+):
+    # Accept either form data (OAuth2 style) or JSON
+    if username and password:
         return {
             "access_token": MOCK_TOKEN,
             "token_type": "bearer",
@@ -104,7 +114,7 @@ async def login(request: LoginRequest):
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
-@app.post("/api/auth/register")
+@app.post("/auth/register")
 async def register(request: RegisterRequest):
     return {
         "access_token": MOCK_TOKEN,
@@ -113,12 +123,12 @@ async def register(request: RegisterRequest):
     }
 
 
-@app.get("/api/auth/me")
+@app.get("/auth/me")
 async def get_me(user: dict = Depends(get_current_user)):
     return user
 
 
-@app.get("/api/tasks")
+@app.get("/tasks")
 async def list_tasks(page: int = 1, per_page: int = 10, user: dict = Depends(get_current_user)):
     return {
         "items": MOCK_TASKS,
@@ -128,7 +138,7 @@ async def list_tasks(page: int = 1, per_page: int = 10, user: dict = Depends(get
     }
 
 
-@app.post("/api/tasks")
+@app.post("/tasks")
 async def create_task(request: CreateTaskRequest, user: dict = Depends(get_current_user)):
     new_task = {
         "id": f"task-{uuid.uuid4().hex[:8]}",
@@ -144,7 +154,7 @@ async def create_task(request: CreateTaskRequest, user: dict = Depends(get_curre
     return new_task
 
 
-@app.post("/api/tasks/{task_id}/complete")
+@app.post("/tasks/{task_id}/complete")
 async def complete_task(task_id: str, user: dict = Depends(get_current_user)):
     for task in MOCK_TASKS:
         if task["id"] == task_id:
@@ -154,12 +164,12 @@ async def complete_task(task_id: str, user: dict = Depends(get_current_user)):
     raise HTTPException(status_code=404, detail="Task not found")
 
 
-@app.get("/api/agents")
+@app.get("/agents")
 async def list_agents(user: dict = Depends(get_current_user)):
     return MOCK_AGENTS
 
 
-@app.post("/api/agents/{name}/activate")
+@app.post("/agents/{name}/activate")
 async def activate_agent(name: str, user: dict = Depends(get_current_user)):
     for agent in MOCK_AGENTS:
         if agent["name"] == name:
@@ -169,7 +179,7 @@ async def activate_agent(name: str, user: dict = Depends(get_current_user)):
     raise HTTPException(status_code=404, detail="Agent not found")
 
 
-@app.post("/api/agents/{name}/deactivate")
+@app.post("/agents/{name}/deactivate")
 async def deactivate_agent(name: str, user: dict = Depends(get_current_user)):
     for agent in MOCK_AGENTS:
         if agent["name"] == name:
@@ -179,7 +189,7 @@ async def deactivate_agent(name: str, user: dict = Depends(get_current_user)):
     raise HTTPException(status_code=404, detail="Agent not found")
 
 
-@app.get("/api/memory/context")
+@app.get("/memory/context")
 async def get_memory_context(user: dict = Depends(get_current_user)):
     return {
         "recent_memories": MOCK_MEMORIES,
@@ -188,12 +198,12 @@ async def get_memory_context(user: dict = Depends(get_current_user)):
     }
 
 
-@app.get("/api/memory/search")
+@app.get("/memory/search")
 async def search_memory(query: str, limit: int = 10, user: dict = Depends(get_current_user)):
     return [m for m in MOCK_MEMORIES if query.lower() in m["content"].lower()][:limit]
 
 
-@app.post("/api/memory/store")
+@app.post("/memory/store")
 async def store_memory(request: StoreMemoryRequest, user: dict = Depends(get_current_user)):
     new_memory = {
         "id": f"mem-{uuid.uuid4().hex[:8]}",
@@ -205,6 +215,41 @@ async def store_memory(request: StoreMemoryRequest, user: dict = Depends(get_cur
     }
     MOCK_MEMORIES.insert(0, new_memory)
     return new_memory
+
+
+# WebSocket connection manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                pass
+
+manager = ConnectionManager()
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Receive messages from client
+            data = await websocket.receive_json()
+            # Echo back or handle as needed
+            await websocket.send_json({"type": "ack", "data": data})
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 
 if __name__ == "__main__":

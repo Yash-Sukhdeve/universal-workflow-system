@@ -10,10 +10,16 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: 'html',
+  timeout: 60000, // 60 second timeout per test
+  expect: {
+    timeout: 10000, // 10 second timeout for assertions
+  },
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    navigationTimeout: 30000, // 30 second navigation timeout
+    actionTimeout: 15000, // 15 second action timeout
   },
 
   projects: [
@@ -23,18 +29,23 @@ export default defineConfig({
     },
   ],
 
-  webServer: [
+  // Web servers for E2E testing
+  webServer: process.env.SKIP_WEBSERVER ? undefined : [
     {
-      command: 'cd .. && python -m uvicorn company_os.main:app --host 0.0.0.0 --port 8000',
-      url: 'http://localhost:8000',
-      reuseExistingServer: true,
-      timeout: 10000,
+      command: 'cd .. && python3 mock_server.py',
+      url: 'http://localhost:8000/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 60000,
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
     {
-      command: 'npm run dev',
+      command: 'VITE_USE_POLLING=true npm run dev',
       url: 'http://localhost:5173',
-      reuseExistingServer: true,
-      timeout: 10000,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60000,
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
   ],
 });

@@ -11,7 +11,8 @@ test.describe('Dashboard Page', () => {
   });
 
   test('should display dashboard title', async ({ page }) => {
-    await expect(page.locator('h1')).toContainText('Dashboard', { timeout: 5000 });
+    // Dashboard title is in h2 (in header), not h1
+    await expect(page.locator('h2')).toContainText('Dashboard', { timeout: 5000 });
   });
 
   test('should display stats cards', async ({ page }) => {
@@ -82,7 +83,7 @@ test.describe('Dashboard Page', () => {
     await page.reload();
 
     // Wait a bit for API calls
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Verify API was called or data is displayed
     const hasData = apiCallMade || (await page.locator('text=/[0-9]+/').count() > 0);
@@ -99,7 +100,7 @@ test.describe('Dashboard Page', () => {
     });
 
     await page.reload();
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Either WebSocket connected or app works without it
     // This is non-blocking - we just log the status

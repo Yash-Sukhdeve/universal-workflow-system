@@ -20,7 +20,7 @@ test.describe('Tasks Page', () => {
 
   test('should display task list', async ({ page }) => {
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     const pageContent = await page.content();
 
@@ -133,7 +133,7 @@ test.describe('Tasks Page', () => {
   });
 
   test('should display task cards or list items', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for task items
     const taskItems = page.locator('[data-testid="task-item"], .task-item, .task-card, li, article').filter({
@@ -152,7 +152,7 @@ test.describe('Tasks Page', () => {
   });
 
   test('should handle task actions', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Look for action buttons
     const actionButtons = page.locator('button').filter({
@@ -175,14 +175,14 @@ test.describe('Tasks Page', () => {
   });
 
   test('should persist tasks after page reload', async ({ page }) => {
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Get initial content
     const initialContent = await page.content();
 
     // Reload page
     await page.reload();
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
     // Get content after reload
     const reloadedContent = await page.content();
