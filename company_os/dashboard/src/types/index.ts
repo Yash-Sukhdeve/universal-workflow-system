@@ -19,10 +19,10 @@ export interface Task {
   description: string
   status: 'pending' | 'in_progress' | 'completed' | 'blocked'
   priority: 'low' | 'medium' | 'high' | 'critical'
-  assigned_to?: string
+  assigned_to?: string | null
   created_at: string
   updated_at: string
-  project_id?: string
+  project_id?: string | null
 }
 
 export interface CreateTaskInput {
@@ -38,8 +38,8 @@ export interface Agent {
   name: string
   status: 'active' | 'inactive'
   capabilities: string[]
-  current_task?: string
-  activated_at?: string
+  current_task?: string | null
+  activated_at?: string | null
 }
 
 // Memory types
@@ -49,7 +49,7 @@ export interface Memory {
   type: 'decision' | 'discovery' | 'learning' | 'context'
   relevance_score: number
   created_at: string
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown> | null
 }
 
 export interface MemoryContext {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Bot, Power, PowerOff, Zap, Settings, Radio } from 'lucide-react'
 import { agentsApi } from '@/services/api'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
@@ -19,28 +19,39 @@ export function AgentsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [activatingAgent, setActivatingAgent] = useState<string | null>(null)
   const { agentEvents, isConnected } = useWebSocketContext()
+  const isMountedRef = useRef(true)
+
+  const loadAgents = useCallback(async () => {
+    try {
+      const agentsList = await agentsApi.list()
+      if (isMountedRef.current) {
+        setAgents(agentsList || [])
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        console.error('Failed to load agents:', error)
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false)
+      }
+    }
+  }, [])
 
   useEffect(() => {
+    isMountedRef.current = true
     loadAgents()
-  }, [])
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [loadAgents])
 
   // Refresh agents when we receive WebSocket agent status updates
   useEffect(() => {
-    if (agentEvents.length > 0) {
+    if (agentEvents.length > 0 && isMountedRef.current) {
       loadAgents()
     }
-  }, [agentEvents.length])
-
-  const loadAgents = async () => {
-    try {
-      const agentsList = await agentsApi.list()
-      setAgents(agentsList || [])
-    } catch (error) {
-      console.error('Failed to load agents:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  }, [agentEvents.length, loadAgents])
 
   const handleActivate = async (agentName: string) => {
     setActivatingAgent(agentName)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Search, Brain, Lightbulb, GitBranch, BookOpen, Plus } from 'lucide-react'
 import { memoryApi } from '@/services/api'
 import type { Memory, MemoryContext } from '@/types'
@@ -24,21 +24,32 @@ export function MemoryPage() {
   const [isSearching, setIsSearching] = useState(false)
   const [isLoadingContext, setIsLoadingContext] = useState(true)
   const [showStoreModal, setShowStoreModal] = useState(false)
+  const isMountedRef = useRef(true)
 
-  useEffect(() => {
-    loadContext()
-  }, [])
-
-  const loadContext = async () => {
+  const loadContext = useCallback(async () => {
     try {
       const ctx = await memoryApi.context()
-      setContext(ctx)
+      if (isMountedRef.current) {
+        setContext(ctx)
+      }
     } catch (error) {
-      console.error('Failed to load context:', error)
+      if (isMountedRef.current) {
+        console.error('Failed to load context:', error)
+      }
     } finally {
-      setIsLoadingContext(false)
+      if (isMountedRef.current) {
+        setIsLoadingContext(false)
+      }
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    loadContext()
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [loadContext])
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Plus, Search, MoreVertical, CheckCircle, Circle, Clock, AlertTriangle, RefreshCw } from 'lucide-react'
 import { tasksApi } from '@/services/api'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
@@ -25,28 +25,39 @@ export function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<Task['status'] | 'all'>('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const { taskEvents, isConnected } = useWebSocketContext()
+  const isMountedRef = useRef(true)
+
+  const loadTasks = useCallback(async () => {
+    try {
+      const response = await tasksApi.list(1, 50)
+      if (isMountedRef.current) {
+        setTasks(response.items || [])
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        console.error('Failed to load tasks:', error)
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false)
+      }
+    }
+  }, [])
 
   useEffect(() => {
+    isMountedRef.current = true
     loadTasks()
-  }, [])
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [loadTasks])
 
   // Refresh tasks when we receive WebSocket task updates
   useEffect(() => {
-    if (taskEvents.length > 0) {
+    if (taskEvents.length > 0 && isMountedRef.current) {
       loadTasks()
     }
-  }, [taskEvents.length])
-
-  const loadTasks = async () => {
-    try {
-      const response = await tasksApi.list(1, 50)
-      setTasks(response.items || [])
-    } catch (error) {
-      console.error('Failed to load tasks:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  }, [taskEvents.length, loadTasks])
 
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase())

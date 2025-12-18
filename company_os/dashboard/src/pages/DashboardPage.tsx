@@ -41,12 +41,17 @@ export function DashboardPage() {
     .slice(0, 10)
 
   useEffect(() => {
+    let isMounted = true
+
     const loadDashboard = async () => {
       try {
         const [tasksRes, agentsList] = await Promise.all([
           tasksApi.list(1, 5),
           agentsApi.list(),
         ])
+
+        // Prevent state updates if component unmounted
+        if (!isMounted) return
 
         setRecentTasks(tasksRes.items || [])
         setAgents(agentsList || [])
@@ -61,13 +66,18 @@ export function DashboardPage() {
           recentMemories: memoryEvents.length,
         })
       } catch (error) {
+        if (!isMounted) return
         console.error('Failed to load dashboard:', error)
       } finally {
-        setIsLoading(false)
+        if (isMounted) setIsLoading(false)
       }
     }
 
     loadDashboard()
+
+    return () => {
+      isMounted = false
+    }
   }, [memoryEvents.length])
 
   if (isLoading) {
