@@ -82,13 +82,15 @@ test.describe('Tasks Page', () => {
     // Wait for modal to appear
     await page.waitForTimeout(500);
 
-    // Look for modal indicators
-    const pageContent = await page.content();
+    // Look for modal indicators - CreateTaskModal uses fixed overlay with form
+    const modalOverlay = page.locator('.fixed.inset-0, [role="dialog"], .modal');
+    const modalHeading = page.locator('h2').filter({ hasText: /create.*task/i });
+    const formInputs = page.locator('form input, form textarea');
+
     const hasModal =
-      pageContent.includes('modal') ||
-      pageContent.includes('dialog') ||
-      (await page.locator('[role="dialog"], .modal, [data-testid="modal"]').count() > 0) ||
-      (await page.locator('input[placeholder*="title" i], input[placeholder*="name" i]').count() > 0);
+      (await modalOverlay.count() > 0) ||
+      (await modalHeading.count() > 0) ||
+      (await formInputs.count() > 0);
 
     expect(hasModal).toBeTruthy();
   });
@@ -135,17 +137,18 @@ test.describe('Tasks Page', () => {
   test('should display task cards or list items', async ({ page }) => {
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
-    // Look for task items
-    const taskItems = page.locator('[data-testid="task-item"], .task-item, .task-card, li, article').filter({
-      has: page.locator('text=/task|title|description/i')
-    });
+    // TasksPage uses a table with tbody tr for task rows
+    const tableRows = page.locator('tbody tr');
+    const taskItems = page.locator('[data-testid="task-item"], .task-item, .task-card');
 
+    const tableRowCount = await tableRows.count();
     const itemCount = await taskItems.count();
 
-    // Either has tasks or shows empty state
-    if (itemCount > 0) {
-      expect(itemCount).toBeGreaterThan(0);
+    // Either has tasks in table/list or shows empty state
+    if (tableRowCount > 0 || itemCount > 0) {
+      expect(tableRowCount + itemCount).toBeGreaterThan(0);
     } else {
+      // Empty state: "No tasks found"
       const pageContent = await page.content();
       expect(pageContent.includes('No tasks') || pageContent.includes('empty')).toBeTruthy();
     }
