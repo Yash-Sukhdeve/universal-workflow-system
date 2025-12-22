@@ -11,26 +11,34 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # Sessions file
 SESSIONS_FILE="${PROJECT_ROOT}/.workflow/agents/sessions.yaml"
 
-# Agent icons and colors
-declare -A AGENT_ICONS=(
-    ["researcher"]="🔬"
-    ["architect"]="🏗️"
-    ["implementer"]="💻"
-    ["experimenter"]="🧪"
-    ["optimizer"]="⚡"
-    ["deployer"]="🚀"
-    ["documenter"]="📝"
-)
+# Agent icons and colors - use functions for bash 3.x compatibility
+get_agent_icon() {
+    local agent="$1"
+    case "$agent" in
+        researcher) echo "🔬" ;;
+        architect) echo "🏗️" ;;
+        implementer) echo "💻" ;;
+        experimenter) echo "🧪" ;;
+        optimizer) echo "⚡" ;;
+        deployer) echo "🚀" ;;
+        documenter) echo "📝" ;;
+        *) echo "🤖" ;;
+    esac
+}
 
-declare -A AGENT_COLORS=(
-    ["researcher"]="#3498db"
-    ["architect"]="#9b59b6"
-    ["implementer"]="#2ecc71"
-    ["experimenter"]="#e67e22"
-    ["optimizer"]="#e74c3c"
-    ["deployer"]="#1abc9c"
-    ["documenter"]="#f1c40f"
-)
+get_agent_color() {
+    local agent="$1"
+    case "$agent" in
+        researcher) echo "#3498db" ;;
+        architect) echo "#9b59b6" ;;
+        implementer) echo "#2ecc71" ;;
+        experimenter) echo "#e67e22" ;;
+        optimizer) echo "#e74c3c" ;;
+        deployer) echo "#1abc9c" ;;
+        documenter) echo "#f1c40f" ;;
+        *) echo "#888888" ;;
+    esac
+}
 
 # Ensure sessions file exists
 ensure_sessions_file() {
@@ -65,8 +73,10 @@ create_agent_session() {
     session_id=$(generate_session_id)
     local timestamp
     timestamp=$(date -Iseconds)
-    local icon="${AGENT_ICONS[$agent_type]:-🤖}"
-    local color="${AGENT_COLORS[$agent_type]:-#888888}"
+    local icon
+    icon=$(get_agent_icon "$agent_type")
+    local color
+    color=$(get_agent_color "$agent_type")
 
     # Create temp file with updated sessions
     local temp_file
