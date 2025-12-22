@@ -8,6 +8,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(pwd)"
 
+# Accept project type as argument
+PROJECT_TYPE_ARG="${1:-}"
+
 # Source utility libraries
 if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/validation_utils.sh"
@@ -29,6 +32,15 @@ check_existing_workflow() {
     if [[ -d ".workflow" ]] && [[ -f ".workflow/state.yaml" ]]; then
         echo -e "${YELLOW}⚠ Workflow system appears to be already initialized${NC}"
         echo ""
+
+        # Non-interactive mode - backup and continue
+        if [[ ! -t 0 ]]; then
+            local backup_dir=".workflow.backup.$(date +%Y%m%d_%H%M%S)"
+            echo -e "${YELLOW}Backing up existing workflow to ${backup_dir}${NC}"
+            mv ".workflow" "$backup_dir"
+            return 0
+        fi
+
         read -p "Reinitialize (this will backup existing configuration)? [y/N]: " confirm
         if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
             echo "Initialization cancelled."
@@ -71,6 +83,24 @@ detect_project_type() {
 
 # Function to prompt for project type
 select_project_type() {
+    # Check if non-interactive mode (stdin from pipe or file)
+    if [[ ! -t 0 ]]; then
+        local input
+        read -r input || input=""
+        # Accept either number or project type name
+        case "$input" in
+            1|research) PROJECT_TYPE="research";;
+            2|ml) PROJECT_TYPE="ml";;
+            3|software) PROJECT_TYPE="software";;
+            4|llm) PROJECT_TYPE="llm";;
+            5|optimization) PROJECT_TYPE="optimization";;
+            6|deployment) PROJECT_TYPE="deployment";;
+            7|hybrid) PROJECT_TYPE="hybrid";;
+            *) PROJECT_TYPE="hybrid";;
+        esac
+        return 0
+    fi
+
     echo ""
     echo "📋 Select project type:"
     echo "  1) Research Project"
@@ -82,7 +112,7 @@ select_project_type() {
     echo "  7) Hybrid/Custom"
     echo ""
     read -p "Enter choice [1-7]: " choice
-    
+
     case $choice in
         1) PROJECT_TYPE="research";;
         2) PROJECT_TYPE="ml";;
@@ -320,43 +350,206 @@ EOF
 # Initialize knowledge base
 initialize_knowledge_base() {
     echo "🧠 Initializing knowledge base..."
-    
+
     cat > .workflow/knowledge/patterns.yaml << EOF
 # Knowledge Base - Learned Patterns
 # This file accumulates patterns and solutions across sessions
 
 patterns: []
-  
+
 solutions: []
 
 best_practices: []
 EOF
-    
+
     echo "  ✓ Knowledge base initialized"
+}
+
+# Initialize agent registry
+initialize_agent_registry() {
+    echo "🤖 Initializing agent registry..."
+
+    cat > .workflow/agents/registry.yaml << 'EOF'
+# Agent Registry - Default Configuration
+researcher:
+  description: "Literature review, hypothesis formation"
+  capabilities: ["research", "analysis", "writing"]
+  primary_skills: ["literature_review", "experimental_design", "statistical_validation"]
+
+architect:
+  description: "System design, architecture planning"
+  capabilities: ["design", "documentation", "planning"]
+  primary_skills: ["system_design", "api_design", "data_modeling"]
+
+implementer:
+  description: "Code development, model building"
+  capabilities: ["coding", "testing", "debugging"]
+  primary_skills: ["code_generation", "debugging", "testing"]
+
+experimenter:
+  description: "Experiments, benchmarks, testing"
+  capabilities: ["testing", "analysis", "automation"]
+  primary_skills: ["experiment_design", "benchmarking", "data_analysis"]
+
+optimizer:
+  description: "Performance optimization, compression"
+  capabilities: ["optimization", "profiling", "tuning"]
+  primary_skills: ["performance_profiling", "memory_optimization", "algorithm_optimization"]
+
+deployer:
+  description: "Deployment, DevOps, monitoring"
+  capabilities: ["deployment", "automation", "monitoring"]
+  primary_skills: ["ci_cd", "containerization", "monitoring"]
+
+documenter:
+  description: "Documentation, papers, guides"
+  capabilities: ["writing", "documentation", "communication"]
+  primary_skills: ["technical_writing", "api_documentation", "user_guides"]
+EOF
+
+    echo "  ✓ Agent registry initialized"
+}
+
+# Initialize skill catalog
+initialize_skill_catalog() {
+    echo "📚 Initializing skill catalog..."
+
+    cat > .workflow/skills/catalog.yaml << 'EOF'
+# Skill Catalog - Available Skills
+
+skills:
+  # Research Skills
+  literature_review:
+    description: "Search and analyze academic literature"
+    agent: researcher
+
+  experimental_design:
+    description: "Design experiments and studies"
+    agent: researcher
+
+  statistical_validation:
+    description: "Statistical analysis and validation"
+    agent: researcher
+
+  # Architecture Skills
+  system_design:
+    description: "High-level system architecture design"
+    agent: architect
+
+  api_design:
+    description: "API design and documentation"
+    agent: architect
+
+  # Implementation Skills
+  code_generation:
+    description: "Generate code from specifications"
+    agent: implementer
+
+  debugging:
+    description: "Debug and fix issues"
+    agent: implementer
+
+  testing:
+    description: "Write and run tests"
+    agent: implementer
+
+  # Experiment Skills
+  benchmarking:
+    description: "Performance benchmarking"
+    agent: experimenter
+
+  data_analysis:
+    description: "Analyze experimental data"
+    agent: experimenter
+
+  # Optimization Skills
+  performance_profiling:
+    description: "Profile and analyze performance"
+    agent: optimizer
+
+  quantization:
+    description: "Model quantization for efficiency"
+    agent: optimizer
+
+  # Deployment Skills
+  ci_cd:
+    description: "Continuous integration and deployment"
+    agent: deployer
+
+  containerization:
+    description: "Docker and container management"
+    agent: deployer
+
+  # Documentation Skills
+  technical_writing:
+    description: "Write technical documentation"
+    agent: documenter
+
+  api_documentation:
+    description: "Generate API documentation"
+    agent: documenter
+EOF
+
+    echo "  ✓ Skill catalog initialized"
 }
 
 # Main execution
 main() {
     echo ""
-    
-    # Detect or select project type
-    detect_project_type
-    
-    if [ "$PROJECT_TYPE" == "unknown" ]; then
-        select_project_type
+
+    # Check if project type provided as argument
+    if [[ -n "$PROJECT_TYPE_ARG" ]]; then
+        case "$PROJECT_TYPE_ARG" in
+            research|ml|software|llm|optimization|deployment|hybrid)
+                PROJECT_TYPE="$PROJECT_TYPE_ARG"
+                echo "📋 Using specified project type: $PROJECT_TYPE"
+                ;;
+            *)
+                echo "⚠ Unknown project type: $PROJECT_TYPE_ARG"
+                detect_project_type
+                if [ "$PROJECT_TYPE" == "unknown" ]; then
+                    select_project_type
+                fi
+                ;;
+        esac
     else
-        echo ""
-        read -p "Detected ${PROJECT_TYPE} project. Use this type? [Y/n]: " confirm
-        # Case-insensitive check
-        if [[ "$confirm" =~ ^[Nn]$ ]]; then
+        # Detect or select project type
+        detect_project_type
+
+        if [ "$PROJECT_TYPE" == "unknown" ]; then
             select_project_type
+        else
+            # Non-interactive mode - accept detected type
+            if [[ ! -t 0 ]]; then
+                local input
+                read -r input || input=""
+                if [[ -n "$input" ]]; then
+                    # Use stdin input as override
+                    case "$input" in
+                        1|research) PROJECT_TYPE="research";;
+                        2|ml) PROJECT_TYPE="ml";;
+                        3|software) PROJECT_TYPE="software";;
+                        4|llm) PROJECT_TYPE="llm";;
+                        5|optimization) PROJECT_TYPE="optimization";;
+                        6|deployment) PROJECT_TYPE="deployment";;
+                        7|hybrid) PROJECT_TYPE="hybrid";;
+                    esac
+                fi
+            else
+                echo ""
+                read -p "Detected ${PROJECT_TYPE} project. Use this type? [Y/n]: " confirm
+                # Case-insensitive check
+                if [[ "$confirm" =~ ^[Nn]$ ]]; then
+                    select_project_type
+                fi
+            fi
         fi
     fi
-    
+
     echo ""
     echo "🚀 Initializing ${PROJECT_TYPE} workflow..."
     echo ""
-    
+
     # Check for existing workflow
     check_existing_workflow
 
@@ -369,6 +562,8 @@ main() {
     validate_workflow_scripts
     create_project_config
     initialize_knowledge_base
+    initialize_agent_registry
+    initialize_skill_catalog
 
     echo ""
     echo "═══════════════════════════════════════════════════════════════"

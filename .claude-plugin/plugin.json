@@ -1,0 +1,25 @@
+{
+  "name": "universal-workflow-system",
+  "version": "1.0.0",
+  "description": "Git-native workflow system with multi-agent orchestration, context recovery, and checkpoint management for AI-assisted development",
+  "author": "Yash Sukhdeve",
+  "homepage": "https://github.com/lab2208/universal-workflow-system",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "context-recovery",
+    "checkpoints",
+    "multi-agent",
+    "session-continuity"
+  ],
+  "commands": ".claude/commands",
+  "skills": ".claude/skills",
+  "hooks": {
+    "SessionStart": "Auto-recover context on session start",
+    "PreCompact": "Auto-checkpoint before context compaction"
+  },
+  "requirements": {
+    "bash": ">=4.0",
+    "git": ">=2.0"
+  }
+}

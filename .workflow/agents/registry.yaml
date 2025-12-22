@@ -22,6 +22,31 @@ agents:
       - experimental_design
       - paper_writing
     workspace: "workspace/researcher"
+    # MCP Server assignments based on critical analysis
+    mcp_servers:
+      essential:
+        - name: gemini-cli
+          reason: "Brainstorming hypotheses, analyzing research directions, multi-perspective analysis"
+        - name: github
+          reason: "Finding reference implementations, reproducibility, tracking research code"
+      high_priority:
+        - name: codex
+          reason: "Quick prototyping, statistical calculations, data exploration scripts"
+      optional:
+        - name: sequential-thinking
+          reason: "Complex multi-step research methodology analysis"
+      not_recommended:
+        - name: playwright
+          reason: "Not core to research workflow - edge cases only"
+        - name: context7
+          reason: "Better suited for Implementer agent"
+      missing_critical:
+        - name: semantic-scholar
+          reason: "Literature search is 40% of research - CRITICAL GAP"
+        - name: arxiv-api
+          reason: "ML/CS research is arXiv-first - must monitor preprints"
+        - name: zotero
+          reason: "Citation management, BibTeX export - research essential"
     
   architect:
     name: "Architecture Agent"
@@ -43,6 +68,30 @@ agents:
       - architecture_patterns
       - api_design
     workspace: "workspace/architect"
+    # MCP Server assignments based on critical analysis
+    mcp_servers:
+      essential:
+        - name: sequential-thinking
+          reason: "Architecture IS structured reasoning - trade-off analysis, systematic design"
+        - name: gemini-cli
+          reason: "Brainstorming alternative architectures, exploring design options"
+        - name: github
+          reason: "Code search, PR reviews for design patterns, ADR management"
+      high_priority:
+        - name: context7
+          reason: "Technology evaluation, framework capabilities lookup"
+      not_recommended:
+        - name: playwright
+          reason: "Wrong domain - UI testing is QA territory"
+        - name: codex
+          reason: "Wrong domain - implementation details belong to Implementer"
+      missing_critical:
+        - name: mermaid
+          reason: "Diagram generation (C4, sequence, ERD) is PRIMARY architect deliverable"
+        - name: postgres
+          reason: "Schema inspection, database design validation"
+        - name: filesystem
+          reason: "Read existing architecture docs, design specifications"
     
   implementer:
     name: "Implementation Agent"
@@ -65,6 +114,33 @@ agents:
       - testing
       - refactoring
     workspace: "workspace/implementer"
+    # MCP Server assignments based on critical analysis
+    mcp_servers:
+      essential:
+        - name: github
+          reason: "Version control, PRs, code search - senior implementers live in Git"
+        - name: context7
+          reason: "API documentation lookup - prevents deprecated patterns"
+        - name: ide
+          reason: "Real-time diagnostics, Jupyter execution, code verification"
+      high_priority:
+        - name: codex
+          reason: "Alternative code generation, second opinions on implementations"
+        - name: gemini-cli
+          reason: "Multi-model collaboration for complex implementations"
+      optional:
+        - name: playwright
+          reason: "E2E testing when doing UI work (~15% of tasks)"
+      not_recommended:
+        - name: sequential-thinking
+          reason: "Redundant with Claude's native reasoning for implementation"
+      missing_critical:
+        - name: filesystem
+          reason: "Enhanced file operations for large codebases"
+        - name: fetch
+          reason: "API testing, verify external integrations"
+        - name: database
+          reason: "SQL verification before committing (postgres/sqlite)"
     
   experimenter:
     name: "Experimentation Agent"
@@ -87,6 +163,32 @@ agents:
       - data_analysis
       - statistical_validation
     workspace: "workspace/experimenter"
+    # MCP Server assignments based on critical analysis
+    mcp_servers:
+      essential:
+        - name: ide
+          reason: "Jupyter execution is CRITICAL for ML experimentation - daily use"
+        - name: github
+          reason: "Experiment versioning, reproducibility via commit hashes"
+        - name: codex
+          reason: "Long-running experiments, batch hyperparameter sweeps"
+        - name: gemini-cli
+          reason: "Brainstorming experiment designs, sandbox for safe testing"
+      optional:
+        - name: context7
+          reason: "ML framework documentation lookup"
+        - name: sequential-thinking
+          reason: "Complex statistical reasoning, methodology decisions"
+      not_recommended:
+        - name: playwright
+          reason: "Low relevance - only for web dashboards (MLflow UI)"
+      missing_critical:
+        - name: mlflow
+          reason: "Experiment tracking, model registry - CRITICAL for ML"
+        - name: docker
+          reason: "Reproducible environments, containerized experiments"
+        - name: kubernetes
+          reason: "Distributed experiment scheduling, GPU management"
     
   optimizer:
     name: "Optimization Agent"
@@ -111,6 +213,31 @@ agents:
       - profiling
       - resource_optimization
     workspace: "workspace/optimizer"
+    # MCP Server assignments based on critical analysis
+    mcp_servers:
+      essential:
+        - name: sequential-thinking
+          reason: "Complex bottleneck analysis, systematic trade-off evaluation"
+        - name: codex
+          reason: "Profiling script generation, optimization code prototyping"
+        - name: gemini-cli
+          reason: "Brainstorming optimization strategies, large codebase analysis"
+        - name: context7
+          reason: "Optimization library docs (TensorRT, ONNX, quantization APIs)"
+        - name: github
+          reason: "Optimization tracking, code review for performance"
+        - name: ide
+          reason: "Interactive profiling, real-time diagnostics"
+      optional:
+        - name: playwright
+          reason: "Dashboard automation (Grafana/Prometheus) - edge case"
+      missing_critical:
+        - name: prometheus
+          reason: "Metrics collection, query historical performance data"
+        - name: kubernetes
+          reason: "Resource limit tuning, pod scaling optimization"
+        - name: postgres
+          reason: "Query optimization, EXPLAIN ANALYZE for database tuning"
     
   deployer:
     name: "Deployment Agent"
@@ -135,6 +262,35 @@ agents:
       - monitoring
       - scaling
     workspace: "workspace/deployer"
+    # MCP Server assignments based on critical analysis
+    mcp_servers:
+      essential:
+        - name: github
+          reason: "CI/CD workflow triggers, PR management, infrastructure-as-code reviews"
+        - name: codex
+          reason: "Shell execution for kubectl, terraform, docker, ansible commands"
+      high_priority:
+        - name: playwright
+          reason: "Post-deployment smoke tests, synthetic monitoring"
+        - name: ide
+          reason: "IaC file diagnostics, Dockerfile/YAML validation"
+        - name: gemini-cli
+          reason: "Infrastructure brainstorming, incident analysis"
+      optional:
+        - name: context7
+          reason: "Cloud provider docs, Kubernetes documentation lookup"
+      not_recommended:
+        - name: sequential-thinking
+          reason: "DevOps is more action-oriented than reasoning-heavy"
+      missing_critical:
+        - name: docker
+          reason: "Container builds, image management - CORE DevOps tool"
+        - name: kubernetes
+          reason: "kubectl operations, pod management - CRITICAL for K8s"
+        - name: terraform
+          reason: "IaC state management, plan/apply operations"
+        - name: prometheus
+          reason: "Metrics queries, alert configuration, monitoring"
     
   documenter:
     name: "Documentation Agent"
@@ -159,6 +315,33 @@ agents:
       - presentation
       - diagram_creation
     workspace: "workspace/documenter"
+    # MCP Server assignments based on critical analysis
+    mcp_servers:
+      essential:
+        - name: playwright
+          reason: "Screenshot automation, UI state capture, visual documentation testing"
+        - name: github
+          reason: "Doc-as-code workflow, PR reviews, release notes, wiki management"
+      high_priority:
+        - name: context7
+          reason: "API reference verification, keeping examples current"
+        - name: gemini-cli
+          reason: "Content generation, proofreading, translation assistance"
+      optional:
+        - name: ide
+          reason: "Notebook documentation, code diagnostics for doc gaps"
+        - name: codex
+          reason: "Code example generation, API snippet creation"
+      not_recommended:
+        - name: sequential-thinking
+          reason: "Limited direct application for documentation work"
+      missing_critical:
+        - name: mermaid
+          reason: "Diagram generation (flowcharts, sequence, ERD) - ESSENTIAL"
+        - name: pandoc
+          reason: "Multi-format publishing (MD↔LaTeX↔DOCX↔HTML↔EPUB)"
+        - name: vale
+          reason: "Prose linting, style guide enforcement, terminology consistency"
 
 # Agent collaboration patterns
 collaboration_patterns:

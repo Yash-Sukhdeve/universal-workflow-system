@@ -35,6 +35,9 @@ source_lib "atomic_utils.sh" || true
 source_lib "decision_utils.sh" || true
 source_lib "schema_utils.sh" || true
 
+# Session manager for real-time dashboard integration
+source_lib "session_manager.sh" || true
+
 # Color codes
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
@@ -111,6 +114,47 @@ fi
 
 # Create agent directories if they don't exist
 mkdir -p .workflow/agents/{configs,memory}
+
+# Create default registry if missing
+if [[ ! -f ".workflow/agents/registry.yaml" ]]; then
+    cat > .workflow/agents/registry.yaml << 'REGISTRY_EOF'
+# Agent Registry - Default Configuration
+researcher:
+  description: "Literature review, hypothesis formation"
+  capabilities: ["research", "analysis", "writing"]
+  primary_skills: ["literature_review", "experimental_design", "statistical_validation"]
+
+architect:
+  description: "System design, architecture planning"
+  capabilities: ["design", "documentation", "planning"]
+  primary_skills: ["system_design", "api_design", "data_modeling"]
+
+implementer:
+  description: "Code development, model building"
+  capabilities: ["coding", "testing", "debugging"]
+  primary_skills: ["code_generation", "debugging", "testing"]
+
+experimenter:
+  description: "Experiments, benchmarks, testing"
+  capabilities: ["testing", "analysis", "automation"]
+  primary_skills: ["experiment_design", "benchmarking", "data_analysis"]
+
+optimizer:
+  description: "Performance optimization, compression"
+  capabilities: ["optimization", "profiling", "tuning"]
+  primary_skills: ["performance_profiling", "memory_optimization", "algorithm_optimization"]
+
+deployer:
+  description: "Deployment, DevOps, monitoring"
+  capabilities: ["deployment", "automation", "monitoring"]
+  primary_skills: ["ci_cd", "containerization", "monitoring"]
+
+documenter:
+  description: "Documentation, papers, guides"
+  capabilities: ["writing", "documentation", "communication"]
+  primary_skills: ["technical_writing", "api_documentation", "user_guides"]
+REGISTRY_EOF
+fi
 
 # Function to activate an agent (RWF R3 - State Safety with atomic operations)
 activate_agent() {
@@ -253,10 +297,25 @@ capabilities:"
             "$current_checkpoint" > /dev/null 2>&1 || true
     fi
 
+    # Create dashboard session for real-time monitoring
+    local session_id=""
+    if declare -f create_agent_session > /dev/null 2>&1; then
+        session_id=$(create_agent_session "$agent" "Starting work in phase ${current_phase}")
+        # Store session ID in active.yaml for reference
+        echo "" >> .workflow/agents/active.yaml
+        echo "dashboard_session:" >> .workflow/agents/active.yaml
+        echo "  id: \"${session_id}\"" >> .workflow/agents/active.yaml
+        echo "  started_at: \"${timestamp}\"" >> .workflow/agents/active.yaml
+        echo -e "${BLUE}📊 Dashboard session: ${session_id}${NC}"
+    fi
+
     echo -e "${GREEN}✓ ${agent} agent activated${NC}"
     echo ""
     echo -e "Agent workspace: ${YELLOW}workspace/${agent}${NC}"
     echo -e "View status: ${BLUE}./scripts/activate_agent.sh ${agent} status${NC}"
+    if [[ -n "$session_id" ]]; then
+        echo -e "Dashboard:    ${BLUE}http://localhost:8080/#agents${NC}"
+    fi
 }
 
 # Function to load agent-specific skills
@@ -264,6 +323,16 @@ load_agent_skills() {
     local agent=$1
     
     echo -e "${BLUE}Loading skills for ${agent}...${NC}"
+
+    # 1. Load Persona (The "Senior" Upgrade)
+    PERSONA_FILE="docs/personas/${agent}.md"
+    if [[ -f "$PERSONA_FILE" ]]; then
+        echo -e "${YELLOW}📜 Loading Persona: ${agent} (Senior Mode)${NC}"
+        # Inject persona into active.yaml (append)
+        echo "" >> .workflow/agents/active.yaml
+        echo "persona: |" >> .workflow/agents/active.yaml
+        sed 's/^/  /' "$PERSONA_FILE" >> .workflow/agents/active.yaml
+    fi
     
     # Create enabled skills file if it doesn't exist
     if [ ! -f .workflow/skills/enabled.yaml ]; then
@@ -273,25 +342,25 @@ load_agent_skills() {
     # Define skills for each agent
     case $agent in
         researcher)
-            skills=("literature_review" "experimental_design" "statistical_validation")
+            skills=("literature_review" "experimental_design" "statistical_validation" "review_cl" "risk_analysis")
             ;;
         architect)
-            skills=("system_design" "api_design" "architecture_patterns")
+            skills=("system_design" "api_design" "architecture_patterns" "review_cl")
             ;;
         implementer)
-            skills=("code_generation" "debugging" "testing")
+            skills=("code_generation" "debugging" "testing" "submit_cl")
             ;;
         experimenter)
-            skills=("experiment_execution" "benchmarking" "data_analysis")
+            skills=("experiment_execution" "benchmarking" "data_analysis" "submit_cl")
             ;;
         optimizer)
-            skills=("quantization" "pruning" "profiling")
+            skills=("quantization" "pruning" "profiling" "submit_cl")
             ;;
         deployer)
-            skills=("containerization" "ci_cd" "monitoring")
+            skills=("containerization" "ci_cd" "monitoring" "submit_cl")
             ;;
         documenter)
-            skills=("technical_writing" "visualization" "presentation")
+            skills=("technical_writing" "visualization" "presentation" "submit_cl")
             ;;
         *)
             skills=()
@@ -301,6 +370,14 @@ load_agent_skills() {
     # Add skills to enabled list
     for skill in "${skills[@]}"; do
         echo -e "  + Enabling skill: ${GREEN}${skill}${NC}"
+        
+        # Check for Expert Guide
+        SKILL_DEF=".workflow/skills/definitions/${skill}.md"
+        if [[ -f "$SKILL_DEF" ]]; then
+            echo -e "    ${YELLOW}📘 Expert Guide Loaded${NC}"
+            # You could append this to context, but for now we just notify
+        fi
+
         # Add to YAML file (simple append for now)
         if ! grep -q "  - ${skill}" .workflow/skills/enabled.yaml; then
             echo "  - ${skill}" >> .workflow/skills/enabled.yaml
@@ -311,23 +388,31 @@ load_agent_skills() {
 # Function to deactivate an agent
 deactivate_agent() {
     local agent=$1
-    
+
     if [ ! -f .workflow/agents/active.yaml ]; then
         echo -e "${YELLOW}No active agent to deactivate${NC}"
         return
     fi
-    
+
     echo -e "${BLUE}🔄 Deactivating ${agent} agent...${NC}"
-    
+
+    # End dashboard session if exists
+    local session_id=""
+    session_id=$(grep -A1 "dashboard_session:" .workflow/agents/active.yaml 2>/dev/null | grep "id:" | sed 's/.*id: "\([^"]*\)".*/\1/' || true)
+    if [[ -n "$session_id" ]] && declare -f end_agent_session > /dev/null 2>&1; then
+        end_agent_session "$session_id" "success"
+        echo -e "${BLUE}📊 Dashboard session ended: ${session_id}${NC}"
+    fi
+
     # Save agent state to memory
     cp .workflow/agents/active.yaml .workflow/agents/memory/${agent}_$(date +%s).yaml
-    
+
     # Clear active agent
     rm .workflow/agents/active.yaml
-    
+
     # Log deactivation
     echo "$(date -Iseconds) | AGENT_DEACTIVATED | ${agent}" >> .workflow/checkpoints.log
-    
+
     echo -e "${GREEN}✓ ${agent} agent deactivated${NC}"
 }
 
@@ -369,10 +454,17 @@ prepare_handoff() {
     echo -e "${BLUE}📤 Preparing handoff from ${from_agent}...${NC}"
     
     if [ -z "$to_agent" ]; then
-        echo -e "${YELLOW}Specify target agent:${NC}"
-        echo "  researcher, architect, implementer, experimenter,"
-        echo "  optimizer, deployer, documenter"
-        read -p "Target agent: " to_agent
+        if [ -t 0 ]; then
+            # Interactive mode - prompt for input
+            echo -e "${YELLOW}Specify target agent:${NC}"
+            echo "  researcher, architect, implementer, experimenter,"
+            echo "  optimizer, deployer, documenter"
+            read -p "Target agent: " to_agent
+        else
+            # Non-interactive mode - use placeholder
+            to_agent="unspecified"
+            echo -e "${YELLOW}Note: No target agent specified, use handoff record to set.${NC}"
+        fi
     fi
     
     # Create handoff record
@@ -417,7 +509,7 @@ case $COMMAND in
         show_agent_status $AGENT_NAME
         ;;
     handoff)
-        prepare_handoff $AGENT_NAME $3
+        prepare_handoff $AGENT_NAME "${3:-}"
         ;;
     *)
         echo -e "${RED}Unknown command: ${COMMAND}${NC}"

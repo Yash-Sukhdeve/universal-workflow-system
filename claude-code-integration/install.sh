@@ -30,7 +30,7 @@ CLAUDE_DIR="${PROJECT_DIR}/.claude"
 echo -e "${BOLD}${BLUE}"
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║     UWS - Universal Workflow System for Claude Code          ║"
-echo "║                    Version ${UWS_VERSION}                              ║"
+echo "║                    Version ${UWS_VERSION}                    ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -296,7 +296,126 @@ Then update it with fresh information from this session. Make sure to:
 - Focus on actionable next steps
 CMD_EOF
 
+
+# /uws:sdlc command
+cat > "${CLAUDE_DIR}/commands/uws-sdlc" << 'CMD_EOF'
+---
+description: "Manage SDLC status"
+allowed-tools:
+  - "Bash(./scripts/sdlc.sh:*)"
+---
+
+# UWS SDLC Management
+
+Manage the Software Development Life Cycle.
+
+Usage:
+- Status: \`./scripts/sdlc.sh status\`
+- Start: \`./scripts/sdlc.sh start\`
+- Next Phase: \`./scripts/sdlc.sh next\`
+- Report Failure: \`./scripts/sdlc.sh fail "details"\`
+
+Execute the appropriate command based on user request.
+CMD_EOF
+
+# /uws:research command
+cat > "${CLAUDE_DIR}/commands/uws-research" << 'CMD_EOF'
+---
+description: "Manage Research workflow"
+allowed-tools:
+  - "Bash(./scripts/research.sh:*)"
+---
+
+# UWS Research Management
+
+Manage the Research Methodology lifecycle.
+
+Usage:
+- Status: \`./scripts/research.sh status\`
+- Start: \`./scripts/research.sh start\`
+- Next Phase: \`./scripts/research.sh next\`
+- Reject Hypothesis: \`./scripts/research.sh reject\`
+
+Execute the appropriate command based on user request.
+CMD_EOF
+
+
+# /uws:spiral command
+cat > "${CLAUDE_DIR}/commands/uws-spiral" << 'CMD_EOF'
+---
+description: "Manage Spiral SDLC"
+allowed-tools:
+  - "Bash(./scripts/spiral.sh:*)"
+---
+
+# UWS Spiral SDLC
+
+Manage the Risk-Driven Spiral Lifecycle.
+
+Usage:
+- Status: \`./scripts/spiral.sh status\`
+- Start Cycle: \`./scripts/spiral.sh start-cycle\`
+- Next Quadrant: \`./scripts/spiral.sh next\`
+
+CMD_EOF
+
+# /uws:pm command
+cat > "${CLAUDE_DIR}/commands/uws-pm" << 'CMD_EOF'
+---
+description: "Project Management (Issues/board)"
+allowed-tools:
+  - "Bash(./scripts/pm.sh:*)"
+---
+
+# UWS Project Management
+
+Manage tickets and boards.
+
+Usage:
+- List: \`./scripts/pm.sh list\`
+- Create: \`./scripts/pm.sh create "Title" "Type" "Priority"\`
+- Move: \`./scripts/pm.sh move TASK-XXX "Status"\`
+- Generate Board: \`./scripts/pm.sh board\`
+
+CMD_EOF
+
+# /uws:submit command
+cat > "${CLAUDE_DIR}/commands/uws-submit" << 'CMD_EOF'
+---
+description: "Submit Code (Generate CL)"
+allowed-tools:
+  - "Bash(./scripts/submit.sh:*)"
+---
+
+# UWS Code Submission
+
+Submit work for review.
+
+Usage: \`./scripts/submit.sh "Message" "TASK-ID"\`
+CMD_EOF
+
+# /uws:review command
+cat > "${CLAUDE_DIR}/commands/uws-review" << 'CMD_EOF'
+---
+description: "Review/Approve CLs"
+allowed-tools:
+  - "Bash(./scripts/review.sh:*)"
+---
+
+# UWS Code Review
+
+Review and Approve/Reject changes.
+
+Usage:
+- List: \`./scripts/review.sh list\`
+- Approve: \`./scripts/review.sh approve CR-XXX\`
+- Reject: \`./scripts/review.sh reject CR-XXX\`
+CMD_EOF
+
 echo -e "  ${GREEN}✓${NC} Slash commands created"
+
+
+
 
 # ============================================================================
 # Step 4: Initialize workflow state
@@ -317,22 +436,67 @@ elif [[ -d "paper" ]] || [[ -d "experiments" ]]; then
     PROJECT_TYPE="research"
 fi
 
-# Create state.yaml if not exists
+# Get project name from directory
+PROJECT_NAME=$(basename "${PROJECT_DIR}")
+TIMESTAMP=$(date -Iseconds)
+
+# Create state.yaml if not exists (Full v2.0 Schema)
 if [[ ! -f "${WORKFLOW_DIR}/state.yaml" ]]; then
     cat > "${WORKFLOW_DIR}/state.yaml" << EOF
-# UWS Workflow State
-# Auto-generated on $(date -Iseconds)
+# UWS Workflow State (Schema v2.0)
+# Auto-generated on ${TIMESTAMP}
 
-project_type: "${PROJECT_TYPE}"
+# Current workflow position
 current_phase: "phase_1_planning"
-current_checkpoint: "CP_1_001"
-last_updated: "$(date -Iseconds)"
+current_checkpoint: "CP_INIT"
 
+# Project metadata
+project:
+  name: "${PROJECT_NAME}"
+  type: "${PROJECT_TYPE}"
+  initialized: true
+  init_date: "${TIMESTAMP}"
+
+# Active agent tracking
+active_agent:
+  name: null
+  activated_at: null
+  status: "inactive"
+
+# Enabled skills
+enabled_skills: []
+
+# Phase progress tracking
+phases:
+  phase_1_planning:
+    status: "active"
+    progress: 0
+    started_at: "${TIMESTAMP}"
+  phase_2_implementation:
+    status: "pending"
+    progress: 0
+  phase_3_validation:
+    status: "pending"
+    progress: 0
+  phase_4_delivery:
+    status: "pending"
+    progress: 0
+  phase_5_maintenance:
+    status: "pending"
+    progress: 0
+
+# System health
 health:
   status: "healthy"
-  last_check: "$(date -Iseconds)"
+  last_check: "${TIMESTAMP}"
+
+# Schema metadata
+metadata:
+  schema_version: "2.0"
+  last_updated: "${TIMESTAMP}"
+  created_by: "claude-code-integration"
 EOF
-    echo -e "  ${GREEN}✓${NC} Created state.yaml (${PROJECT_TYPE} project)"
+    echo -e "  ${GREEN}✓${NC} Created state.yaml (${PROJECT_TYPE} project, schema v2.0)"
 else
     echo -e "  ${YELLOW}→${NC} state.yaml already exists, keeping"
 fi
@@ -409,6 +573,12 @@ cat > "$SETTINGS_FILE" << 'SETTINGS_EOF'
   "permissions": {
     "allow": [
       "Bash(./.uws/hooks/*:*)",
+      "Bash(./scripts/sdlc.sh:*)",
+      "Bash(./scripts/research.sh:*)",
+      "Bash(./scripts/spiral.sh:*)",
+      "Bash(./scripts/pm.sh:*)",
+      "Bash(./scripts/submit.sh:*)",
+      "Bash(./scripts/review.sh:*)",
       "Bash(cat .workflow/*:*)",
       "Bash(grep:*)",
       "Bash(tail:*)",

@@ -148,11 +148,16 @@ teardown() {
 # ===========================================
 
 @test "atomic_begin starts transaction" {
-    run atomic_begin "test transaction"
+    # Don't use 'run' as we need to check variables in the same shell
+    atomic_begin "test transaction"
+    local status=$?
 
-    assert_success
+    [[ $status -eq 0 ]]
     [[ "$ATOMIC_TRANSACTION_ACTIVE" == "true" ]]
     [[ -n "$ATOMIC_TRANSACTION_ID" ]]
+
+    # Clean up
+    atomic_rollback "test cleanup" 2>/dev/null || true
 }
 
 @test "atomic_begin fails if transaction already active" {

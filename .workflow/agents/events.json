@@ -1,0 +1,5 @@
+{"event": "agent_started", "timestamp": "2025-12-17T09:04:56-05:00", "data": {"session_id": "sess_1765980296_2314535", "agent": "researcher", "task": "Literature review on transformers"}}
+{"event": "agent_started", "timestamp": "2025-12-17T09:05:06-05:00", "data": {"session_id": "sess_1765980306_2314593", "agent": "implementer", "task": "Build API endpoints for user auth"}}
+{"event": "agent_started", "timestamp": "2025-12-17T09:05:07-05:00", "data": {"session_id": "sess_1765980307_2314611", "agent": "experimenter", "task": "Run unit tests on auth module"}}
+{"event": "agent_progress", "timestamp": "2025-12-17T09:05:12-05:00", "data": {"session_id": "sess_1765980296_2314535", "progress": 45}}
+{"event": "agent_progress", "timestamp": "2025-12-17T09:05:13-05:00", "data": {"session_id": "sess_1765980306_2314593", "progress": 25}}

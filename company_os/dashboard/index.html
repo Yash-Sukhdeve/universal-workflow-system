@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Company OS Dashboard</title>
+
+    <!-- SECURITY: Content Security Policy -->
+    <!-- Restricts sources for scripts, styles, connections to prevent XSS and data injection -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src 'self';
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: https:;
+        font-src 'self';
+        connect-src 'self' http://localhost:8000 ws://localhost:8000 wss://localhost:8000;
+        frame-ancestors 'none';
+        base-uri 'self';
+        form-action 'self';
+      "
+    />
+
+    <!-- SECURITY: Prevent MIME type sniffing -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+
+    <!-- SECURITY: Prevent clickjacking -->
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+
+    <!-- SECURITY: Control referrer information -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+    <!-- SECURITY: Disable DNS prefetching to prevent info leaks -->
+    <meta http-equiv="x-dns-prefetch-control" content="off" />
+
+    <!-- Accessibility: Skip to main content link target -->
+    <style>
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      .sr-only:focus {
+        position: static;
+        width: auto;
+        height: auto;
+        padding: 0.5rem 1rem;
+        margin: 0;
+        overflow: visible;
+        clip: auto;
+        white-space: normal;
+        background: #0066cc;
+        color: white;
+        z-index: 9999;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Accessibility: Skip to main content link -->
+    <a href="#main-content" class="sr-only">Skip to main content</a>
+
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

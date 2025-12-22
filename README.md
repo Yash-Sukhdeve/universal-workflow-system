@@ -63,6 +63,13 @@ cd your-project
 /path/to/universal-workflow-system/scripts/init_workflow.sh
 ```
 
+### Option 3: Gemini Antigravity Integration
+
+```bash
+# In your project directory:
+/path/to/universal-workflow-system/antigravity-integration/install.sh
+```
+
 ---
 
 ## Repository Structure
@@ -138,15 +145,31 @@ universal-workflow-system/
 
 ---
 
+
+## Gemini Antigravity Integration
+
+UWS now fully supports **Gemini Antigravity** with native workflow definitions.
+
+### Installation
+```bash
+./antigravity-integration/install.sh
+```
+
+### New Workflows
+*   **`uws-sdlc`**: Complete Software Development Life Cycle management.
+*   **`uws-research`**: Scientific method workflow for research projects.
+*   **`uws-status`**: Check system health.
+*   **`uws-checkpoint`**: Create state checkpoints.
+
+### [New] Tutorials
+Check out our guides in `docs/tutorials/`:
+*   [Gemini Antigravity Guide](docs/tutorials/antigravity_guide.md)
+*   [SDLC Best Practices](docs/tutorials/sdlc_practices.md)
+
+---
+
 ## Workflow Phases
 
-UWS tracks your project through 5 phases:
-
-1. **Planning** - Requirements, design decisions
-2. **Implementation** - Building and coding
-3. **Validation** - Testing, benchmarking
-4. **Delivery** - Deployment, release
-5. **Maintenance** - Support, iteration
 
 ---
 

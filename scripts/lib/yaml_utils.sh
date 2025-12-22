@@ -19,6 +19,53 @@ if command -v yq &> /dev/null; then
     HAS_YQ=true
 fi
 
+#######################################
+# Escape special characters for sed replacement
+# Prevents command injection via special chars: / & \ $ `
+# Arguments:
+#   $1 - String to escape
+# Returns:
+#   Escaped string safe for sed replacement
+#######################################
+escape_sed_replacement() {
+    local input="$1"
+    # Escape: backslash, ampersand, forward slash, and delimiter
+    printf '%s\n' "$input" | sed 's/[&/\]/\\&/g; s/$/\\/'  | head -c -2
+}
+
+#######################################
+# Safe sed-based YAML key replacement
+# Escapes special characters to prevent injection
+# Arguments:
+#   $1 - YAML file path
+#   $2 - Key name (top-level only)
+#   $3 - New value
+# Returns:
+#   0 on success, 1 on failure
+#######################################
+safe_sed_replace() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+
+    if [[ ! -f "$file" ]]; then
+        echo "Error: File not found: $file" >&2
+        return 1
+    fi
+
+    # Escape special characters in value for sed safety
+    local escaped_value
+    escaped_value=$(printf '%s\n' "$value" | sed 's/[&/\]/\\&/g')
+
+    # Use | as delimiter to avoid issues with / in values
+    sed -i "s|^${key}:.*|${key}: \"${escaped_value}\"|" "$file" || {
+        echo "Error: Failed to update ${key} in $file" >&2
+        return 1
+    }
+
+    return 0
+}
+
 # Display warning if yq is not available
 if [[ "$HAS_YQ" == "false" ]] && [[ "${YAML_UTILS_QUIET:-false}" != "true" ]]; then
     echo -e "${YELLOW}Warning: yq not found. Using fallback YAML parsing.${NC}" >&2
@@ -130,13 +177,27 @@ yaml_set() {
                 return 1
             }
         else
-            # Top-level key
-            sed -i.tmp "s/^${key}:.*/${key}: ${value}/" "$file" || {
-                echo "Error: Failed to set ${key} in $file" >&2
-                mv "${file}.backup" "$file"
-                return 1
-            }
-            rm -f "${file}.tmp"
+            # Top-level key - use safe escaping
+            local escaped_value
+            escaped_value=$(printf '%s\n' "$value" | sed 's/[&/\]/\\&/g')
+
+            # Check if key exists
+            if grep -q "^${key}:" "$file" 2>/dev/null; then
+                # Key exists - replace it
+                sed -i.tmp "s|^${key}:.*|${key}: \"${escaped_value}\"|" "$file" || {
+                    echo "Error: Failed to set ${key} in $file" >&2
+                    mv "${file}.backup" "$file"
+                    return 1
+                }
+                rm -f "${file}.tmp"
+            else
+                # Key doesn't exist - add it at the end
+                echo "${key}: \"${value}\"" >> "$file" || {
+                    echo "Error: Failed to add ${key} to $file" >&2
+                    mv "${file}.backup" "$file"
+                    return 1
+                }
+            fi
         fi
     fi
 
@@ -466,6 +527,8 @@ EOF
 
 # Export functions if sourced
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    export -f escape_sed_replacement
+    export -f safe_sed_replace
     export -f yaml_get
     export -f yaml_set
     export -f yaml_has_key

@@ -57,6 +57,28 @@ python3 tests/benchmarks/repository_mining_study.py
 ./scripts/init_workflow.sh              # Initialize workflow system
 ```
 
+### SDLC Workflow (Company OS)
+```bash
+./scripts/sdlc.sh status                # Show current SDLC phase
+./scripts/sdlc.sh start                 # Begin SDLC at requirements phase
+./scripts/sdlc.sh next                  # Advance to next phase
+./scripts/sdlc.sh fail "reason"         # Report failure (triggers regression)
+./scripts/sdlc.sh reset                 # Reset SDLC state
+```
+
+**SDLC Phases**: `requirements` → `design` → `implementation` → `verification` → `deployment` → `maintenance`
+
+### Research Workflow (Scientific Method)
+```bash
+./scripts/research.sh status            # Show current research phase
+./scripts/research.sh start             # Begin research at hypothesis phase
+./scripts/research.sh next              # Advance to next phase
+./scripts/research.sh reject "reason"   # Hypothesis rejected (triggers refinement)
+./scripts/research.sh reset             # Reset research state
+```
+
+**Research Phases**: `hypothesis` → `experiment_design` → `data_collection` → `analysis` → `publication`
+
 ### Paper/LaTeX
 ```bash
 cd paper && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
@@ -121,6 +143,42 @@ PROMISE 2026 submission with:
 2. Read `.workflow/handoff.md` for priority actions and critical context
 3. Create checkpoints at milestones: `./scripts/checkpoint.sh "description"`
 4. Update `handoff.md` before ending session with next actions and blockers
+
+## Claude Code Plugin
+
+UWS includes a Claude Code plugin for seamless integration. The plugin provides slash commands, automated hooks, and autonomous skills.
+
+### Slash Commands
+```
+/uws-status              # Show workflow status (phase, agent, checkpoint)
+/uws-checkpoint <msg>    # Create checkpoint with message
+/uws-recover             # Recover context after session break
+/uws-agent <name>        # Activate agent (researcher, architect, implementer, etc.)
+/uws-skill <name>        # Enable/disable skills
+/uws-handoff             # Prepare session handoff notes
+```
+
+### Automated Hooks
+- **SessionStart**: Auto-runs `recover_context.sh` when Claude Code starts
+- **PreCompact**: Auto-creates checkpoint before context compaction
+
+### Skills (Autonomous Usage)
+Claude can autonomously use these capabilities when appropriate:
+- `workflow-checkpoint`: Creates checkpoints after completing major work
+- `workflow-recovery`: Recovers context when state seems stale
+- `workflow-status`: Checks state before major operations
+
+### Plugin Files
+```
+.claude/
+├── commands/           # Slash command definitions
+├── skills/             # Autonomous skill definitions
+└── settings.json       # Hook configuration
+
+.claude-plugin/
+├── plugin.json         # Plugin manifest
+└── marketplace.json    # Distribution metadata
+```
 
 ## Python Dependencies
 

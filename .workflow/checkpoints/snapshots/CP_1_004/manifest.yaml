@@ -1,0 +1,19 @@
+# Checkpoint Manifest - v2 format
+snapshot_id: "CP_1_004"
+created: "2025-12-15T15:28:31-05:00"
+version: "2.0"
+files:
+  - path: "handoff.md"
+    checksum: "5ad724d91ab0396a1b6666d5b56a828fce63cc4659990f603b8d2ff65d99b398"
+    required: true
+  - path: "metadata.yaml"
+    checksum: "b302ed5df91ad569ccd30251855454e44b71dcee05528d097e09db8fdb0b2137"
+    required: true
+  - path: "state.yaml"
+    checksum: "df8692431f1b2397a5bb2a0f8aa23e2990c5faca5b58df9fc4f7933cdc847d50"
+    required: true
+  - path: "active_state/session.yaml"
+    checksum: "f06de5e9f74d38413821f4ea3fd0e26707bbc2661701fa26792eb641df7c240d"
+    required: false
+total_files: 4
+combined_checksum: "2736af6b9ac763ba4632b7845b8eb95a53e878bec85691ac7da37ba68f25a96a"

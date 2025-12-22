@@ -43,6 +43,11 @@ setup_test_environment() {
     TEST_TMP_DIR="$(mktemp -d)"
     export TEST_TMP_DIR
 
+    # Update WORKFLOW_DIR to point to test directory
+    # This is critical for scripts that use WORKFLOW_DIR to find state files
+    WORKFLOW_DIR="${TEST_TMP_DIR}/.workflow"
+    export WORKFLOW_DIR
+
     # Create a minimal project structure
     mkdir -p "${TEST_TMP_DIR}/.workflow"/{agents,skills,knowledge,templates}
     mkdir -p "${TEST_TMP_DIR}/workspace"
@@ -88,6 +93,7 @@ checkpoint_count: 0
 metadata:
   created: "2024-01-01T00:00:00Z"
   last_updated: "2024-01-01T00:00:00Z"
+  schema_version: "2.0"
   version: "1.0.0"
 EOF
 }
