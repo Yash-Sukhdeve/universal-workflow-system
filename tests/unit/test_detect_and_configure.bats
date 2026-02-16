@@ -8,6 +8,8 @@ load '../helpers/test_helper.bash'
 setup() {
     setup_test_environment
     create_full_test_environment
+    # Override PROJECT_ROOT so the script detects within test dir, not the real project
+    export PROJECT_ROOT="${TEST_TMP_DIR}"
 }
 
 teardown() {

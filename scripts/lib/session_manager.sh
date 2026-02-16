@@ -222,12 +222,24 @@ end_agent_session() {
     result: \"${result}\"
     completed_at: \"${timestamp}\""
 
-    # Add to history
-    if grep -q "^history: \[\]" "$SESSIONS_FILE"; then
-        sed -i "s/^history: \[\]/history:\n${history_entry}/" "$SESSIONS_FILE"
-    else
-        sed -i "/^history:/a\\${history_entry}" "$SESSIONS_FILE"
-    fi
+    # Add to history using temp file (multiline entries break sed)
+    local temp_file
+    temp_file=$(mktemp)
+    local inserted=false
+    while IFS= read -r line; do
+        if [[ "$line" == "history: []" ]] && [[ "$inserted" == "false" ]]; then
+            echo "history:"
+            echo "$history_entry"
+            inserted=true
+        elif [[ "$line" == "history:" ]] && [[ "$inserted" == "false" ]]; then
+            echo "$line"
+            echo "$history_entry"
+            inserted=true
+        else
+            echo "$line"
+        fi
+    done < "$SESSIONS_FILE" > "$temp_file"
+    mv "$temp_file" "$SESSIONS_FILE"
 
     # Remove from active sessions
     if command -v yq &> /dev/null; then

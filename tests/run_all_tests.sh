@@ -155,9 +155,9 @@ generate_summary() {
         local result_file="${RESULTS_DIR}/${category}_results.tap"
         if [[ -f "${result_file}" ]]; then
             local cat_passed
-            cat_passed=$(grep -c "^ok" "${result_file}" 2>/dev/null || echo 0)
+            cat_passed=$(grep -c "^ok" "${result_file}" 2>/dev/null) || cat_passed=0
             local cat_failed
-            cat_failed=$(grep -c "^not ok" "${result_file}" 2>/dev/null || echo 0)
+            cat_failed=$(grep -c "^not ok" "${result_file}" 2>/dev/null) || cat_failed=0
             passed=$((passed + cat_passed))
             failed=$((failed + cat_failed))
 
