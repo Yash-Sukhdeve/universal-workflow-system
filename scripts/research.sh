@@ -21,8 +21,8 @@ SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
 WORKFLOW_DIR="${WORKFLOW_DIR:-${SCRIPT_DIR}/../.workflow}"
 STATE_FILE="${WORKFLOW_DIR}/state.yaml"
 
-# Research Phase definitions (Scientific Method)
-readonly RESEARCH_PHASES=("hypothesis" "experiment_design" "data_collection" "analysis" "publication")
+# Research Phase definitions (Scientific Method - 7 phases)
+readonly RESEARCH_PHASES=("hypothesis" "literature_review" "experiment_design" "data_collection" "analysis" "peer_review" "publication")
 
 # Color codes
 readonly GREEN='\033[0;32m'
@@ -49,6 +49,7 @@ source_lib "yaml_utils.sh" || true
 source_lib "atomic_utils.sh" || true
 source_lib "validation_utils.sh" || true
 source_lib "logging_utils.sh" || true
+source_lib "workflow_routing.sh" || true
 
 #######################################
 # Validate workflow is initialized
@@ -188,21 +189,33 @@ get_refinement_phase() {
     local current="$1"
 
     case "$current" in
-        "analysis")
-            # Failed analysis → refine experiment design
-            echo "experiment_design"
+        "hypothesis")
+            # At hypothesis phase - stay to refine
+            echo ""
+            ;;
+        "literature_review")
+            # Gaps in literature → refine hypothesis
+            echo "hypothesis"
+            ;;
+        "experiment_design")
+            # Design issues → refine hypothesis
+            echo "hypothesis"
             ;;
         "data_collection")
             # Issues during collection → refine design
             echo "experiment_design"
             ;;
-        "publication")
-            # Rejected paper → re-analyze or redesign
+        "analysis")
+            # Failed analysis → refine experiment design
+            echo "experiment_design"
+            ;;
+        "peer_review")
+            # Reviewer feedback → re-analyze
             echo "analysis"
             ;;
-        *)
-            # For hypothesis phase, stay there to refine
-            echo ""
+        "publication")
+            # Rejected paper → re-analyze
+            echo "analysis"
             ;;
     esac
 }
@@ -232,9 +245,11 @@ show_status() {
             local display_name
             case "$phase" in
                 "hypothesis") display_name="Hypothesis Formation" ;;
+                "literature_review") display_name="Literature Review" ;;
                 "experiment_design") display_name="Experiment Design" ;;
                 "data_collection") display_name="Data Collection" ;;
                 "analysis") display_name="Analysis & Results" ;;
+                "peer_review") display_name="Peer Review" ;;
                 "publication") display_name="Publication" ;;
                 *) display_name="$phase" ;;
             esac
@@ -271,6 +286,16 @@ main() {
 
     # Validate workflow first
     validate_workflow
+
+    # Methodology guard: warn if research workflow is not active for this project type
+    if declare -f is_methodology_active > /dev/null 2>&1; then
+        if ! is_methodology_active "research"; then
+            echo -e "${YELLOW}⚠  Research methodology is not the active workflow for this project type.${NC}"
+            echo -e "  Use ${CYAN}./scripts/sdlc.sh${NC} for software development workflow,"
+            echo -e "  or run ${CYAN}./scripts/detect_and_configure.sh${NC} to reconfigure."
+            echo ""
+        fi
+    fi
 
     case "$action" in
         status)
@@ -312,8 +337,34 @@ main() {
                 set_phase "$next_phase"
                 echo -e "${GREEN}✅ Advancing to: ${next_phase}${NC}"
 
+                # Auto-switch agent if routing library and config allow
+                if declare -f get_agent_for_phase > /dev/null 2>&1; then
+                    local auto_select="false"
+                    if [[ -f "${WORKFLOW_DIR}/../.workflow/config.yaml" ]] || [[ -f "${WORKFLOW_DIR}/config.yaml" ]]; then
+                        local config_file="${WORKFLOW_DIR}/config.yaml"
+                        [[ ! -f "$config_file" ]] && config_file="${WORKFLOW_DIR}/../.workflow/config.yaml"
+                        auto_select=$(grep "auto_select:" "$config_file" 2>/dev/null | head -1 | awk '{print $2}' || echo "false")
+                    fi
+                    if [[ "$auto_select" == "true" ]]; then
+                        local suggested_agent
+                        suggested_agent=$(get_agent_for_phase "research" "$next_phase")
+                        local current_agent
+                        current_agent=$(grep "current_agent:" "${WORKFLOW_DIR}/agents/active.yaml" 2>/dev/null | cut -d'"' -f2 || echo "")
+                        if [[ -n "$suggested_agent" && "$suggested_agent" != "$current_agent" ]]; then
+                            echo -e "  ${CYAN}🤖 Auto-switching agent: ${current_agent:-none} → ${suggested_agent}${NC}"
+                            "${SCRIPT_DIR}/activate_agent.sh" "$suggested_agent" 2>/dev/null || true
+                        fi
+                    fi
+                fi
+
                 # Phase-specific hints
                 case "$next_phase" in
+                    literature_review)
+                        echo -e "  • Survey existing work related to hypothesis"
+                        echo -e "  • Identify gaps in current literature"
+                        echo -e "  • Document key references and findings"
+                        echo -e "  • Refine hypothesis based on prior work"
+                        ;;
                     experiment_design)
                         echo -e "  • Design experimental methodology"
                         echo -e "  • Define sample size and controls"
@@ -332,10 +383,17 @@ main() {
                         echo -e "  • If results don't support hypothesis:"
                         echo -e "    ${CYAN}./scripts/research.sh reject \"reason\"${NC}"
                         ;;
+                    peer_review)
+                        echo -e "  • Prepare manuscript for review"
+                        echo -e "  • Address reviewer feedback"
+                        echo -e "  • Revise analysis if needed"
+                        echo -e "  • If major revisions required:"
+                        echo -e "    ${CYAN}./scripts/research.sh reject \"reviewer feedback\"${NC}"
+                        ;;
                     publication)
                         echo -e "  • Write up findings (paper/report)"
                         echo -e "  • Prepare figures and tables"
-                        echo -e "  • Submit for peer review"
+                        echo -e "  • Submit to venue"
                         echo -e "  ${GREEN}Research cycle nearly complete!${NC}"
                         ;;
                 esac
@@ -409,12 +467,16 @@ main() {
             echo "  reset   Reset research state to start over"
             echo ""
             echo "Research Phases (Scientific Method):"
-            echo "  hypothesis → experiment_design → data_collection → analysis → publication"
+            echo "  hypothesis → literature_review → experiment_design → data_collection"
+            echo "    → analysis → peer_review → publication"
             echo ""
             echo "Rejection Handling:"
-            echo "  analysis rejected   → returns to experiment_design"
-            echo "  data issues         → returns to experiment_design"
-            echo "  publication rejected → returns to analysis"
+            echo "  literature_review rejected → returns to hypothesis"
+            echo "  experiment_design rejected → returns to hypothesis"
+            echo "  data issues               → returns to experiment_design"
+            echo "  analysis rejected          → returns to experiment_design"
+            echo "  peer_review rejected       → returns to analysis"
+            echo "  publication rejected       → returns to analysis"
             echo ""
             echo "Note: Negative results are valuable in research!"
             ;;

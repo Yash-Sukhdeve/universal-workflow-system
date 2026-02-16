@@ -38,6 +38,9 @@ source_lib "schema_utils.sh" || true
 # Session manager for real-time dashboard integration
 source_lib "session_manager.sh" || true
 
+# Workflow routing for transition validation
+source_lib "workflow_routing.sh" || true
+
 # Color codes
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
@@ -159,6 +162,22 @@ fi
 # Function to activate an agent (RWF R3 - State Safety with atomic operations)
 activate_agent() {
     local agent=$1
+
+    # Validate transition if another agent is currently active
+    if [[ -f .workflow/agents/active.yaml ]]; then
+        local current_agent
+        current_agent=$(grep 'current_agent:' .workflow/agents/active.yaml 2>/dev/null | cut -d'"' -f2 || echo "")
+        if [[ -n "$current_agent" && "$current_agent" != "$agent" ]]; then
+            if declare -f validate_agent_transition > /dev/null 2>&1; then
+                if ! validate_agent_transition "$current_agent" "$agent"; then
+                    echo -e "${YELLOW}⚠  Transition ${current_agent} → ${agent} is not in registry rules.${NC}"
+                    echo -e "  Expected transitions from ${current_agent}: see .workflow/agents/registry.yaml"
+                    echo -e "  Proceeding anyway (override).${NC}"
+                fi
+            fi
+        fi
+    fi
+
     echo -e "${BLUE}🤖 Activating ${agent} agent...${NC}"
 
     # Get timestamp using utility or fallback
@@ -334,10 +353,9 @@ load_agent_skills() {
         sed 's/^/  /' "$PERSONA_FILE" >> .workflow/agents/active.yaml
     fi
     
-    # Create enabled skills file if it doesn't exist
-    if [ ! -f .workflow/skills/enabled.yaml ]; then
-        echo "enabled_skills: []" > .workflow/skills/enabled.yaml
-    fi
+    # Create or reset enabled skills file with proper YAML structure
+    mkdir -p .workflow/skills
+    echo "enabled_skills:" > .workflow/skills/enabled.yaml
     
     # Define skills for each agent
     case $agent in
@@ -378,8 +396,8 @@ load_agent_skills() {
             # You could append this to context, but for now we just notify
         fi
 
-        # Add to YAML file (simple append for now)
-        if ! grep -q "  - ${skill}" .workflow/skills/enabled.yaml; then
+        # Add to YAML file under enabled_skills key
+        if ! grep -q "^  - ${skill}$" .workflow/skills/enabled.yaml 2>/dev/null; then
             echo "  - ${skill}" >> .workflow/skills/enabled.yaml
         fi
     done

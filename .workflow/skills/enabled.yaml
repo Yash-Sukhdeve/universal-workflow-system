@@ -1,13 +1,6 @@
-enabled_skills: []
-  - code_generation
-  - debugging
-  - testing
-  - submit_cl
-  - system_design
-  - api_design
-  - architecture_patterns
-  - review_cl
+enabled_skills:
   - literature_review
   - experimental_design
   - statistical_validation
+  - review_cl
   - risk_analysis

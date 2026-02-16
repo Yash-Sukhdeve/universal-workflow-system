@@ -19,4 +19,6 @@ Usage:
 - Status: `./scripts/activate_agent.sh <agent> status`
 - Handoff: `./scripts/activate_agent.sh <agent> handoff`
 
+After activating an agent, read the persona from `.workflow/agents/active.yaml` (the `persona:` block) and adopt that persona's mindset, voice, and responsibilities for the session.
+
 Execute based on $ARGUMENTS

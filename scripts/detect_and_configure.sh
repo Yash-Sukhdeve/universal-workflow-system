@@ -14,6 +14,10 @@ if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/yaml_utils.sh"
 fi
 
+if [[ -f "${SCRIPT_DIR}/lib/workflow_routing.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/workflow_routing.sh"
+fi
+
 # Color codes for output
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
@@ -508,6 +512,66 @@ update_configuration() {
 }
 
 #######################################
+# Apply methodology and default agent based on detected type
+#######################################
+apply_configuration() {
+    local project_type="$DETECTED_TYPE"
+
+    # Set active_methodology in state.yaml
+    if [[ -f ".workflow/state.yaml" ]]; then
+        local methodology="both"
+        if declare -f get_active_methodology > /dev/null 2>&1; then
+            methodology=$(get_active_methodology "$project_type")
+        else
+            case "$project_type" in
+                research)       methodology="research" ;;
+                software|deployment|optimization) methodology="sdlc" ;;
+                *)              methodology="both" ;;
+            esac
+        fi
+
+        if command -v yq &> /dev/null; then
+            yq eval ".active_methodology = \"${methodology}\"" -i .workflow/state.yaml 2>/dev/null || true
+        else
+            if grep -q "^active_methodology:" .workflow/state.yaml 2>/dev/null; then
+                sed -i "s|^active_methodology:.*|active_methodology: \"${methodology}\"|" .workflow/state.yaml
+            else
+                echo "active_methodology: \"${methodology}\"" >> .workflow/state.yaml
+            fi
+        fi
+        echo -e "${GREEN}✓${NC} Set active methodology: ${methodology}"
+    fi
+
+    # Set default_agent in config.yaml
+    if [[ -f ".workflow/config.yaml" ]]; then
+        local default_agent
+        if declare -f get_default_agent > /dev/null 2>&1; then
+            default_agent=$(get_default_agent "$project_type")
+        else
+            case "$project_type" in
+                research|ml|llm) default_agent="researcher" ;;
+                software)        default_agent="architect" ;;
+                deployment)      default_agent="deployer" ;;
+                optimization)    default_agent="optimizer" ;;
+                *)               default_agent="architect" ;;
+            esac
+        fi
+
+        if command -v yq &> /dev/null; then
+            yq eval ".agents.default_agent = \"${default_agent}\"" -i .workflow/config.yaml 2>/dev/null || true
+        else
+            if grep -q "default_agent:" .workflow/config.yaml 2>/dev/null; then
+                sed -i "s|default_agent:.*|default_agent: \"${default_agent}\"|" .workflow/config.yaml
+            else
+                # Insert after auto_select line
+                sed -i "/auto_select:/a\\  default_agent: \"${default_agent}\"" .workflow/config.yaml
+            fi
+        fi
+        echo -e "${GREEN}✓${NC} Set default agent: ${default_agent}"
+    fi
+}
+
+#######################################
 # Recommend initial agent and skills
 #######################################
 recommend_setup() {
@@ -597,6 +661,9 @@ main() {
 
     # Update configuration files
     update_configuration
+
+    # Apply methodology routing and default agent
+    apply_configuration
 
     # Show recommendations
     recommend_setup

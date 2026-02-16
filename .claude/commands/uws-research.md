@@ -14,10 +14,11 @@ Manage the research workflow following the Scientific Method.
 - `reject` - Report rejected hypothesis or failed analysis
 - `reset` - Reset research state
 
-## Research Phases (Scientific Method)
+## Research Phases (Scientific Method - 7 phases)
 
 ```
-hypothesis → experiment_design → data_collection → analysis → publication
+hypothesis → literature_review → experiment_design → data_collection
+  → analysis → peer_review → publication
 ```
 
 ## Examples
@@ -31,7 +32,11 @@ hypothesis → experiment_design → data_collection → analysis → publicatio
 
 ## Rejection Handling
 
+- `literature_review` rejected → returns to `hypothesis`
+- `experiment_design` rejected → returns to `hypothesis`
+- `data_collection` issues → returns to `experiment_design`
 - `analysis` rejected → returns to `experiment_design`
+- `peer_review` rejected → returns to `analysis`
 - `publication` rejected → returns to `analysis`
 
 Note: Negative results are valuable in research!

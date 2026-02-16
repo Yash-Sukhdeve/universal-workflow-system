@@ -16,6 +16,10 @@ if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/yaml_utils.sh"
 fi
 
+if [[ -f "${SCRIPT_DIR}/lib/workflow_routing.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/workflow_routing.sh"
+fi
+
 # Color codes
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
@@ -163,6 +167,31 @@ echo -e "  ${CYAN}Phase Checkpoints:${NC} ${TOTAL_CHECKPOINTS}"
 echo -e "  ${CYAN}Last Updated:${NC}      ${DIM}${LAST_UPDATED}${NC}"
 echo ""
 
+# Active Methodology
+echo -e "${BLUE}┌─────────────────────────────────────────────────────────────────────────────┐${NC}"
+echo -e "${BLUE}│ ${BOLD}ACTIVE METHODOLOGY${NC}                                                         ${BLUE}│${NC}"
+echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
+
+if declare -f get_active_methodology > /dev/null 2>&1; then
+    ACTIVE_METHODOLOGY=$(get_active_methodology "$PROJECT_TYPE")
+    echo -e "  ${CYAN}Project Type:${NC}   ${GREEN}${PROJECT_TYPE}${NC}"
+    echo -e "  ${CYAN}Methodology:${NC}    ${GREEN}${ACTIVE_METHODOLOGY}${NC}"
+
+    # Show relevant phase(s)
+    RESEARCH_PHASE=$(get_yaml_value "research_phase" ".workflow/state.yaml")
+    SDLC_PHASE=$(get_yaml_value "sdlc_phase" ".workflow/state.yaml")
+
+    if [[ "$ACTIVE_METHODOLOGY" == "research" || "$ACTIVE_METHODOLOGY" == "both" ]]; then
+        echo -e "  ${CYAN}Research Phase:${NC} ${YELLOW}${RESEARCH_PHASE:-none}${NC}"
+    fi
+    if [[ "$ACTIVE_METHODOLOGY" == "sdlc" || "$ACTIVE_METHODOLOGY" == "both" ]]; then
+        echo -e "  ${CYAN}SDLC Phase:${NC}    ${YELLOW}${SDLC_PHASE:-none}${NC}"
+    fi
+else
+    echo -e "  ${DIM}Routing library not available${NC}"
+fi
+echo ""
+
 # Active Agents
 echo -e "${BLUE}┌─────────────────────────────────────────────────────────────────────────────┐${NC}"
 echo -e "${BLUE}│ ${BOLD}ACTIVE AGENTS${NC}                                                              ${BLUE}│${NC}"
@@ -182,7 +211,9 @@ if [ -f .workflow/agents/active.yaml ]; then
     
     echo -e "  ${AGENT_ICON} ${BOLD}${ACTIVE_AGENT}${NC}"
     echo -e "     ${CYAN}Task:${NC}     ${YELLOW}${AGENT_TASK}${NC}"
-    echo -e "     ${CYAN}Progress:${NC} $(create_progress_bar ${AGENT_PROGRESS:-0} 100) ${AGENT_PROGRESS:-0}%"
+    local agent_pct="${AGENT_PROGRESS:-0}"
+    [[ "$agent_pct" == "N/A" ]] && agent_pct=0
+    echo -e "     ${CYAN}Progress:${NC} $(create_progress_bar ${agent_pct} 100) ${agent_pct}%"
 else
     echo -e "  ${DIM}No active agents${NC}"
 fi

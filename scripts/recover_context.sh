@@ -30,6 +30,7 @@ source_lib "error_utils.sh" || true
 source_lib "precondition_utils.sh" || true
 source_lib "completeness_utils.sh" || true
 source_lib "checksum_utils.sh" || true
+source_lib "workflow_routing.sh" || true
 
 # Color codes for output
 readonly RED='\033[0;31m'
@@ -124,6 +125,23 @@ CURRENT_CHECKPOINT=$(get_yaml_value "current_checkpoint" ".workflow/state.yaml")
 LAST_UPDATED=$(get_yaml_value "metadata.last_updated" ".workflow/state.yaml")
 
 echo -e "  📁 Project Type:     ${GREEN}${PROJECT_TYPE}${NC}"
+
+# Show active methodology
+if declare -f get_active_methodology > /dev/null 2>&1; then
+    ACTIVE_METHODOLOGY=$(get_active_methodology "$PROJECT_TYPE")
+    echo -e "  🔀 Methodology:      ${GREEN}${ACTIVE_METHODOLOGY}${NC}"
+
+    RESEARCH_PHASE=$(get_yaml_value "research_phase" ".workflow/state.yaml")
+    SDLC_PHASE=$(get_yaml_value "sdlc_phase" ".workflow/state.yaml")
+
+    if [[ "$ACTIVE_METHODOLOGY" == "research" || "$ACTIVE_METHODOLOGY" == "both" ]]; then
+        echo -e "  🔬 Research Phase:   ${YELLOW}${RESEARCH_PHASE:-none}${NC}"
+    fi
+    if [[ "$ACTIVE_METHODOLOGY" == "sdlc" || "$ACTIVE_METHODOLOGY" == "both" ]]; then
+        echo -e "  🏗️  SDLC Phase:      ${YELLOW}${SDLC_PHASE:-none}${NC}"
+    fi
+fi
+
 echo -e "  📍 Current Phase:    ${GREEN}${CURRENT_PHASE}${NC}"
 echo -e "  ✓  Checkpoint:       ${GREEN}${CURRENT_CHECKPOINT}${NC}"
 echo -e "  🕐 Last Updated:     ${YELLOW}${LAST_UPDATED}${NC}"
@@ -173,13 +191,13 @@ echo -e "${BLUE}📝 Handoff Notes:${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 if [ -f .workflow/handoff.md ]; then
     # Extract Next Actions section
-    sed -n '/## Next Actions/,/## Commands/p' .workflow/handoff.md | grep "^- \[" | while read -r line; do
+    sed -n '/## Next Actions/,/## Commands/p' .workflow/handoff.md | grep "^- \[" 2>/dev/null | while read -r line; do
         if [[ $line == *"[x]"* ]]; then
             echo -e "  ✅ ${line#*] }"
         else
             echo -e "  ⬜ ${line#*] }"
         fi
-    done
+    done || true
 else
     echo -e "  ${YELLOW}No handoff notes found${NC}"
 fi
@@ -189,9 +207,9 @@ echo ""
 echo -e "${BLUE}⚠️  Critical Context:${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 if [ -f .workflow/handoff.md ]; then
-    sed -n '/## Critical Context/,/## Next Actions/p' .workflow/handoff.md | grep "^[0-9]" | while read -r line; do
+    sed -n '/## Critical Context/,/## Next Actions/p' .workflow/handoff.md | grep "^[0-9]" 2>/dev/null | while read -r line; do
         echo -e "  ${YELLOW}$line${NC}"
-    done
+    done || true
 fi
 echo ""
 
@@ -222,29 +240,50 @@ echo -e "${BOLD}═════════════════════�
 echo -e "${GREEN}💡 Suggested Actions:${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-# Phase-specific suggestions
-case $CURRENT_PHASE in
-    "phase_1_planning")
-        echo -e "  1. Review requirements:    ${CYAN}cat phases/phase_1_planning/requirements.md${NC}"
-        echo -e "  2. Check scope:            ${CYAN}cat phases/phase_1_planning/scope.md${NC}"
-        echo -e "  3. Continue planning:      ${CYAN}./scripts/activate_agent.sh researcher${NC}"
-        ;;
-    "phase_2_implementation")
-        echo -e "  1. Check code status:      ${CYAN}ls -la workspace/${NC}"
-        echo -e "  2. Run tests:              ${CYAN}./scripts/run_tests.sh${NC}"
-        echo -e "  3. Continue coding:        ${CYAN}./scripts/activate_agent.sh implementer${NC}"
-        ;;
-    "phase_3_validation")
-        echo -e "  1. View test results:      ${CYAN}cat artifacts/test_results.log${NC}"
-        echo -e "  2. Check metrics:          ${CYAN}cat artifacts/metrics.yaml${NC}"
-        echo -e "  3. Run validation:         ${CYAN}./scripts/activate_agent.sh experimenter${NC}"
-        ;;
-    *)
-        echo -e "  1. View detailed state:    ${CYAN}cat .workflow/state.yaml${NC}"
-        echo -e "  2. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
-        echo -e "  3. View available agents:  ${CYAN}./scripts/list_agents.sh${NC}"
-        ;;
-esac
+# Methodology-aware suggestions
+if declare -f get_active_methodology > /dev/null 2>&1; then
+    case "${ACTIVE_METHODOLOGY:-both}" in
+        "research")
+            echo -e "  1. Check research phase:   ${CYAN}./scripts/research.sh status${NC}"
+            echo -e "  2. Advance research:       ${CYAN}./scripts/research.sh next${NC}"
+            echo -e "  3. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
+            ;;
+        "sdlc")
+            echo -e "  1. Check SDLC phase:       ${CYAN}./scripts/sdlc.sh status${NC}"
+            echo -e "  2. Advance SDLC:           ${CYAN}./scripts/sdlc.sh next${NC}"
+            echo -e "  3. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
+            ;;
+        "both")
+            echo -e "  1. Research workflow:       ${CYAN}./scripts/research.sh status${NC}"
+            echo -e "  2. SDLC workflow:           ${CYAN}./scripts/sdlc.sh status${NC}"
+            echo -e "  3. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
+            ;;
+    esac
+else
+    # Fallback to phase-specific suggestions
+    case $CURRENT_PHASE in
+        "phase_1_planning")
+            echo -e "  1. Review requirements:    ${CYAN}cat phases/phase_1_planning/requirements.md${NC}"
+            echo -e "  2. Check scope:            ${CYAN}cat phases/phase_1_planning/scope.md${NC}"
+            echo -e "  3. Continue planning:      ${CYAN}./scripts/activate_agent.sh researcher${NC}"
+            ;;
+        "phase_2_implementation")
+            echo -e "  1. Check code status:      ${CYAN}ls -la workspace/${NC}"
+            echo -e "  2. Run tests:              ${CYAN}./scripts/run_tests.sh${NC}"
+            echo -e "  3. Continue coding:        ${CYAN}./scripts/activate_agent.sh implementer${NC}"
+            ;;
+        "phase_3_validation")
+            echo -e "  1. View test results:      ${CYAN}cat artifacts/test_results.log${NC}"
+            echo -e "  2. Check metrics:          ${CYAN}cat artifacts/metrics.yaml${NC}"
+            echo -e "  3. Run validation:         ${CYAN}./scripts/activate_agent.sh experimenter${NC}"
+            ;;
+        *)
+            echo -e "  1. View detailed state:    ${CYAN}cat .workflow/state.yaml${NC}"
+            echo -e "  2. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
+            echo -e "  3. View available agents:  ${CYAN}./scripts/activate_agent.sh --help${NC}"
+            ;;
+    esac
+fi
 
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

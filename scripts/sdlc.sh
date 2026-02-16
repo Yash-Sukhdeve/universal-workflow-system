@@ -48,6 +48,7 @@ source_lib "yaml_utils.sh" || true
 source_lib "atomic_utils.sh" || true
 source_lib "validation_utils.sh" || true
 source_lib "logging_utils.sh" || true
+source_lib "workflow_routing.sh" || true
 
 #######################################
 # Validate workflow is initialized
@@ -258,6 +259,16 @@ main() {
     # Validate workflow first
     validate_workflow
 
+    # Methodology guard: warn if SDLC workflow is not active for this project type
+    if declare -f is_methodology_active > /dev/null 2>&1; then
+        if ! is_methodology_active "sdlc"; then
+            echo -e "${YELLOW}⚠  SDLC methodology is not the active workflow for this project type.${NC}"
+            echo -e "  Use ${CYAN}./scripts/research.sh${NC} for research workflow,"
+            echo -e "  or run ${CYAN}./scripts/detect_and_configure.sh${NC} to reconfigure."
+            echo ""
+        fi
+    fi
+
     case "$action" in
         status)
             show_status
@@ -296,6 +307,23 @@ main() {
             if next_phase=$(get_next_phase "$current_phase"); then
                 set_phase "$next_phase"
                 echo -e "${GREEN}✅ Advancing to: ${next_phase}${NC}"
+
+                # Auto-switch agent if routing library and config allow
+                if declare -f get_agent_for_phase > /dev/null 2>&1; then
+                    local auto_select="false"
+                    local config_file="${WORKFLOW_DIR}/config.yaml"
+                    [[ -f "$config_file" ]] && auto_select=$(grep "auto_select:" "$config_file" 2>/dev/null | head -1 | awk '{print $2}' || echo "false")
+                    if [[ "$auto_select" == "true" ]]; then
+                        local suggested_agent
+                        suggested_agent=$(get_agent_for_phase "sdlc" "$next_phase")
+                        local current_agent
+                        current_agent=$(grep "current_agent:" "${WORKFLOW_DIR}/agents/active.yaml" 2>/dev/null | cut -d'"' -f2 || echo "")
+                        if [[ -n "$suggested_agent" && "$suggested_agent" != "$current_agent" ]]; then
+                            echo -e "  ${CYAN}🤖 Auto-switching agent: ${current_agent:-none} → ${suggested_agent}${NC}"
+                            "${SCRIPT_DIR}/activate_agent.sh" "$suggested_agent" 2>/dev/null || true
+                        fi
+                    fi
+                fi
 
                 # Phase-specific hints
                 case "$next_phase" in
