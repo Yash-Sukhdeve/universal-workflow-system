@@ -83,7 +83,7 @@ create_minimal_state() {
     cat > "${dir}/.workflow/state.yaml" << 'EOF'
 project:
   name: "test-project"
-  type: "software"
+  type: "hybrid"
   version: "1.0.0"
 
 current_phase: "phase_1_planning"
@@ -104,7 +104,7 @@ create_minimal_config() {
     cat > "${dir}/.workflow/config.yaml" << 'EOF'
 project:
   name: "test-project"
-  type: "software"
+  type: "hybrid"
   version: "1.0.0"
 
 workflow:

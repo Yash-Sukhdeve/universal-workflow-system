@@ -67,7 +67,7 @@ teardown() {
 @test "validate_state_schema detects invalid project type" {
     create_minimal_state
     # Value has quotes in the YAML file
-    sed -i 's/type: "software"/type: "invalid_type"/' "${TEST_TMP_DIR}/.workflow/state.yaml"
+    sed -i 's/type: "hybrid"/type: "invalid_type"/' "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     run validate_state_schema "${TEST_TMP_DIR}/.workflow/state.yaml"
 

@@ -81,8 +81,8 @@ teardown() {
 @test "research progresses through all phases in order" {
     "${SCRIPTS_DIR}/research.sh" start
 
-    # hypothesis → experiment_design → data_collection → analysis → publication
-    for i in {1..4}; do
+    # hypothesis → literature_review → experiment_design → data_collection → analysis → peer_review → publication
+    for i in {1..6}; do
         run "${SCRIPTS_DIR}/research.sh" next
         [[ "$status" -eq 0 ]]
     done
@@ -92,8 +92,17 @@ teardown() {
     [[ "$output" =~ "publication" ]]
 }
 
-@test "research next from hypothesis goes to experiment_design" {
+@test "research next from hypothesis goes to literature_review" {
     "${SCRIPTS_DIR}/research.sh" start
+    run "${SCRIPTS_DIR}/research.sh" next
+
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "literature_review" ]] || [[ "$output" =~ "Literature" ]]
+}
+
+@test "research next from literature_review goes to experiment_design" {
+    "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     run "${SCRIPTS_DIR}/research.sh" next
 
     [[ "$status" -eq 0 ]]
@@ -102,6 +111,7 @@ teardown() {
 
 @test "research next from experiment_design goes to data_collection" {
     "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     run "${SCRIPTS_DIR}/research.sh" next
 
@@ -111,6 +121,7 @@ teardown() {
 
 @test "research next from data_collection goes to analysis" {
     "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     "${SCRIPTS_DIR}/research.sh" next  # data_collection
     run "${SCRIPTS_DIR}/research.sh" next
@@ -119,11 +130,25 @@ teardown() {
     [[ "$output" =~ "analysis" ]] || [[ "$output" =~ "Analysis" ]]
 }
 
-@test "research next from analysis goes to publication" {
+@test "research next from analysis goes to peer_review" {
     "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     "${SCRIPTS_DIR}/research.sh" next  # data_collection
     "${SCRIPTS_DIR}/research.sh" next  # analysis
+    run "${SCRIPTS_DIR}/research.sh" next
+
+    [[ "$status" -eq 0 ]]
+    [[ "$output" =~ "peer_review" ]] || [[ "$output" =~ "Peer" ]]
+}
+
+@test "research next from peer_review goes to publication" {
+    "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
+    "${SCRIPTS_DIR}/research.sh" next  # experiment_design
+    "${SCRIPTS_DIR}/research.sh" next  # data_collection
+    "${SCRIPTS_DIR}/research.sh" next  # analysis
+    "${SCRIPTS_DIR}/research.sh" next  # peer_review
     run "${SCRIPTS_DIR}/research.sh" next
 
     [[ "$status" -eq 0 ]]
@@ -142,6 +167,7 @@ teardown() {
 
 @test "research reject in analysis returns to experiment_design" {
     "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     "${SCRIPTS_DIR}/research.sh" next  # data_collection
     "${SCRIPTS_DIR}/research.sh" next  # analysis
@@ -154,6 +180,7 @@ teardown() {
 
 @test "research reject in data_collection returns to experiment_design" {
     "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     "${SCRIPTS_DIR}/research.sh" next  # data_collection
 
@@ -165,9 +192,11 @@ teardown() {
 
 @test "research reject in publication returns to analysis" {
     "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     "${SCRIPTS_DIR}/research.sh" next  # data_collection
     "${SCRIPTS_DIR}/research.sh" next  # analysis
+    "${SCRIPTS_DIR}/research.sh" next  # peer_review
     "${SCRIPTS_DIR}/research.sh" next  # publication
 
     run "${SCRIPTS_DIR}/research.sh" reject "Paper rejected by reviewers"
@@ -187,9 +216,10 @@ teardown() {
 
 @test "research reject includes details message" {
     "${SCRIPTS_DIR}/research.sh" start
-    "${SCRIPTS_DIR}/research.sh" next
-    "${SCRIPTS_DIR}/research.sh" next
-    "${SCRIPTS_DIR}/research.sh" next
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
+    "${SCRIPTS_DIR}/research.sh" next  # experiment_design
+    "${SCRIPTS_DIR}/research.sh" next  # data_collection
+    "${SCRIPTS_DIR}/research.sh" next  # analysis
 
     run "${SCRIPTS_DIR}/research.sh" reject "p-value not significant (p=0.23)"
 
@@ -259,8 +289,8 @@ teardown() {
     run "${SCRIPTS_DIR}/research.sh" start
     [[ "$status" -eq 0 ]]
 
-    # Progress through all phases
-    for phase in experiment_design data_collection analysis publication; do
+    # Progress through all 7 phases
+    for phase in literature_review experiment_design data_collection analysis peer_review publication; do
         run "${SCRIPTS_DIR}/research.sh" next
         [[ "$status" -eq 0 ]]
     done
@@ -276,6 +306,7 @@ teardown() {
 
 @test "research cycle with rejection and refinement" {
     "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     "${SCRIPTS_DIR}/research.sh" next  # data_collection
     "${SCRIPTS_DIR}/research.sh" next  # analysis
@@ -294,6 +325,7 @@ teardown() {
 
 @test "multiple rejection cycles allowed" {
     "${SCRIPTS_DIR}/research.sh" start
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     "${SCRIPTS_DIR}/research.sh" next  # data_collection
     "${SCRIPTS_DIR}/research.sh" next  # analysis
@@ -322,15 +354,16 @@ teardown() {
     "${SCRIPTS_DIR}/research.sh" start
     run "${SCRIPTS_DIR}/research.sh" next
 
-    # Should provide guidance for experiment_design phase
-    [[ "$output" =~ "Design" ]] || [[ "$output" =~ "methodology" ]] || [[ "$output" =~ "sample" ]]
+    # Should provide guidance for literature_review phase
+    [[ "$output" =~ "literature" ]] || [[ "$output" =~ "Survey" ]] || [[ "$output" =~ "gaps" ]]
 }
 
 @test "research mentions negative results value on reject" {
     "${SCRIPTS_DIR}/research.sh" start
-    "${SCRIPTS_DIR}/research.sh" next
-    "${SCRIPTS_DIR}/research.sh" next
-    "${SCRIPTS_DIR}/research.sh" next
+    "${SCRIPTS_DIR}/research.sh" next  # literature_review
+    "${SCRIPTS_DIR}/research.sh" next  # experiment_design
+    "${SCRIPTS_DIR}/research.sh" next  # data_collection
+    "${SCRIPTS_DIR}/research.sh" next  # analysis
 
     run "${SCRIPTS_DIR}/research.sh" reject "Null result"
 
