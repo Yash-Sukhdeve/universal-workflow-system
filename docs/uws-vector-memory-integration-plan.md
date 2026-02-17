@@ -1,10 +1,10 @@
 # UWS x Vector Memory MCP -- Integration Plan
 
-**Version**: 3.2.0
-**Date**: 2026-02-16
-**Status**: Verified against source code, architecturally reviewed, hooks verified, all findings resolved
-**Complexity**: Medium (5 phases, ~2 weeks)
-**Review**: 14 findings from v2.0 resolved. 8 findings from v3.0 resolved. 16 findings from v3.1 review resolved (2 CRITICAL, 4 HIGH, 5 MEDIUM, 5 LOW).
+**Version**: 3.4.1
+**Date**: 2026-02-17
+**Status**: Multi-agent verified (5 specialized agents) + manual executable-path walkthrough. All copy-pasteable configs verified. All content strings follow convention.
+**Complexity**: Medium (5 phases, ~1-2 weeks)
+**Review**: 14 findings from v2.0 resolved. 8 findings from v3.0 resolved. 16 findings from v3.1 review resolved. 11 findings from v3.2 review resolved. 9 findings from v3.3 multi-agent review + 6 from manual walkthrough resolved (total: 64).
 
 ---
 
@@ -14,7 +14,7 @@ This plan integrates `vector-memory-mcp` (cornebidouil, MIT license) as a **sema
 
 - **Local DB** (per-project): Project-specific memories. `<project>/memory/vector_memory.db`.
 - **Global DB** (cross-project): Abstracted, generalizable lessons. `~/.uws/knowledge/memory/vector_memory.db`.
-- **Generalizability detection**: Inline skill + phase-end review + manual retrospective. No dedicated agent.
+- **Generalizability detection**: Auto-invoked `memory-gate` skill + `/phase-distillation` manual skill + `/memory-retrospective` manual skill. No dedicated agent.
 
 ### 1.1 Verified Server Capabilities
 
@@ -53,6 +53,7 @@ This plan targets only files that exist in UWS (or explicitly marks new files):
 | Decision log | `.workflow/logs/decisions.log` | Structured decision records |
 | Executable hooks | `.claude/settings.json` | Shell commands triggered by lifecycle events |
 | Slash commands | `.claude/commands/uws-*.md` | User-invokable UWS commands |
+| Autonomous skills | `.claude/skills/*/SKILL.md` | Auto/manual-invokable memory procedures |
 | MCP configuration | `.mcp.json` | MCP server definitions |
 | Git ignore | `.gitignore` | Files excluded from version control |
 
@@ -127,16 +128,22 @@ Claude Code names MCP tools as `mcp__<server_name>__<tool_name>`. Hyphens in ser
 
 **Rule**: If markdown/YAML and vector memory conflict, markdown/YAML wins. Vector memory is a **read-optimized index**, not a ledger.
 
-### 2.3 Behavioral Directives vs Executable Hooks
+### 2.3 Enforcement Mechanisms
 
-This plan distinguishes two enforcement mechanisms:
+This plan uses three enforcement mechanisms at different reliability levels:
 
 | Mechanism | Location | Enforcement | Reliability |
 |-----------|----------|------------|-------------|
 | **Executable hooks** | `.claude/settings.json` | Auto-triggered by Claude Code lifecycle events | High -- always fires |
+| **Claude Code skills** | `.claude/skills/*/SKILL.md` | Auto-invoked when description matches conversation context (`user-invocable: false`) or manually invoked (`disable-model-invocation: true`) | Medium-High -- depends on description matching or explicit invocation |
 | **Behavioral directives** | `CLAUDE.md` | Prompt instructions the LLM follows voluntarily | Medium -- may be skipped under token pressure |
 
-The memory lifecycle operations (on_phase_complete, on_error_resolved, etc.) are **behavioral directives** in `CLAUDE.md`. They depend on the LLM following instructions. This is acknowledged as a reliability limitation.
+This plan uses all three mechanisms:
+- **Hooks**: SessionStart (inject memory context via `additionalContext`), PreCompact (store compaction marker via `agent` hook)
+- **Skills**: `memory-gate` (auto-invoked after bug fixes), `phase-distillation` (manual `/phase-distillation <N>`), `memory-retrospective` (manual `/memory-retrospective`)
+- **Behavioral directives**: When-to-store triggers (on_phase_complete, on_error_resolved, on_agent_handoff, on_verification) in `CLAUDE.md`
+
+The behavioral directives depend on the LLM following instructions. Skills provide a middle layer: Claude auto-invokes them when the description matches, loading full procedures on-demand rather than keeping them always in context. UWS already has 3 skills (`workflow-checkpoint`, `workflow-recovery`, `workflow-status`) following this pattern.
 
 #### Claude Code Hook Specification (Verified)
 
@@ -177,8 +184,8 @@ The memory lifecycle operations (on_phase_complete, on_error_resolved, etc.) are
 **Key capability**: `SessionStart` command hooks can return JSON with `hookSpecificOutput.additionalContext` to inject context directly into Claude's system knowledge. This is more reliable than `echo` because it becomes part of Claude's context, not just terminal output.
 
 **Compensating controls**: Phase 2 adds two executable hooks to `.claude/settings.json`:
-1. **SessionStart**: Injects memory protocol reminder via `additionalContext`
-2. **PreCompact**: Echoes reminder to store phase memories before context compaction
+1. **SessionStart**: Injects memory protocol reminder via `additionalContext` (conditional on server config)
+2. **PreCompact**: Stores compaction marker to local memory via `agent` hook with MCP access
 
 ---
 
@@ -276,6 +283,8 @@ PROJECT RETROSPECTIVE:
    superseding entry. For severe contamination, use:
      clear_old_memories(days_old=0, max_to_keep=0)
    then re-store all valid memories from the review notes.
+   WARNING: Verify max_to_keep=0 is accepted by the server before
+   relying on this -- edge case not confirmed in source.
 
 5. Document results in project completion notes.
 ```
@@ -348,6 +357,34 @@ scope_tags:            # Where it applies
 
 Each phase produces a **specific deliverable** consumed by the next phase. Phases are connected by explicit input/output contracts.
 
+### Prerequisites
+
+Before starting Phase 0, verify the following are available:
+
+| Requirement | Minimum Version | Check Command | Notes |
+|-------------|----------------|---------------|-------|
+| Python | 3.9+ | `python3 --version` | Required by sentence-transformers and sqlite-vec |
+| pip | 21.0+ | `pip --version` | Installed with Python; may need `python3-pip` on some distros |
+| venv module | (bundled) | `python3 -m venv --help` | May need `sudo apt install python3-venv` on Ubuntu/Debian |
+| git | 2.0+ | `git --version` | For cloning MCP server source |
+| BATS | 1.0+ | `bats --version` | For Phase 3 integration tests only |
+| Disk space | ~1.5 GB free | `df -h ~/.uws` | PyTorch (~800MB) + embedding model (~80MB) + SQLite DBs |
+| Network access | (once) | | Required for initial `git clone`, `pip install`, and model download |
+| Write permissions | | `touch ~/.uws/test && rm ~/.uws/test` | Must be able to write to `~/.uws/` and project `memory/` dir |
+
+**Transitive dependencies** (installed automatically by `pip install sentence-transformers`):
+- PyTorch (~800MB) -- CPU-only sufficient; GPU not required for 384D embeddings
+- transformers (Hugging Face)
+- huggingface-hub (downloads all-MiniLM-L6-v2 model on first run, ~80MB, cached to `~/.cache/huggingface/`)
+- tokenizers, safetensors, tqdm, regex
+
+**If behind a corporate proxy**: Set `HTTP_PROXY` and `HTTPS_PROXY` environment variables before `pip install` and first server run (model download).
+
+**If on a restricted network**: Pre-download the model:
+```bash
+python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+```
+
 ### Phase 0: Infrastructure (Day 1)
 
 **Input**: Clean UWS project with existing `.mcp.json`
@@ -358,6 +395,9 @@ Each phase produces a **specific deliverable** consumed by the next phase. Phase
 ```bash
 mkdir -p ~/.uws/tools
 git clone https://github.com/cornebidouil/vector-memory-mcp.git ~/.uws/tools/vector-memory
+cd ~/.uws/tools/vector-memory && git log --oneline -1  # Record commit hash
+# Pin to verified version to prevent breaking API changes:
+# git checkout <commit_hash_from_verification>
 
 # Create isolated venv to avoid conflicts with project PyTorch/numpy versions
 python3 -m venv ~/.uws/tools/vector-memory/.venv
@@ -366,11 +406,60 @@ python3 -m venv ~/.uws/tools/vector-memory/.venv
 
 **Why venv?** `sentence-transformers` depends on PyTorch, `transformers`, and `huggingface-hub`. Installing globally could conflict with project-specific PyTorch versions or `replication/requirements.txt` packages.
 
-#### 0.2 Set Up Directories
+#### 0.2 Verify MCP Server Tool Signatures
+
+**CRITICAL**: Before proceeding, inspect the cloned source to confirm the tool signatures match this plan's assumptions. The evidence validator could not independently verify these from public documentation alone.
+
+```bash
+cd ~/.uws/tools/vector-memory
+
+# Locate tool definitions (look for FastMCP tool decorators or function defs)
+grep -rn "def store_memory\|def search_memories\|def list_recent_memories\|def get_memory_stats\|def clear_old_memories" .
+
+# Verify parameter names and defaults for each tool:
+#   store_memory(content: str, category: str="other", tags: list[str]=None)
+#   search_memories(query: str, limit: int=10, category: str=None)
+#   list_recent_memories(limit: int=10)
+#   get_memory_stats()
+#   clear_old_memories(days_old: int=30, max_to_keep: int=1000)
+
+# Check for tools NOT expected (delete_memory, update_memory, batch_store):
+grep -rn "def delete_memory\|def update_memory\|def batch_store" .
+# Expected: no matches
+
+# Confirm embedding model:
+grep -rn "MiniLM\|all-MiniLM\|sentence-transformers" .
+
+# Confirm SQLite + sqlite-vec:
+grep -rn "sqlite_vec\|sqlite-vec\|import sqlite3" .
+
+# Confirm --working-dir argument:
+grep -rn "working.dir\|working_dir" .
+
+# Confirm entrypoint filename (plan assumes main.py):
+ls -la *.py
+# If main.py doesn't exist, check for:
+#   server.py, app.py, __main__.py, or a pyproject.toml [project.scripts] entry
+# Also check: python3 -c "import vector_memory_mcp; print(vector_memory_mcp.__file__)"
+# Update .mcp.json "args" in Section 0.4 to match actual entrypoint.
+```
+
+**If any signature differs from this plan**: STOP. Update all tool call examples in Phases 1-5 before proceeding. Record the actual signatures in `.workflow/handoff.md`.
+
+**If entrypoint is not `main.py`**: Update `.mcp.json` args accordingly. Alternatives:
+- If package installs a console script: use it directly as `"command"` instead of Python
+- If module-based: use `"args": ["-m", "vector_memory_mcp", "--working-dir", "..."]`
+- If `server.py`: replace `main.py` with `server.py` in `.mcp.json`
+
+**If tools are missing or renamed**: The server may be a different version. Check git tags/releases and pin to a version that matches.
+
+#### 0.3 Set Up Directories
 
 ```bash
 # Create global knowledge directory
-mkdir -p ~/.uws/knowledge
+# NOTE: Path must NOT contain dot-prefixed components (e.g., .uws/) --
+# the server's security.py rejects paths with parts starting with "."
+mkdir -p ~/uws-global-knowledge
 
 # Create project-local memory directory (server auto-creates
 # memory/vector_memory.db inside --working-dir, but we create
@@ -378,36 +467,36 @@ mkdir -p ~/.uws/knowledge
 mkdir -p memory/
 ```
 
-#### 0.3 Configure MCP Servers
+#### 0.4 Configure MCP Servers
 
-Add entries inside the existing `"mcpServers"` object in `.mcp.json`:
+Add entries inside the existing `"mcpServers"` object in `.mcp.json`. **NOTE**: The `"...existing servers..."` placeholder below represents your current MCP servers (arxiv, filesystem, etc.) -- do NOT copy it literally. Only add the two `vector_memory_*` entries:
 
 ```json
 {
   "mcpServers": {
-    "...existing servers...": "...unchanged...",
+    "...existing servers...": "...keep your current servers unchanged...",
 
     "vector_memory_local": {
       "command": "/home/lab2208/.uws/tools/vector-memory/.venv/bin/python",
       "args": [
         "/home/lab2208/.uws/tools/vector-memory/main.py",
-        "--working-dir", "/absolute/path/to/current/project"
+        "--working-dir", "/home/lab2208/Documents/universal-workflow-system"
       ]
     },
     "vector_memory_global": {
       "command": "/home/lab2208/.uws/tools/vector-memory/.venv/bin/python",
       "args": [
         "/home/lab2208/.uws/tools/vector-memory/main.py",
-        "--working-dir", "/home/lab2208/.uws/knowledge"
+        "--working-dir", "/home/lab2208/uws-global-knowledge"
       ]
     }
   }
 }
 ```
 
-**IMPORTANT**: Entries go inside `"mcpServers"`, NOT at the root level. The `command` uses the venv Python to avoid dependency conflicts.
+**IMPORTANT**: Entries go inside `"mcpServers"`, NOT at the root level. The `command` uses the venv Python to avoid dependency conflicts. The entrypoint `main.py` was assumed -- if Section 0.2 verification reveals a different filename, update both `args` arrays.
 
-#### 0.4 Update `.gitignore`
+#### 0.5 Update `.gitignore`
 
 Append to project `.gitignore`:
 ```
@@ -415,7 +504,7 @@ Append to project `.gitignore`:
 memory/
 ```
 
-#### 0.5 Verification Gate
+#### 0.6 Verification Gate
 
 Both must return healthy before proceeding to Phase 1:
 ```
@@ -432,7 +521,7 @@ If either server fails to start, check:
 
 **Resource note**: Two Python processes, ~120MB RAM each (~240MB total). Model downloads ~80MB on first run, caches to `~/.cache/huggingface/`.
 
-#### 0.6 Rollback (if Phase 0 fails)
+#### 0.7 Rollback (if Phase 0 fails)
 
 ```bash
 # Remove MCP entries from .mcp.json (delete vector_memory_local and vector_memory_global)
@@ -451,9 +540,9 @@ rm -rf ~/.uws/tools/vector-memory
 **Input**: Two healthy MCP server instances (from Phase 0)
 **Output**: Validated retrieval quality with real test data
 
-#### 1.1 Store 5 Local Test Memories
+#### 1.1 Store 6 Local Test Memories
 
-Store one memory per local category (all 5 fully specified -- R2 zero placeholders):
+Store one memory per local category (all 6 fully specified -- R2 zero placeholders):
 
 ```
 # Memory 1: decision-adr
@@ -491,10 +580,11 @@ mcp__vector_memory_local__store_memory(
 
 # Memory 4: verification
 mcp__vector_memory_local__store_memory(
-  content="PHASE 3 verification | VERIFIED: All 608 BATS tests passing
-           after routing integration. METHOD: ./tests/run_all_tests.sh
-           full suite. RESULT: pass. EVIDENCE: 3 pre-existing failures
-           fixed (multiline sed, PROJECT_ROOT override, grep -c arithmetic).",
+  content="PHASE 3 verification | DOMAIN: testing | VERIFIED: All 608 BATS
+           tests passing after routing integration. METHOD:
+           ./tests/run_all_tests.sh full suite. RESULT: pass. EVIDENCE:
+           3 pre-existing failures fixed (multiline sed, PROJECT_ROOT
+           override, grep -c arithmetic).",
   category="verification",
   tags=["phase:3", "verification", "testing"]
 )
@@ -506,6 +596,17 @@ mcp__vector_memory_local__store_memory(
            git-native workflow system. Shell scripts with YAML state.",
   category="environment",
   tags=["phase:0", "environment", "setup"]
+)
+
+# Memory 6: agent-handoff
+mcp__vector_memory_local__store_memory(
+  content="PHASE 1 planning | DOMAIN: handoff | HANDOFF
+           researcher->implementer. KEY_DECISIONS: Use shared routing
+           library for subsystem integration. 4 independent subsystems
+           connected via workflow_routing.sh. OPEN_ISSUES: Edge case
+           test coverage for hybrid project type detection.",
+  category="agent-handoff",
+  tags=["phase:1", "agent:researcher", "agent:implementer"]
 )
 ```
 
@@ -538,7 +639,7 @@ mcp__vector_memory_global__store_memory(
   tags=["coupling-violation", "state-management", "mediator-pattern"]
 )
 
-# Global 3: workflow-improvement
+# Global 3: workflow-improvement (testing methodology)
 mcp__vector_memory_global__store_memory(
   content="TESTING/GREP: grep -c returns exit code 1 when match count is
            zero, even though it successfully outputs '0'. Using
@@ -546,7 +647,7 @@ mcp__vector_memory_global__store_memory(
            '0\\n0' which breaks bash arithmetic. FIX: Use
            var=$(grep -c ...) || var=0 (assign on failure, don't append).
            APPLIES_TO: Any bash script using grep -c in arithmetic.",
-  category="tool-gotcha",
+  category="workflow-improvement",
   tags=["tool-limitation", "bash-scripting", "validation-pattern"]
 )
 ```
@@ -612,9 +713,25 @@ mcp__vector_memory_local__search_memories(
 → VERIFY: Focused YAML bug memory appears ABOVE the unfocused mixed memory
 ```
 
-**Deliverable**: 8 test memories stored (5 local, 3 global) + 2 atomic principle test memories. Retrieval quality validated with 4+ test queries. Results documented in `.workflow/handoff.md`.
+#### 1.5 Document Results in Handoff
 
-#### 1.5 Rollback (if Phase 1 validation fails)
+Update `.workflow/handoff.md` with Phase 1 results:
+
+```markdown
+## Vector Memory Integration - Phase 1 Results
+
+- **Local DB**: 8 memories (6 seeds + 2 atomic test)
+- **Global DB**: 3 memories
+- **Retrieval quality**: [PASS/FAIL] -- [brief notes on query relevance]
+- **Atomic principle verified**: Focused single-topic memories rank higher than
+  mixed multi-topic memories for targeted queries
+- **Phase 1 completed**: [timestamp]
+- **Next**: Phase 2 (behavioral integration -- CLAUDE.md, skills, hooks)
+```
+
+**Deliverable**: 9 test memories stored (6 local, 3 global) + 2 atomic principle test memories. Retrieval quality validated with 4+ test queries. Results documented in `.workflow/handoff.md`.
+
+#### 1.6 Rollback (if Phase 1 validation fails)
 
 ```
 If retrieval quality is unacceptable (embedding model performs poorly):
@@ -626,10 +743,10 @@ If retrieval quality is unacceptable (embedding model performs poorly):
 
 ---
 
-### Phase 2: Behavioral Directives in CLAUDE.md (Day 2-4)
+### Phase 2: Protocol, Skills & Hooks (Day 2-4)
 
 **Input**: Validated retrieval (from Phase 1). Confirmed category taxonomy works.
-**Output**: `CLAUDE.md` updated with complete memory protocol. `.claude/settings.json` updated with memory reminder hook.
+**Output**: `CLAUDE.md` updated with memory protocol. 3 memory skills created. `.claude/settings.json` updated with memory hooks.
 
 #### 2.1 Add Memory Protocol Section to CLAUDE.md
 
@@ -673,8 +790,9 @@ Prefix global memories with "<TOOL_OR_PATTERN>: "
 **After agent transition** (on_agent_handoff):
   Outgoing agent stores:
     mcp__vector_memory_local__store_memory(
-      content="HANDOFF <from>-><to> | PHASE <N> <methodology_phase> |
-               KEY_DECISIONS: <list> OPEN_ISSUES: <list>",
+      content="PHASE <N> <methodology_phase> | DOMAIN: handoff |
+               HANDOFF <from>-><to>. KEY_DECISIONS: <list>
+               OPEN_ISSUES: <list>",
       category="agent-handoff",
       tags=["phase:<N>", "agent:<from>", "agent:<to>"])
   Incoming agent queries:
@@ -690,16 +808,10 @@ Prefix global memories with "<TOOL_OR_PATTERN>: "
     tags=["phase:<N>", "verification"])
 
 ### Generalizability Gate
-After storing a bug-resolution or decision-adr to local DB:
-  Q1: Root cause involves a named tool/library/pattern? (not project code)
-  Q2: Could happen in a different project?
-  Q3: Can state lesson without THIS project's file paths or var names?
-  ALL YES → Store abstracted lesson to global:
-    mcp__vector_memory_global__store_memory(
-      content="<TOOL>: <mechanism> FIX: <approach> APPLIES_TO: <scope>",
-      category=<anti-pattern|tool-gotcha|design-lesson|library-compat|workflow-improvement>,
-      tags=[<root-cause>, <scope>, <fix-pattern>])
-  ANY NO → Local only.
+After storing a bug-resolution or decision-adr to local DB, the
+`memory-gate` skill auto-invokes (via description matching) to evaluate
+3 questions. If all pass, an abstracted lesson is promoted to global DB.
+If any fail, local only. See `.claude/skills/memory-gate/SKILL.md`.
 
 ### Session Resume (Enhanced)
 At session start, after reading state.yaml and handoff.md:
@@ -718,15 +830,11 @@ Before asserting facts about prior phases:
   Never cite vector memory as sole evidence.
 
 ### Phase-End Distillation
-At phase completion:
-  1. mcp__vector_memory_local__search_memories("PHASE <N>", limit=50)
-  2. Group by category. Find recurring root causes (2+ entries).
-  3. Consolidate into general lessons. Apply gate. Store to global.
-  4. Every 10 global promotions: adversarial review ("which are
-     actually project-specific?"). For false promotions, store
-     corrective entry: "SUPERSEDES: <summary>. REASON: project-specific."
-     (No delete_memory tool exists -- supersede pattern only.)
-  5. Note in .workflow/handoff.md.
+At phase completion, run `/phase-distillation <N>` to review local
+memories from the completed phase. The skill consolidates recurring
+patterns, applies the generalizability gate, runs adversarial
+calibration (supersede false promotions), and promotes passing lessons
+to global DB. See `.claude/skills/phase-distillation/SKILL.md`.
 
 ### Local Categories
 phase-summary | decision-adr | bug-resolution | agent-handoff |
@@ -737,7 +845,135 @@ anti-pattern | tool-gotcha | design-lesson | library-compat |
 workflow-improvement
 ```
 
-#### 2.2 Add Memory Hooks to `.claude/settings.json`
+#### 2.2 Create Memory Skills
+
+Create 3 skills following UWS's existing skill pattern (`.claude/skills/*/SKILL.md`):
+
+**`.claude/skills/memory-gate/SKILL.md`** -- Auto-invoked after bug fixes:
+```yaml
+---
+name: memory-gate
+description: >
+  Run generalizability gate after fixing non-trivial bugs or making
+  architectural decisions. Evaluates whether lessons should be promoted
+  from project-local to cross-project global memory.
+  USE WHEN: A bug fix involves a named tool/library/pattern, or an
+  architectural decision applies beyond this project.
+user-invocable: false
+---
+
+# Generalizability Gate
+
+After storing a bug-resolution or decision-adr to local DB, evaluate:
+
+Q1: Does the root cause involve a named tool, library, or
+    architectural pattern (not just this project's code)?
+Q2: Could someone hit this exact issue in a different project?
+Q3: Can you state the lesson in one sentence WITHOUT referencing
+    any file path, variable name, or project-specific term
+    from THIS project?
+
+ALL THREE = YES:
+  Compose abstracted lesson (NO project file paths, NO project variable names):
+    content="<TOOL_OR_PATTERN>: <root cause mechanism>
+             FIX: <fix approach> APPLIES_TO: <scope>"
+  Select category: anti-pattern | tool-gotcha | design-lesson |
+                   library-compat | workflow-improvement
+  Select tags: [<root-cause-tag>, <scope-tag>, <fix-pattern-tag>]
+  Call: mcp__vector_memory_global__store_memory(content, category, tags)
+
+ANY = NO:
+  Local store only. No global promotion.
+
+CALIBRATION: After every 10 global promotions, run adversarial review:
+  "Which of the last 10 global stores are actually project-specific?"
+  For false promotions, store corrective entry:
+    "SUPERSEDES: <summary>. REASON: project-specific."
+  (No delete_memory tool -- supersede pattern only.)
+```
+
+**`.claude/skills/phase-distillation/SKILL.md`** -- Manual at phase end:
+```yaml
+---
+name: phase-distillation
+description: Distill local memories into global lessons at phase completion
+disable-model-invocation: true
+argument-hint: "[phase-number]"
+---
+
+# Phase-End Knowledge Distillation
+
+Distill memories from Phase $ARGUMENTS:
+
+1. mcp__vector_memory_local__search_memories(
+     query="PHASE $ARGUMENTS", limit=50)
+   NOTE: Using search (not list_recent) to target phase via content prefix.
+
+2. Group results by category.
+
+3. For groups with 2+ entries sharing a root cause:
+   Consolidate into ONE general lesson.
+   Apply generalizability gate (3-question evaluation).
+
+4. CALIBRATION CHECK: Review last 10 global promotions.
+   "Which of these are actually project-specific? Be adversarial."
+   For false promotions: store corrective memory with same category:
+     content="SUPERSEDES: <original content summary>. REASON: project-specific."
+   NOTE: Server has no delete_memory tool. Superseding entries rank
+         higher for targeted queries, displacing false ones.
+
+5. Store passing patterns to global DB.
+
+6. Add to .workflow/handoff.md:
+   "Phase $ARGUMENTS distillation: promoted M lessons to global knowledge"
+```
+
+**`.claude/skills/memory-retrospective/SKILL.md`** -- Manual at project end:
+```yaml
+---
+name: memory-retrospective
+description: Review and curate global memory database at project completion
+disable-model-invocation: true
+---
+
+# Project Retrospective
+
+1. mcp__vector_memory_global__get_memory_stats()
+   Note total count for limit parameter.
+
+2. mcp__vector_memory_global__list_recent_memories(
+     limit=<total_from_stats>)
+   NOTE: Set limit to total count from stats to get ALL memories.
+
+3. For each memory, identify project origin by inspecting content
+   for tool/pattern names from the current project's domain.
+   (Temporal proximity and domain overlap, not file paths.)
+
+4. For each memory from this project's timeframe:
+   a. Still accurate? → Keep
+   b. Needs refinement? → Store improved version (old ranks lower)
+   c. Project-specific? → Store corrective superseding memory:
+      content="SUPERSEDES: <summary>. REASON: project-specific."
+   d. Related to another? → Store merged consolidated version
+
+   NOTE: No delete_memory tool. "Removal" = superseding entry.
+   For severe contamination, use:
+     clear_old_memories(days_old=0, max_to_keep=0)
+   then re-store all valid memories from the review notes.
+   WARNING: Verify max_to_keep=0 is accepted by the server before
+   relying on this -- edge case not confirmed in source.
+
+5. Document results in project completion notes.
+```
+
+**Design rationale**:
+- `memory-gate` uses `user-invocable: false` so Claude auto-invokes it when the description matches ("after fixing bugs"). This provides two-layer enforcement: CLAUDE.md says "run the gate" (behavioral) + skill description triggers auto-invocation (structural).
+- `phase-distillation` and `memory-retrospective` use `disable-model-invocation: true` because they are explicit user-initiated workflows, not automatic responses. Users invoke `/phase-distillation 3` or `/memory-retrospective`.
+- All 3 follow UWS's existing skill pattern (see `workflow-checkpoint`, `workflow-recovery`, `workflow-status`).
+
+**Deliverable**: 3 skill files created in `.claude/skills/`.
+
+#### 2.3 Add Memory Hooks to `.claude/settings.json`
 
 Add memory hooks alongside existing UWS hooks. The full updated `.claude/settings.json`:
 
@@ -757,7 +993,7 @@ Add memory hooks alongside existing UWS hooks. The full updated `.claude/setting
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"VECTOR MEMORY ACTIVE: Query local+global memory DBs during session resume per CLAUDE.md Vector Memory Protocol. Use mcp__vector_memory_local__search_memories() for project context and mcp__vector_memory_global__search_memories() for cross-project lessons.\"}}'",
+            "command": "cd \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\" && grep -q vector_memory_local .mcp.json 2>/dev/null && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"VECTOR MEMORY ACTIVE: Query local+global memory DBs during session resume per CLAUDE.md Vector Memory Protocol. Use mcp__vector_memory_local__search_memories() for project context and mcp__vector_memory_global__search_memories() for cross-project lessons.\"}}' || true",
             "timeout": 5,
             "statusMessage": "Loading memory context..."
           }
@@ -776,10 +1012,10 @@ Add memory hooks alongside existing UWS hooks. The full updated `.claude/setting
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "echo '{\"systemMessage\":\"MEMORY: Before compaction, store critical phase context to vector memory per CLAUDE.md protocol. Key decisions, bug fixes, and phase outcomes should be persisted.\"}'",
-            "timeout": 5,
-            "statusMessage": "Memory compaction reminder..."
+            "type": "agent",
+            "prompt": "Context is about to be compacted. Store a compaction marker to local vector memory: mcp__vector_memory_local__store_memory(content='COMPACTION MARKER: Context compacted at this point. Previous conversation context was summarized by Claude Code.', category='phase-summary', tags=['compaction']). Then output a brief confirmation.",
+            "timeout": 30,
+            "statusMessage": "Persisting memory state before compaction..."
           }
         ]
       }
@@ -794,33 +1030,72 @@ Add memory hooks alongside existing UWS hooks. The full updated `.claude/setting
 | Hook | Event | Pre/Post | Type | Purpose |
 |------|-------|----------|------|---------|
 | Context recovery | SessionStart | Pre | `command` | Run `recover_context.sh` (existing) |
-| Memory context injection | SessionStart | Pre | `command` | Inject `additionalContext` reminder into Claude's knowledge |
+| Memory context injection | SessionStart | Pre | `command` | Inject `additionalContext` reminder into Claude's knowledge (conditional on server config) |
 | Checkpoint creation | PreCompact | Pre | `command` | Create checkpoint before compaction (existing) |
-| Memory store reminder | PreCompact | Pre | `command` | Show `systemMessage` to store memories before context loss |
+| Compaction marker | PreCompact | Pre | `agent` | Store compaction timestamp marker to local memory via MCP |
 
 **Design notes**:
-- `SessionStart` memory hook uses `additionalContext` (injected into Claude's system context) rather than plain `echo` (terminal output only). This is more reliable.
-- `PreCompact` memory hook uses `systemMessage` (shown to user as warning) to remind about pending stores.
-- Both hooks have `timeout: 5` since they only echo JSON (no I/O).
-- `Stop` event was considered but rejected: fires on every Claude response, too frequent for memory reminders.
-- `PostToolUse` with `Edit|Write` matcher was considered but rejected: adds latency to every file operation with minimal benefit.
+- `SessionStart` memory hook uses `additionalContext` (injected into Claude's system context) rather than plain `echo` (terminal output only). This is more reliable. The hook is **conditional**: it only fires when `vector_memory_local` is configured in `.mcp.json`, preventing false instructions in projects without memory setup.
+- `PreCompact` memory hook uses `agent` type (not `command`) because:
+  - `command` hooks can only run shell commands -- no MCP access, so they cannot store memories
+  - `agent` hooks spawn a subagent with MCP tool access, enabling direct `store_memory()` calls
+  - The `systemMessage` alternative (v3.2) only showed text to the **user**, not Claude -- it could not trigger memory storage
+  - **Limitation**: Agent hooks run in isolation without the main conversation context. The hook can store a compaction marker (timestamp boundary) but cannot intelligently summarize what happened. Conversation-specific memory storage remains a behavioral directive in CLAUDE.md.
+- `SessionStart` hook has `timeout: 5` (echo only). `PreCompact` agent hook has `timeout: 30` (MCP call).
+- `Stop` event was considered but rejected: fires on every Claude response, too frequent for memory operations.
+- `PostToolUse` with `Edit|Write` matcher was considered but rejected: adds latency to every file operation with minimal benefit. An `agent`-type PostToolUse hook COULD detect significant changes and auto-store, but the latency trade-off is not justified.
 - **Execution order**: Multiple SessionStart hooks run in parallel. The context recovery hook (~120ms) and memory hook (~5ms) finish independently. The `additionalContext` injection order relative to recovery output is undefined by the spec but harmless -- both inject into the same session context.
 
-**Deliverable**: `CLAUDE.md` updated with full memory protocol. `.claude/settings.json` updated with 2 memory hooks (pre-execution, non-blocking).
+**Hook type evaluation** (all 3 types considered):
+
+| Type | SessionStart | PreCompact | Rationale |
+|------|-------------|------------|-----------|
+| `command` | **USED** (echo + additionalContext) | Rejected | Cannot call MCP tools; `systemMessage` only reaches user |
+| `prompt` | Rejected (no MCP access for queries) | Rejected | Cannot call MCP tools; output visibility uncertain |
+| `agent` | Rejected (unnecessary latency for static text) | **USED** (store compaction marker) | Has MCP access; can call store_memory(); justified for data persistence |
+
+**Deliverable**: `CLAUDE.md` updated with memory protocol (abbreviated, references skills). 3 memory skills created. `.claude/settings.json` updated with 2 memory hooks (conditional command + agent).
 
 **TRANSITION TO PHASE 3**: After completing Phase 2, you MUST restart the Claude Code session (or run `/hooks` to reload hook configuration). This is required because:
 1. `CLAUDE.md` changes take effect when Claude Code reads the file (session start or context reload)
 2. `.claude/settings.json` hook changes are "captured at session startup" per the hooks spec; external modifications require `/hooks` review to take effect
-3. Phase 3 tests rely on the agent FOLLOWING the behavioral directives written in Phase 2
+3. New skills (`.claude/skills/`) are discovered at session startup; they won't appear in `/` menu or auto-invoke until reloaded
+4. Phase 3 tests rely on the agent FOLLOWING the behavioral directives and skills written in Phase 2
 
 **Note on CLAUDE.md**: The existing research phases listed in CLAUDE.md (line 80) show 5 phases but the current codebase uses 7 phases (with `literature_review` and `peer_review` added in commit f38d82b). Update this line during Phase 2 to avoid confusion with the memory content convention.
+
+#### 2.4 Rollback (if Phase 2 fails)
+
+```
+Phase 2 modifies 3 file groups. Rollback order:
+
+1. Hooks (.claude/settings.json):
+   - Remove the SessionStart memory hook (second matcher group)
+   - Remove the PreCompact agent hook (second matcher group)
+   - Keep existing hooks (recover_context.sh, checkpoint.sh) unchanged
+
+2. Skills (.claude/skills/):
+   - Delete: memory-gate/, phase-distillation/, memory-retrospective/
+   - Existing skills (workflow-checkpoint, workflow-recovery, workflow-status) unchanged
+
+3. CLAUDE.md:
+   - Remove the "## Vector Memory Protocol" section and all its subsections
+   - Keep all other CLAUDE.md content unchanged
+
+4. Vector memory DBs:
+   - Phase 2 does NOT add new memories (only Phase 1 seeds exist)
+   - No DB cleanup needed for Phase 2 rollback
+
+Note: After rollback, restart Claude Code session to clear cached CLAUDE.md
+and hooks. The memory servers from Phase 0 remain functional but unused.
+```
 
 ---
 
 ### Phase 3: Generalizability Skill & Distillation (Day 4-6)
 
-**Input**: Memory protocol loaded in CLAUDE.md (from Phase 2, session restarted). Categories tested (from Phase 1). Local DB has 10 seed memories from Phase 1.
-**Output**: Generalizability detection working end-to-end. At least 1 test global promotion. Automated regression test created.
+**Input**: Memory protocol loaded in CLAUDE.md (from Phase 2, session restarted). 3 memory skills created (from Phase 2). Categories tested (from Phase 1). Local DB has 8 memories from Phase 1 (6 seeds + 2 atomic test). Global DB has 3 memories.
+**Output**: Generalizability detection working end-to-end. At least 1 test global promotion. Skills validated. Automated regression test created.
 
 #### 3.1 Integration Test: Bug Fix with Global Promotion
 
@@ -860,6 +1135,12 @@ UWS uses BATS for testing (608 existing tests). Create `tests/integration/test_v
 
 load '../helpers/test_helper.bash'
 
+# Use actual project root (not temp dir) -- these test real project config
+setup() {
+    PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+    export PROJECT_ROOT
+}
+
 @test "vector memory local server is configured in .mcp.json" {
     run grep -c "vector_memory_local" "${PROJECT_ROOT}/.mcp.json"
     assert_success
@@ -891,21 +1172,76 @@ load '../helpers/test_helper.bash'
     run grep -c "additionalContext" "${PROJECT_ROOT}/.claude/settings.json"
     assert_success
 }
+
+@test "memory-gate skill exists" {
+    [ -f "${PROJECT_ROOT}/.claude/skills/memory-gate/SKILL.md" ]
+}
+
+@test "phase-distillation skill exists" {
+    [ -f "${PROJECT_ROOT}/.claude/skills/phase-distillation/SKILL.md" ]
+}
+
+@test "memory-retrospective skill exists" {
+    [ -f "${PROJECT_ROOT}/.claude/skills/memory-retrospective/SKILL.md" ]
+}
+
+@test "memory-gate skill is auto-invocable (no disable-model-invocation)" {
+    # memory-gate should NOT have disable-model-invocation: true
+    run grep -c "disable-model-invocation: true" "${PROJECT_ROOT}/.claude/skills/memory-gate/SKILL.md"
+    [ "$output" -eq 0 ] || [ "$status" -ne 0 ]
+}
+
+@test "memory-gate skill has user-invocable: false" {
+    run grep -c "user-invocable: false" "${PROJECT_ROOT}/.claude/skills/memory-gate/SKILL.md"
+    assert_success
+    [ "$output" -ge 1 ]
+}
+
+@test "phase-distillation skill is manual-only" {
+    run grep -c "disable-model-invocation: true" "${PROJECT_ROOT}/.claude/skills/phase-distillation/SKILL.md"
+    assert_success
+    [ "$output" -ge 1 ]
+}
 ```
 
-**Note**: Full MCP tool calls (store/search) cannot be tested via BATS because they require a running Claude Code session. The BATS tests verify configuration and file structure. End-to-end memory operations are validated manually in Sections 3.1-3.3.
+**Note**: Full MCP tool calls (store/search) cannot be tested via BATS because they require a running Claude Code session. The BATS tests verify configuration, file structure, and skill invocation properties. End-to-end memory operations are validated manually in Sections 3.1-3.3.
 
 #### 3.5 Verify Local DB State for Phase 4
 
 Before proceeding to Phase 4, confirm local DB has sufficient memories:
 ```
 mcp__vector_memory_local__get_memory_stats()
-→ VERIFY: total_memories >= 10 (5 Phase 1 seeds + 2 atomic test + Phase 3 test stores)
+→ VERIFY: total_memories >= 10 (6 Phase 1 seeds + 2 atomic test + Phase 3 test stores)
 ```
 
 Record the memory count in `.workflow/handoff.md` for Phase 4's reference.
 
-**Deliverable**: End-to-end generalizability pipeline tested. At least 1 global promotion validated. Session resume timing measured. Automated BATS test created at `tests/integration/test_vector_memory.bats`. Local DB memory count recorded.
+**Deliverable**: End-to-end generalizability pipeline tested. At least 1 global promotion validated. Skills (memory-gate auto-invocation, phase-distillation manual) verified. Session resume timing measured. Automated BATS test created at `tests/integration/test_vector_memory.bats` (12 tests). Local DB memory count recorded.
+
+#### 3.6 Rollback (if Phase 3 fails)
+
+```
+Phase 3 adds memories to both DBs during testing.
+
+Point of no return: After Phase 3 stores test memories, there is NO
+selective delete. Rollback options:
+
+Option A (recommended): Leave test memories in place.
+  - Phase 3 test memories are properly prefixed ("PHASE 3 verification")
+  - They rank low in searches for current work phases
+  - Harmless to keep; provides retrieval quality baseline data
+
+Option B (nuclear): Full DB wipe + re-seed.
+  1. mcp__vector_memory_local__clear_old_memories(days_old=0, max_to_keep=0)
+     WARNING: Verify max_to_keep=0 is accepted -- edge case.
+  2. mcp__vector_memory_global__clear_old_memories(days_old=0, max_to_keep=0)
+  3. Re-store Phase 1's 6 local seeds + 3 global seeds manually
+  4. Re-run Phase 1 atomic principle test (2 memories)
+  5. You are back at Phase 1 exit state
+
+To roll back Phase 2 changes as well: follow Phase 2 rollback procedure.
+To roll back everything: follow Phase 0 rollback procedure.
+```
 
 ---
 
@@ -954,16 +1290,58 @@ After activating agent, query relevant memories:
 
 **Deliverable**: 3 agent handoff transitions tested via memory. Slash commands updated.
 
+#### 4.3 Exit Gate
+
+```
+For each of the 3 agent transitions tested in Section 4.1:
+  mcp__vector_memory_local__search_memories(
+    "handoff <target_agent>", category="agent-handoff", limit=3)
+  → VERIFY: Each search returns the handoff memory stored during that test
+  → VERIFY: Returned content includes the outgoing agent's context summary
+
+mcp__vector_memory_local__get_memory_stats()
+  → VERIFY: total_memories increased since Phase 3 exit (record new count)
+
+Slash command verification:
+  → VERIFY: uws-recover.md contains memory search instruction
+  → VERIFY: uws-agent.md contains memory query on activation
+```
+
+#### 4.4 Rollback (if Phase 4 fails)
+
+```
+Phase 4 adds agent-handoff memories and modifies slash commands.
+
+1. Slash commands (uws-recover.md, uws-agent.md):
+   - Use git to revert: git checkout -- .claude/commands/uws-recover.md
+   - Use git to revert: git checkout -- .claude/commands/uws-agent.md
+
+2. Agent handoff memories:
+   - Same as Phase 3: no selective delete. Leave in place (Option A)
+     or full wipe + re-seed through Phase 1 (Option B)
+
+Phase 4 rollback returns you to Phase 3 exit state (memory protocol
+working, skills validated, but no cross-agent features).
+```
+
 ---
 
 ### Phase 5: Maintenance, Recovery & Hardening (Day 8-10)
 
-**Input**: Full system working (from Phase 4).
+**Input**: Full system working (from Phase 4). Agent handoff validated. Slash commands updated.
 **Output**: Maintenance procedures documented. Recovery paths tested. Performance benchmarked.
 
 #### 5.1 Memory Hygiene Procedures
 
-Add as a subsection under the "Vector Memory Protocol" section added in Phase 2 (append after the "Global Categories" line in CLAUDE.md):
+Add as a subsection under `## Vector Memory Protocol` in CLAUDE.md, after the `### Global Categories` line. The exact heading hierarchy:
+
+```
+## Vector Memory Protocol          ← Added in Phase 2
+### ...existing subsections...     ← Phase 2 content
+### Memory Maintenance             ← Phase 5 adds THIS subsection
+```
+
+Content to append:
 
 ```markdown
 ### Memory Maintenance
@@ -1011,6 +1389,9 @@ After restoring a checkpoint:
      Then re-seed from .workflow/handoff.md and .workflow/logs/decisions.log.
      NOTE: There is no selective delete. clear_old_memories with
      max_to_keep=0 removes ALL memories. You must re-store valid ones.
+     WARNING: Verify max_to_keep=0 is accepted by the server before
+     relying on this -- edge case behavior not confirmed in source.
+     Test with a disposable DB first.
 ```
 
 #### 5.3 Performance Benchmarks
@@ -1035,10 +1416,48 @@ If categories need to change in the future (e.g., splitting `bug-resolution`):
      (default limit=10 is insufficient; set limit to total count)
   3. Record all memory content and categories externally
   4. `clear_old_memories(days_old=0, max_to_keep=0)` to wipe DB
+     (WARNING: Verify max_to_keep=0 is accepted -- edge case not confirmed in source)
   5. Re-store each memory with updated categories
 - Keep category taxonomy stable. Prefer adding new categories over renaming.
 
+#### 5.5 Exit Gate
+
+```
+Documentation checks:
+  → VERIFY: CLAUDE.md contains "### Memory Maintenance" subsection
+  → VERIFY: Recovery procedures documented for local DB loss, global DB loss,
+    and checkpoint restore
+  → VERIFY: Category migration procedure documented
+
+Performance benchmarks (Section 5.3):
+  → VERIFY: store_memory < 200ms (target 110ms)
+  → VERIFY: search_memories < 300ms (target 150ms)
+  → VERIFY: Session resume overhead < 500ms
+  → VERIFY: All 5 operations have "Actual" column filled in benchmark table
+  → VERIFY: All 5 operations meet Target time (Pass? = Yes)
+
+clear_old_memories edge case:
+  → VERIFY: Tested clear_old_memories(days_old=0, max_to_keep=0) on a
+    disposable test DB to confirm behavior (record result in handoff.md)
+```
+
 **Deliverable**: Maintenance procedures in CLAUDE.md. Recovery procedures documented. Performance benchmarked. Category migration strategy noted.
+
+#### 5.6 Rollback (if Phase 5 fails)
+
+```
+Phase 5 only adds documentation and runs benchmarks. No new memories stored.
+
+1. CLAUDE.md maintenance section:
+   - Remove "### Memory Maintenance" subsection added in Section 5.1
+   - All other CLAUDE.md content unchanged
+
+2. No DB changes to revert.
+
+Phase 5 is the lowest-risk phase. If benchmarks fail (performance
+targets not met), the system is still functional -- just slower than
+target. Document actual times and consider optimization separately.
+```
 
 ---
 
@@ -1051,14 +1470,14 @@ Agent completes Phase 0 (environment setup).
 
 on_phase_complete fires (behavioral directive):
   mcp__vector_memory_local__store_memory(
-    content="PHASE 0 | DOMAIN: environment | OUTCOME: Python 3.10,
+    content="PHASE 0 planning | DOMAIN: environment | OUTCOME: Python 3.10,
              PyTorch 2.1, AASIST cloned from abc123. Datasets:
              ASVspoof2019LA, ASVspoof2021LA, In-The-Wild. GPU: A100 40GB.",
     category="environment",
     tags=["phase:0", "pytorch", "aasist"])
 
   mcp__vector_memory_local__store_memory(
-    content="PHASE 0 | DECISION: Use ASVspoof2019LA for training,
+    content="PHASE 0 planning | DOMAIN: dataset | DECISION: Use ASVspoof2019LA for training,
              2021LA and ITW for cross-dataset eval. BECAUSE: Standard
              protocol per Tak et al. (2021). ALTERNATIVES_REJECTED:
              Training on 2021LA -- different codec distribution.",
@@ -1075,7 +1494,7 @@ Bug: DataLoader collate_fn doubles batch size.
 
 on_error_resolved fires:
   mcp__vector_memory_local__store_memory(
-    content="PHASE 2 | DOMAIN: training | BUG: Forward pass crashes
+    content="PHASE 2 experiment_design | DOMAIN: training | BUG: Forward pass crashes
              'Expected batch_size 32 to match target 64'. ROOT_CAUSE:
              collate_fn doubled batch via bonafide/spoof pairing.
              FIX: Custom collate preserving batch_size.
@@ -1173,8 +1592,19 @@ Working on a speech synthesis project. Session resume:
 ## 9. Implementation Checklist
 
 ```
+Prerequisites:                                        [Verify before starting]
+  [ ] Python 3.9+ installed (python3 --version)
+  [ ] pip available (pip --version)
+  [ ] venv module available (python3 -m venv --help)
+  [ ] git 2.0+ installed
+  [ ] ~1.5 GB disk space free (~/.uws)
+  [ ] Write permissions to ~/.uws/ and project memory/ dir
+  [ ] Network access for git clone + pip install + model download
+
 Phase 0: Infrastructure                              [Deliverable: 2 healthy MCP servers]
   [ ] Clone vector-memory-mcp to ~/.uws/tools/vector-memory
+  [ ] Record commit hash for version pinning
+  [ ] VERIFY tool signatures against source (Section 0.2 -- CRITICAL)
   [ ] Create isolated venv at ~/.uws/tools/vector-memory/.venv/
   [ ] Install sqlite-vec, sentence-transformers, fastmcp in venv
   [ ] Create ~/.uws/knowledge/ directory
@@ -1186,34 +1616,39 @@ Phase 0: Infrastructure                              [Deliverable: 2 healthy MCP
   [ ] Verify global get_memory_stats() returns healthy
 
 Phase 1: Seed & Validate                             [Deliverable: Validated retrieval]
-  [ ] Store 5 local test memories (all specified in plan -- R2 zero placeholders)
+  [ ] Store 6 local test memories (all specified in plan -- R2 zero placeholders)
   [ ] Store 3 global test memories (all specified in plan)
   [ ] Run 4+ retrieval quality tests
   [ ] Verify category filtering works
   [ ] Verify atomic memory principle (focused > unfocused, not short > long)
   [ ] Store atomic test pair (unfocused multi-topic vs focused single-topic)
-  [ ] Document results in .workflow/handoff.md
+  [ ] Document results in .workflow/handoff.md (Section 1.5 template)
 
-Phase 2: Behavioral Directives                       [Deliverable: CLAUDE.md + hooks updated]
+Phase 2: Protocol, Skills & Hooks                    [Deliverable: CLAUDE.md + skills + hooks]
   [ ] Update CLAUDE.md research phases to 7 (literature_review, peer_review)
-  [ ] Add Vector Memory Protocol section to CLAUDE.md
-  [ ] Add all 4 behavioral directive definitions
-  [ ] Add generalizability gate procedure
+  [ ] Add Vector Memory Protocol section to CLAUDE.md (abbreviated, references skills)
+  [ ] Add all 4 behavioral directive definitions (triggers)
+  [ ] Add generalizability gate summary (references memory-gate skill)
   [ ] Add session resume enhancement
   [ ] Add R1 evidence extension
-  [ ] Add phase-end distillation procedure (with supersede instead of delete)
-  [ ] Add SessionStart memory hook (additionalContext injection) to .claude/settings.json
-  [ ] Add PreCompact memory hook (systemMessage reminder) to .claude/settings.json
+  [ ] Add phase-end distillation summary (references phase-distillation skill)
+  [ ] Create .claude/skills/memory-gate/SKILL.md (user-invocable: false)
+  [ ] Create .claude/skills/phase-distillation/SKILL.md (disable-model-invocation: true)
+  [ ] Create .claude/skills/memory-retrospective/SKILL.md (disable-model-invocation: true)
+  [ ] Add SessionStart memory hook (conditional, with cd to git root) to .claude/settings.json
+  [ ] Add PreCompact memory hook (agent type, compaction marker) to .claude/settings.json
   [ ] Verify hook JSON schema uses correct 3-level nesting
-  [ ] RESTART Claude Code session or run /hooks to reload
+  [ ] RESTART Claude Code session or run /hooks to reload (skills + hooks)
 
-Phase 3: End-to-End Testing                          [Deliverable: Pipeline validated + BATS test]
-  [ ] Test: bug fix → local store → gate → global promotion
-  [ ] Test: bug fix → local store → gate → NO promotion (project-specific)
-  [ ] Test: phase-end distillation with 5+ local memories
+Phase 3: End-to-End Testing                          [Deliverable: Pipeline + skills validated + BATS test]
+  [ ] Test: bug fix → local store → gate skill auto-invokes → global promotion
+  [ ] Test: bug fix → local store → gate skill auto-invokes → NO promotion (project-specific)
+  [ ] Test: /phase-distillation <N> with 5+ local memories
   [ ] Test: adversarial calibration (supersede false promotions, not delete)
   [ ] Test: session resume with dual-DB queries (<3s)
-  [ ] Create tests/integration/test_vector_memory.bats (automated regression)
+  [ ] Verify memory-gate skill auto-invokes on bug fix (description matching)
+  [ ] Verify /phase-distillation is visible in / menu (not auto-invocable)
+  [ ] Create tests/integration/test_vector_memory.bats (12 automated regression tests)
   [ ] Verify local DB memory count >= 10 for Phase 4
   [ ] Record memory count in .workflow/handoff.md
 
@@ -1223,16 +1658,19 @@ Phase 4: Cross-Agent Transfer                        [Deliverable: 3 handoffs te
   [ ] Test C: experimenter → documenter (verifications retrievable)
   [ ] Update .claude/commands/uws-recover.md with memory hint
   [ ] Update .claude/commands/uws-agent.md with memory hint
+  [ ] EXIT GATE: Verify handoff memories retrievable per Section 4.3
 
 Phase 5: Maintenance & Hardening                     [Deliverable: Procedures documented]
-  [ ] Add maintenance subsection under Vector Memory Protocol in CLAUDE.md
+  [ ] Add maintenance subsection under ## Vector Memory Protocol → ### Memory Maintenance
   [ ] Document local DB cleanup (max_to_keep, no selective delete)
   [ ] Document global DB cleanup (manual, no days_old, supersede pattern)
   [ ] Document local DB recovery procedure
   [ ] Document global DB recovery procedure
   [ ] Document checkpoint-restore + vector memory warning (no selective revert)
-  [ ] Run performance benchmarks, record in handoff.md
+  [ ] Verify clear_old_memories(days_old=0, max_to_keep=0) edge case with test DB
+  [ ] Run performance benchmarks, fill in Section 5.3 table, all must PASS
   [ ] Document category migration strategy (get_memory_stats for limit)
+  [ ] EXIT GATE: All Section 5.5 checks pass
 ```
 
 ---
@@ -1290,7 +1728,7 @@ Phase 5: Maintenance & Hardening                     [Deliverable: Procedures do
 
 | # | Finding | Severity | Resolution |
 |---|---------|----------|-----------|
-| 1 | `.mcp.json` format wrong (missing `mcpServers` wrapper) | CRITICAL | Fixed Phase 0 Section 0.3 to show correct `"mcpServers"` top-level key |
+| 1 | `.mcp.json` format wrong (missing `mcpServers` wrapper) | CRITICAL | Fixed Phase 0 Section 0.4 to show correct `"mcpServers"` top-level key |
 | 2 | No `delete_memory` tool -- adversarial calibration unimplementable | CRITICAL | Added "Selective delete" row to Section 1.1. Changed "remove" to "supersede" pattern throughout (Sections 3.2, 3.3, 5.2, CLAUDE.md directives). Documented nuclear option (clear + re-seed) |
 | 3 | Incomplete seed memories (R2 violation) | HIGH | All 5 local + 3 global memories fully specified in Phase 1 (no `# ... N more` placeholders) |
 | 4 | No Python environment isolation | HIGH | Phase 0 now creates isolated venv at `~/.uws/tools/vector-memory/.venv/`. `.mcp.json` command uses venv python path |
@@ -1300,7 +1738,7 @@ Phase 5: Maintenance & Hardening                     [Deliverable: Procedures do
 | 8 | Phase numbering ambiguity | MEDIUM | Section 4.3 now specifies dual prefix: `"PHASE <N> <methodology_phase>"` with examples. All CLAUDE.md directive examples updated |
 | 9 | Atomic Memory test logic flawed | MEDIUM | Section 1.4 rewritten: tests focused vs unfocused (not short vs long), with specific test pair and verification query |
 | 10 | Phase 5 CLAUDE.md additions not positioned | MEDIUM | Section 5.1 now specifies: "Add as subsection under Vector Memory Protocol section added in Phase 2" |
-| 11 | No rollback procedures | MEDIUM | Added Phase 0 Section 0.6 rollback and Phase 1 Section 1.5 rollback |
+| 11 | No rollback procedures | MEDIUM | Added Phase 0 Section 0.7 rollback and Phase 1 Section 1.6 rollback. v3.4 extended to all phases (Sections 2.4, 3.6, 4.4, 5.6). |
 | 12 | `list_recent_memories` limit issue for export | LOW | Section 5.4 migration now uses `get_memory_stats()` total for limit parameter |
 | 13 | Retrospective can't filter by project in global DB | LOW | Section 3.3 updated with project identification strategy (temporal proximity + domain overlap) |
 | 14 | Hook execution order undefined | LOW | Added note to Phase 2 design notes about parallel SessionStart hook execution |
@@ -1308,3 +1746,62 @@ Phase 5: Maintenance & Hardening                     [Deliverable: Procedures do
 | 16 | CLAUDE.md research phases stale (5 vs 7) | LOW | Added note in Phase 2→3 transition block to update CLAUDE.md research phases during Phase 2 |
 
 *Version 3.2 -- All server capabilities verified against source. All file references audited. All prior findings resolved. Hooks verified against Claude Code specification. No-delete limitation explicitly addressed throughout with supersede pattern. This plan follows UWS R2 (zero placeholders) and R5 (Reproducibility): any agent can execute this integration from this document alone.*
+
+---
+
+## Appendix D: Changes from v3.2 (AI Framework Architect Review)
+
+11 findings resolved (1 CRITICAL, 3 HIGH, 4 MEDIUM, 3 LOW):
+
+| # | Finding | Severity | Resolution |
+|---|---------|----------|-----------|
+| 1 | Plan creates zero Claude Code skills despite UWS having 3 existing skills | CRITICAL | Created 3 memory skills in Phase 2 Section 2.2: `memory-gate` (user-invocable: false, auto-invoked), `phase-distillation` (disable-model-invocation: true, manual), `memory-retrospective` (disable-model-invocation: true, manual). CLAUDE.md protocol section shortened to reference skills. Added skills to enforcement mechanism table (Section 2.3). Added 5 skill BATS tests to Phase 3 Section 3.4. |
+| 2 | PreCompact `systemMessage` only reaches user, not Claude | HIGH | Changed PreCompact memory hook from `command` type (echo systemMessage) to `agent` type (stores compaction marker via MCP). Agent hooks have MCP tool access and can call `store_memory()` directly. Limitation documented: agent runs in isolation, can't summarize conversation. |
+| 3 | `agent` type hooks not evaluated for memory operations | HIGH | Added hook type evaluation table to Phase 2 Section 2.3 design notes. All 3 types (command, prompt, agent) explicitly evaluated for both SessionStart and PreCompact with rationale for selection. |
+| 4 | Generalizability gate enforcement purely behavioral | HIGH | Gate procedure moved to `memory-gate` skill with `user-invocable: false`. Two-layer enforcement: CLAUDE.md behavioral trigger + skill auto-invocation via description matching. Strictly better than behavioral-only. |
+| 5 | Phase 1 seeds miss `agent-handoff` category (5 of 6) | MEDIUM | Added Memory 6 (agent-handoff) to Phase 1 Section 1.1. All 6 local categories now covered. Counts updated: 6 local seeds (+ 2 atomic = 8 local), 3 global, Phase 3 exit gate >= 10 local. |
+| 6 | SessionStart memory hook fires unconditionally | MEDIUM | Made hook conditional: `grep -q vector_memory_local .mcp.json` before echoing additionalContext. Hook silently passes in projects without memory configuration. |
+| 7 | Simulation walkthrough doesn't use dual phase prefix | MEDIUM | Fixed Section 6 examples: `"PHASE 0"` → `"PHASE 0 planning"`, `"PHASE 2"` → `"PHASE 2 experiment_design"`. All simulation content strings now match Section 4.3 convention. |
+| 8 | No version pinning for vector-memory-mcp clone | MEDIUM | Phase 0 Section 0.1 now records commit hash and includes `git checkout` command for pinning to verified version. |
+| 9 | CLAUDE.md will grow to ~310 lines with full memory protocol | LOW | Addressed by CRITICAL #1: gate and distillation procedures moved to skills. CLAUDE.md protocol section reduced from ~100 to ~50 lines (references skills for details). |
+| 10 | `clear_old_memories(days_old=0, max_to_keep=0)` untested edge case | LOW | Added WARNING notes to all 4 occurrences (Sections 3.3, 5.2, 5.4, and memory-retrospective skill) noting edge case not confirmed in source. Phase 5 checklist adds explicit verification step. |
+| 11 | Phase 5 maintenance positioning depends on Phase 2 structure | LOW | Section 5.1 now specifies exact heading hierarchy: `## Vector Memory Protocol` → `### Memory Maintenance`. |
+
+*Version 3.3 -- Skills architecture integrated following UWS's existing pattern. All 3 hook types evaluated. PreCompact upgraded to agent hook for executable memory persistence. Behavioral directives retained as triggers; procedures moved to skills for on-demand loading. 11 findings resolved across 4 severity levels.*
+
+---
+
+## Appendix E: Changes from v3.3 (Multi-Agent Verification Review)
+
+5 specialized agents verified the plan in parallel (file explorer, code reviewer, QA assessor, Claude Code spec verifier, MCP evidence validator). 9 findings resolved (1 CRITICAL, 2 HIGH, 5 MEDIUM, 1 LOW):
+
+| # | Finding | Severity | Resolution |
+|---|---------|----------|-----------|
+| 1 | MCP server tool signatures unverified -- evidence validator could not independently confirm cornebidouil/vector-memory-mcp tool signatures from public docs (30% confidence) | CRITICAL | Added Phase 0 Section 0.2: explicit source code inspection step with grep commands to verify all 5 tool signatures, parameter names, embedding model, and SQLite+sqlite-vec usage before proceeding. |
+| 2 | SessionStart memory hook missing `cd` to git root -- grep for `.mcp.json` uses relative path but second matcher group has no `cd` command | HIGH | Prepended `cd "$(git rev-parse --show-toplevel 2>/dev/null \|\| pwd)" &&` to the SessionStart memory hook command. |
+| 3 | Phases 4 and 5 have no measurable exit gates -- only Phases 0, 1, 3 had programmatic verification criteria | HIGH | Added Section 4.3 (exit gate with handoff memory search verification + slash command verification) and Section 5.5 (exit gate with documentation checks, performance benchmark pass/fail criteria, and clear_old_memories edge case verification). |
+| 4 | Phase 1 promises handoff.md documentation but never creates it | MEDIUM | Added Section 1.5 with explicit handoff.md template and instructions. |
+| 5 | Phases 2-5 have no rollback procedures -- only Phases 0-1 had guidance despite no-selective-delete constraint | MEDIUM | Added rollback sections: Phase 2 (Section 2.4: remove hooks+skills+CLAUDE.md section), Phase 3 (Section 3.6: leave memories or nuclear wipe+re-seed), Phase 4 (Section 4.4: git checkout slash commands), Phase 5 (Section 5.6: remove maintenance subsection). |
+| 6 | No prerequisites section -- Python version, transitive deps, disk space, write permissions, network access undocumented | MEDIUM | Added "Prerequisites" section before Phase 0 with requirements table, transitive dependency list, proxy/offline instructions. |
+| 7 | Simulation example at line 1252 missing DOMAIN prefix per content convention | MEDIUM | Fixed: `"PHASE 0 planning \| DECISION:"` → `"PHASE 0 planning \| DOMAIN: dataset \| DECISION:"`. |
+| 8 | BATS tests reference PROJECT_ROOT without setup() function -- integration tests check actual files, not temp copies | MEDIUM | Added `setup()` function to BATS test template that sets `PROJECT_ROOT` relative to test file location. Added `user-invocable: false` verification test (12 tests total). |
+| 9 | Timeline padded 2-3x (10 days estimated vs 3-6 days realistic) | LOW | Changed complexity estimate from "~2 weeks" to "~1-2 weeks". Per-phase day estimates retained as upper bounds including debugging time. |
+
+**False alarms discarded (agent confusion):**
+- Claude Code guide agent incorrectly claimed hook nesting was 2-level (it described 3-level structure correctly then miscounted)
+- Claude Code guide agent flagged `user-invocable` vs `disable-model-invocation` as errors but the plan uses both correctly for different purposes
+- Claude Code guide agent flagged `uvx` concern but the plan uses direct Python venv execution, not uvx
+- Code reviewer flagged PreCompact prompt Python quotes but JSON is valid and Claude interprets natural language regardless of quote style
+
+**Manual executable-path walkthrough** (v3.4.0 → v3.4.1): After the agent review, a manual trace of every copy-pasteable command, config block, and content string found 6 additional issues:
+
+| # | Finding | Severity | Resolution |
+|---|---------|----------|-----------|
+| 10 | `.mcp.json` local server `--working-dir` was placeholder `/absolute/path/to/current/project` | HIGH | Replaced with actual project path `/home/lab2208/Documents/universal-workflow-system`. |
+| 11 | Entrypoint assumed to be `main.py` without verification -- PyPI packages may use different entrypoints | HIGH | Added entrypoint verification to Section 0.2 (`ls *.py`, `pyproject.toml` check). Added note to Section 0.4 that entrypoint may need updating. Added alternatives (module, console_script, server.py). |
+| 12 | Memory 6 (agent-handoff) content prefix violated convention: `"HANDOFF ... \| PHASE ..."` instead of `"PHASE ... \| DOMAIN: handoff \| HANDOFF ..."` | MEDIUM | Fixed to follow convention. Also fixed the CLAUDE.md directive template (on_agent_handoff) which had the same inversion. |
+| 13 | Memory 4 (verification) missing DOMAIN prefix: `"PHASE 3 verification \| VERIFIED: ..."` | MEDIUM | Fixed to `"PHASE 3 verification \| DOMAIN: testing \| VERIFIED: ..."`. |
+| 14 | Global 3 comment said `workflow-improvement` but category was `tool-gotcha` (duplicate of Global 1) | MEDIUM | Changed category to `workflow-improvement` to cover 3 of 5 global categories with seeds (was 2 of 5). |
+| 15 | No issue found | - | - |
+
+*Version 3.4.1 -- Manual walkthrough of executable paths completed. All copy-pasteable configs, tool calls, and content strings verified against conventions. 64 total findings resolved across 6 review cycles (v2.0: 14, v3.0: 8, v3.1: 16, v3.2: 11, v3.3 agents: 9, v3.4 manual: 6).*

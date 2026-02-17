@@ -7,7 +7,7 @@
 # Project Information
 project:
   name: "Universal Workflow System"
-  type: "hybrid"
+  type: "llm"
   version: "1.0.0"
   description: "Domain-agnostic git-based workflow system"
 
@@ -32,6 +32,7 @@ agents:
 
   # Auto-select appropriate agent based on phase
   auto_select: true
+  default_agent: "implementer"
 
   # Validate agent transitions based on registry rules
   validate_transitions: true

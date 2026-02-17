@@ -21,4 +21,10 @@ Usage:
 
 After activating an agent, read the persona from `.workflow/agents/active.yaml` (the `persona:` block) and adopt that persona's mindset, voice, and responsibilities for the session.
 
+If vector memory is configured, query for handoff context from the previous agent:
+  mcp__vector_memory_local__search_memories(
+    "handoff <previous_agent>", limit=3)
+  mcp__vector_memory_local__search_memories(
+    "decisions constraints PHASE <current>", category="architecture", limit=3)
+
 Execute based on $ARGUMENTS

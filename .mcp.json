@@ -1,7 +1,5 @@
 {
   "mcpServers": {
-    "_comment": "=== COMPLETELY FREE (No API keys needed) ===",
-
     "arxiv": {
       "command": "uvx",
       "args": ["--from", "git+https://github.com/blazickjp/arxiv-mcp-server", "arxiv-mcp-server"]
@@ -34,9 +32,6 @@
       "command": "uvx",
       "args": ["--from", "git+https://github.com/ChrisChinchilla/Vale-MCP", "vale-mcp"]
     },
-
-    "_comment2": "=== FREE WITH ACCOUNT (Free API key required) ===",
-
     "semantic-scholar": {
       "command": "uvx",
       "args": ["--from", "git+https://github.com/JackKuo666/semanticscholar-MCP-Server", "semanticscholar-mcp-server"],
@@ -52,9 +47,6 @@
         "ZOTERO_USER_ID": "${ZOTERO_USER_ID}"
       }
     },
-
-    "_comment3": "=== SELF-HOSTED (Free, needs local setup) ===",
-
     "postgres": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-postgres", "${POSTGRES_CONNECTION_STRING:-postgresql://localhost/mydb}"]
@@ -69,6 +61,20 @@
     "prometheus": {
       "command": "docker",
       "args": ["run", "-i", "--rm", "-e", "PROMETHEUS_URL=${PROMETHEUS_URL:-http://localhost:9090}", "ghcr.io/pab1it0/prometheus-mcp-server:latest"]
+    },
+    "vector_memory_local": {
+      "command": "/home/lab2208/.uws/tools/vector-memory/.venv/bin/python",
+      "args": [
+        "/home/lab2208/.uws/tools/vector-memory/main.py",
+        "--working-dir", "/home/lab2208/Documents/universal-workflow-system"
+      ]
+    },
+    "vector_memory_global": {
+      "command": "/home/lab2208/.uws/tools/vector-memory/.venv/bin/python",
+      "args": [
+        "/home/lab2208/.uws/tools/vector-memory/main.py",
+        "--working-dir", "/home/lab2208/uws-global-knowledge"
+      ]
     }
   }
 }

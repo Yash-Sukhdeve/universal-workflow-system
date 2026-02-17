@@ -16,3 +16,8 @@ This displays:
 - Methodology-aware suggestions
 
 After recovery, read `.workflow/agents/active.yaml` and adopt the active agent's persona (mindset, voice, responsibilities).
+
+If vector memory is configured, also query for relevant context:
+  mcp__vector_memory_local__search_memories("current blockers", limit=3)
+  mcp__vector_memory_local__search_memories("decisions PHASE <current>", category="architecture", limit=3)
+  mcp__vector_memory_global__search_memories("<current technology/domain>", limit=3)

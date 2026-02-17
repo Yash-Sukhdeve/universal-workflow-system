@@ -129,6 +129,9 @@ Thumbs.db
 tmp/
 temp/
 
+# Vector memory database (local, per-project)
+memory/
+
 # Security
 *.key
 *.pem

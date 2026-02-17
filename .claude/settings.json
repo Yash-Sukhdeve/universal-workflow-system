@@ -8,6 +8,16 @@
             "command": "cd \"$(git rev-parse --show-toplevel 2>/dev/null)\" && [ -f scripts/recover_context.sh ] && ./scripts/recover_context.sh 2>/dev/null || true"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\" && grep -q vector_memory_local .mcp.json 2>/dev/null && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"VECTOR MEMORY ACTIVE: Query local+global memory DBs during session resume per CLAUDE.md Vector Memory Protocol. Use mcp__vector_memory_local__search_memories() for project context and mcp__vector_memory_global__search_memories() for cross-project lessons.\"}}' || true",
+            "timeout": 5,
+            "statusMessage": "Loading memory context..."
+          }
+        ]
       }
     ],
     "PreCompact": [
@@ -18,10 +28,18 @@
             "command": "cd \"$(git rev-parse --show-toplevel 2>/dev/null)\" && [ -f scripts/checkpoint.sh ] && ./scripts/checkpoint.sh create 'Auto-checkpoint before context compaction' 2>/dev/null || true"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "Context is about to be compacted. Store a compaction marker to local vector memory: mcp__vector_memory_local__store_memory(content='COMPACTION MARKER: Context compacted at this point. Previous conversation context was summarized by Claude Code.', category='learning', tags=['compaction']). Then output a brief confirmation.",
+            "timeout": 30,
+            "statusMessage": "Persisting memory state before compaction..."
+          }
+        ]
       }
     ]
   },
-  "enabledPlugins": {
-    "claude-mem@thedotmack": true
-  }
+  "enabledPlugins": {}
 }
