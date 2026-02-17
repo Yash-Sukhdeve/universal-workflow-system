@@ -1,8 +1,9 @@
-# Universal Workflow System (UWS) v1.0.0
+# Universal Workflow System (UWS) v1.1.0
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-361%20passing-green.svg)](#testing)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-646%20passing-green.svg)](#testing)
+[![CI](https://github.com/Yash-Sukhdeve/universal-workflow-system/actions/workflows/ci.yml/badge.svg)](https://github.com/Yash-Sukhdeve/universal-workflow-system/actions)
 
 **Context-preserving workflow system for AI-assisted development.** Maintains state across sessions, survives context resets, and works with any project type.
 
@@ -13,14 +14,13 @@
 - [Quick Start](#quick-start)
 - [What's Included](#whats-included)
 - [Installation](#installation)
+- [CLI](#cli)
 - [Core Components](#core-components)
-  - [1. Workflow Scripts](#1-workflow-scripts)
-  - [2. Company OS (Backend + Dashboard)](#2-company-os-backend--dashboard)
-  - [3. Multi-Agent System](#3-multi-agent-system)
-  - [4. SDLC & Research Workflows](#4-sdlc--research-workflows)
 - [Usage Guide](#usage-guide)
 - [Testing](#testing)
 - [Architecture](#architecture)
+- [Vector Memory](#vector-memory)
+- [CI/CD](#cicd)
 - [Contributing](#contributing)
 
 ---
@@ -43,16 +43,24 @@ claude
 /uws-handoff             # Prepare for session end
 ```
 
-### Option 2: Full Installation
+### Option 2: CLI Installation
 
 ```bash
 git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git
 cd universal-workflow-system
+./install.sh    # Symlinks 'uws' to ~/.local/bin
 
-# Initialize workflow in current project
+# In your project directory:
+uws init        # Initialize workflow
+uws status      # Check status
+```
+
+### Option 3: Manual (no install)
+
+```bash
+git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git
+cd universal-workflow-system
 ./scripts/init_workflow.sh
-
-# Check status
 ./scripts/status.sh
 ```
 
@@ -70,7 +78,7 @@ cd universal-workflow-system
 | **Research Workflow** | Scientific method workflow | `scripts/research.sh` |
 | **Claude Code Plugin** | Slash commands & hooks | `.claude/` |
 | **Gemini Integration** | Antigravity workflows | `antigravity-integration/` |
-| **Test Suite** | 361+ BATS/Python/React tests | `tests/` |
+| **Test Suite** | 620+ BATS tests | `tests/` |
 
 ---
 
@@ -110,6 +118,28 @@ cd company_os/dashboard
 npm install
 npm run dev
 ```
+
+---
+
+## CLI
+
+The `uws` command wraps all scripts into a single interface:
+
+```bash
+uws init [type]              # Initialize UWS (software|research|ml|llm|...)
+uws status [-v|-c]           # Show workflow status
+uws checkpoint create "msg"  # Create checkpoint
+uws recover                  # Recover context after break
+uws agent <name>             # Activate agent (researcher|architect|implementer|...)
+uws skill <name>             # Enable/disable skills
+uws sdlc [cmd]               # SDLC workflow (status|start|next|fail|reset)
+uws research [cmd]           # Research workflow (status|start|next|reject|reset)
+uws company-os start         # Start Company OS backend
+uws company-os dashboard     # Start React dashboard
+uws help                     # Show all commands
+```
+
+Install: `./install.sh` (creates symlink to `~/.local/bin/uws`)
 
 ---
 
@@ -196,11 +226,10 @@ uvicorn company_os.api.main:app --reload --port 8000
 # Copy example and configure
 cp .env.example .env
 
-# Required variables:
-SECRET_KEY=your-secret-key-here
-DATABASE_URL=sqlite:///./company_os.db
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+# Key variables:
+JWT_SECRET_KEY=your-super-secret-key-change-in-production
+DATABASE_URL=postgresql://company_os:dev_password@localhost:5432/company_os
+ACCESS_TOKEN_EXPIRE_MINUTES=15
 ```
 
 #### Dashboard (React + Vite)
@@ -312,7 +341,7 @@ requirements → design → implementation → verification → deployment → m
 
 **Research Phases:**
 ```
-hypothesis → experiment_design → data_collection → analysis → publication
+hypothesis → literature_review → experiment_design → data_collection → analysis → peer_review → publication
 ```
 
 ---
@@ -340,7 +369,7 @@ cat .workflow/handoff.md
 ./scripts/checkpoint.sh create "Completed user authentication"
 
 # 7. Before ending session, update handoff
-./scripts/handoff.sh  # or manually edit .workflow/handoff.md
+# Edit .workflow/handoff.md with session notes
 ```
 
 ### Claude Code Commands
@@ -419,7 +448,7 @@ pytest tests/integration/company_os/ -v
 
 | Component | Tests | Framework |
 |-----------|-------|-----------|
-| Core Scripts | 361 | BATS |
+| Core Scripts | 620+ | BATS |
 | Dashboard Unit | 123 | Vitest |
 | Dashboard E2E | 64 | Playwright |
 | Backend Unit | 50+ | Pytest |
@@ -511,41 +540,117 @@ All state changes are recorded as immutable events, enabling:
 
 ```bash
 # Application
-SECRET_KEY=your-secret-key-change-in-production
+APP_NAME=Company OS
 DEBUG=true
-LOG_LEVEL=INFO
+ENVIRONMENT=development
 
 # Database
-DATABASE_URL=sqlite:///./company_os.db
+DATABASE_URL=postgresql://company_os:dev_password@localhost:5432/company_os
+DATABASE_POOL_SIZE=10
 
 # Authentication
+JWT_SECRET_KEY=your-super-secret-key-change-in-production
 JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+ACCESS_TOKEN_EXPIRE_MINUTES=15
+REFRESH_TOKEN_EXPIRE_DAYS=7
 
-# WebSocket
-WS_HEARTBEAT_INTERVAL=30
+# Server
+HOST=0.0.0.0
+PORT=8000
 
 # CORS
-CORS_ORIGINS=http://localhost:5173,http://localhost:4173
+CORS_ORIGINS=["http://localhost:3000","http://localhost:8080"]
 ```
 
 ### MCP Configuration (.mcp.json)
 
-For Claude Code MCP integration:
+UWS uses MCP servers for vector memory (semantic retrieval across sessions):
 
 ```json
 {
-  "servers": {
-    "company-os": {
-      "command": "python",
-      "args": ["-m", "company_os.api.main"],
-      "env": {
-        "DATABASE_URL": "sqlite:///./company_os.db"
-      }
+  "mcpServers": {
+    "vector_memory_local": {
+      "command": "/path/to/vector-memory/.venv/bin/python",
+      "args": ["/path/to/vector-memory/main.py", "--working-dir", "/your/project/root"]
+    },
+    "vector_memory_global": {
+      "command": "/path/to/vector-memory/.venv/bin/python",
+      "args": ["/path/to/vector-memory/main.py", "--working-dir", "/your/global-knowledge-dir"]
     }
   }
 }
 ```
+
+See [Vector Memory Integration Plan](docs/uws-vector-memory-integration-plan.md) for setup details.
+
+---
+
+## Vector Memory
+
+UWS integrates semantic vector memory for cross-session knowledge retrieval:
+
+- **Local DB**: Project-specific memories (decisions, bug fixes, phase summaries)
+- **Global DB**: Cross-project generalizable lessons (tool gotchas, design patterns)
+
+Memories are stored atomically (one idea per entry, max 200 words) and retrieved via semantic similarity search. The system includes a generalizability gate that evaluates whether local lessons should be promoted to the global knowledge base.
+
+See [Vector Memory Integration Plan](docs/uws-vector-memory-integration-plan.md) for full documentation.
+
+---
+
+## CI/CD
+
+Continuous integration runs on every push and PR via GitHub Actions:
+
+```bash
+# Local equivalent of CI pipeline
+./tests/run_all_tests.sh -l   # Run all tests with ShellCheck linting
+```
+
+See [`.github/workflows/ci.yml`](.github/workflows/ci.yml) for the workflow definition.
+
+---
+
+<details>
+<summary><strong>Demo: UWS in action</strong></summary>
+
+```bash
+$ uws init software
+  Initializing UWS workflow...
+  ✓ Directory structure created
+  ✓ State file initialized
+  ✓ Checkpoint system ready
+
+$ uws agent architect
+  ✓ Activated agent: architect
+
+$ uws sdlc start
+  ✓ SDLC started at: requirements
+
+$ uws sdlc next
+  ✓ Advanced to: design
+
+$ uws checkpoint create "Architecture designed"
+  ✓ Checkpoint created: CP_1_002 - Architecture designed
+
+$ uws status
+  Phase: phase_1_planning
+  Agent: architect
+  Checkpoint: CP_1_002
+  SDLC: design
+
+$ uws sdlc next && uws agent implementer
+  ✓ Advanced to: implementation
+  ✓ Activated agent: implementer
+```
+
+Run the full automated walkthroughs:
+```bash
+bash examples/python-ml-project/walkthrough.sh   # Research workflow (7 phases)
+bash examples/nodejs-webapp/walkthrough.sh        # SDLC workflow (6 phases)
+```
+
+</details>
 
 ---
 

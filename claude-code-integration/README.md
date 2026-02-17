@@ -6,10 +6,10 @@ Plug-and-play workflow system for maintaining context across Claude Code session
 
 ```bash
 # In your project directory:
-curl -fsSL https://raw.githubusercontent.com/YOUR_REPO/main/claude-code-integration/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
 
 # Or clone and run:
-git clone https://github.com/YOUR_REPO/universal-workflow-system.git /tmp/uws
+git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git /tmp/uws
 /tmp/uws/claude-code-integration/install.sh
 ```
 

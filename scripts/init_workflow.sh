@@ -161,8 +161,8 @@ context_bridge:
   dependencies: []
 
 metadata:
-  version: "1.0.0"
-  workflow_version: "1.0.0"
+  version: "1.1.0"
+  workflow_version: "1.1.0"
   created: "$(date -Iseconds)"
 EOF
     

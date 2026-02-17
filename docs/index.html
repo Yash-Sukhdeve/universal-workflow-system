@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UWS - Universal Workflow System</title>
+    <meta name="description" content="Git-native workflow system for context-resilient AI-assisted development. 7 agents, checkpoints, context recovery, and vector memory.">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --purple: #bc8cff;
+            --code-bg: #0d1117;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+        /* Hero */
+        .hero {
+            text-align: center;
+            padding: 80px 0 60px;
+        }
+        .hero h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 16px;
+        }
+        .hero h1 span { color: var(--accent); }
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-dim);
+            max-width: 600px;
+            margin: 0 auto 32px;
+        }
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.9; text-decoration: none; }
+        .btn-primary { background: var(--accent); color: var(--bg); }
+        .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+        /* Features */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            padding: 40px 0;
+        }
+        .feature {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+        }
+        .feature h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+        .feature p { color: var(--text-dim); font-size: 0.95rem; }
+
+        /* Code block */
+        .code-section {
+            padding: 40px 0;
+        }
+        .code-section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            overflow-x: auto;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+        .comment { color: var(--text-dim); }
+        .cmd { color: var(--green); }
+
+        /* Stats */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+            padding: 40px 0;
+            flex-wrap: wrap;
+        }
+        .stat { text-align: center; }
+        .stat .num { font-size: 2rem; font-weight: 800; color: var(--accent); }
+        .stat .label { color: var(--text-dim); font-size: 0.9rem; }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 40px 0;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+        footer a { color: var(--text-dim); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Hero -->
+    <section class="hero">
+        <h1><span>UWS</span> Universal Workflow System</h1>
+        <p>Git-native workflow system for context-resilient AI-assisted development. Maintains state across sessions, survives context resets, and adapts to any project type.</p>
+        <div class="hero-buttons">
+            <a href="https://github.com/Yash-Sukhdeve/universal-workflow-system" class="btn btn-primary">View on GitHub</a>
+            <a href="https://github.com/Yash-Sukhdeve/universal-workflow-system#quick-start" class="btn btn-secondary">Quick Start</a>
+        </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="stats">
+        <div class="stat">
+            <div class="num">7</div>
+            <div class="label">Specialized Agents</div>
+        </div>
+        <div class="stat">
+            <div class="num">646+</div>
+            <div class="label">Tests Passing</div>
+        </div>
+        <div class="stat">
+            <div class="num">15</div>
+            <div class="label">CLI Commands</div>
+        </div>
+        <div class="stat">
+            <div class="num">2</div>
+            <div class="label">Workflow Types</div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features">
+        <div class="feature">
+            <h3>7 Specialized Agents</h3>
+            <p>Researcher, Architect, Implementer, Experimenter, Optimizer, Deployer, and Documenter &mdash; each with distinct capabilities and handoff protocols.</p>
+        </div>
+        <div class="feature">
+            <h3>Checkpoint System</h3>
+            <p>Full state snapshots with restore capability. Never lose context, even across context resets or session breaks.</p>
+        </div>
+        <div class="feature">
+            <h3>Context Recovery</h3>
+            <p>Automatic context injection on session start. Handoff documents ensure continuity between sessions.</p>
+        </div>
+        <div class="feature">
+            <h3>SDLC + Research Workflows</h3>
+            <p>6-phase software development lifecycle and 7-phase scientific research workflow, with phase progression and regression on failure.</p>
+        </div>
+        <div class="feature">
+            <h3>Vector Memory</h3>
+            <p>Semantic retrieval across sessions via local and global vector databases. Automatic generalizability gate promotes lessons to shared knowledge.</p>
+        </div>
+        <div class="feature">
+            <h3>Claude Code Integration</h3>
+            <p>Slash commands, automated hooks, and autonomous skills. Drop-in plugin for Claude Code with zero configuration.</p>
+        </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section class="code-section">
+        <h2>Quick Start</h2>
+        <pre><span class="comment"># Clone and install</span>
+<span class="cmd">git clone</span> https://github.com/Yash-Sukhdeve/universal-workflow-system.git
+<span class="cmd">cd</span> universal-workflow-system
+<span class="cmd">./install.sh</span>
+
+<span class="comment"># In your project directory</span>
+<span class="cmd">uws init</span> software      <span class="comment"># Initialize workflow</span>
+<span class="cmd">uws agent</span> implementer  <span class="comment"># Activate an agent</span>
+<span class="cmd">uws sdlc</span> start         <span class="comment"># Start SDLC workflow</span>
+<span class="cmd">uws checkpoint</span> create "Feature complete"
+<span class="cmd">uws status</span>             <span class="comment"># Check current state</span></pre>
+    </section>
+
+    <!-- Links -->
+    <section class="code-section" style="text-align: center; padding-bottom: 60px;">
+        <h2>Learn More</h2>
+        <p style="color: var(--text-dim); margin-bottom: 16px;">
+            <a href="https://github.com/Yash-Sukhdeve/universal-workflow-system#readme">README</a> &middot;
+            <a href="https://github.com/Yash-Sukhdeve/universal-workflow-system/blob/master/CONTRIBUTING.md">Contributing</a> &middot;
+            <a href="https://github.com/Yash-Sukhdeve/universal-workflow-system/tree/master/examples">Examples</a> &middot;
+            <a href="https://github.com/Yash-Sukhdeve/universal-workflow-system/blob/master/docs/uws-vector-memory-integration-plan.md">Vector Memory Docs</a>
+        </p>
+    </section>
+</div>
+
+<footer>
+    <div class="container">
+        <p>MIT License &middot; <a href="https://github.com/Yash-Sukhdeve/universal-workflow-system">GitHub</a></p>
+    </div>
+</footer>
+
+</body>
+</html>

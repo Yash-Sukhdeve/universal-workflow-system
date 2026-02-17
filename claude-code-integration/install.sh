@@ -3,7 +3,7 @@
 # UWS (Universal Workflow System) - Claude Code Integration Installer
 #
 # One-liner installation:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_REPO/main/claude-code-integration/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
 #
 # Or clone and run:
 #   ./install.sh
@@ -21,7 +21,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Configuration
-UWS_VERSION="1.0.0"
+UWS_VERSION="1.1.0"
 PROJECT_DIR="${PWD}"
 UWS_DIR="${PROJECT_DIR}/.uws"
 WORKFLOW_DIR="${PROJECT_DIR}/.workflow"

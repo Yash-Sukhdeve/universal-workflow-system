@@ -1,0 +1,178 @@
+#!/bin/bash
+#
+# uws - Universal Workflow System CLI
+#
+# Usage: uws <command> [args...]
+# Run 'uws help' for available commands.
+#
+
+set -euo pipefail
+
+UWS_VERSION="1.1.0"
+
+# ── Root discovery ──────────────────────────────────────────────────────────
+
+find_uws_root() {
+    # 1. Explicit env var
+    if [[ -n "${UWS_ROOT:-}" ]] && [[ -d "${UWS_ROOT}/.workflow" ]]; then
+        echo "$UWS_ROOT"
+        return 0
+    fi
+
+    # 2. Walk up from CWD looking for .workflow/
+    local dir="$PWD"
+    while [[ "$dir" != "/" ]]; do
+        if [[ -d "$dir/.workflow" ]]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+
+    return 1
+}
+
+# ── Usage / Help ────────────────────────────────────────────────────────────
+
+show_help() {
+    cat <<'EOF'
+uws - Universal Workflow System CLI
+
+Usage: uws <command> [args...]
+
+Workflow Commands:
+  init [type]              Initialize UWS in current project
+  status [-v|-c]           Show workflow status
+  checkpoint <cmd> [args]  Manage checkpoints (create|list|restore|status)
+  recover                  Recover context after session break
+  agent <name> [cmd]       Activate/manage agents
+  skill <name> [cmd]       Enable/disable skills
+
+Methodology Commands:
+  sdlc [cmd]               SDLC workflow (status|start|next|fail|reset)
+  research [cmd]           Research workflow (status|start|next|reject|reset)
+  spiral [args]            Spiral SDLC workflow
+
+Project Management:
+  review [args]            Review/approve code changes
+  pm [args]                Project management (issues/board)
+  submit [args]            Submit code for review
+  detect                   Auto-detect and configure project type
+
+Company OS:
+  company-os start         Start Company OS backend
+  company-os dashboard     Start React dashboard
+
+General:
+  help                     Show this help message
+  version                  Print version
+
+Environment:
+  UWS_ROOT                 Override project root discovery
+
+Examples:
+  uws init software        Initialize a software project
+  uws status               Show current workflow state
+  uws checkpoint create "Feature complete"
+  uws agent researcher     Activate the researcher agent
+  uws sdlc next            Advance to next SDLC phase
+EOF
+}
+
+# ── Main dispatch ───────────────────────────────────────────────────────────
+
+main() {
+    local cmd="${1:-help}"
+    shift 2>/dev/null || true
+
+    # Commands that don't need a UWS root
+    case "$cmd" in
+        help|-h|--help)
+            show_help
+            exit 0
+            ;;
+        version|-V|--version)
+            echo "uws $UWS_VERSION"
+            exit 0
+            ;;
+    esac
+
+    # Find UWS root
+    local root
+    if ! root="$(find_uws_root)"; then
+        echo "Error: No UWS project found (no .workflow/ directory)." >&2
+        echo "Run 'uws init' inside your project to get started." >&2
+        exit 1
+    fi
+
+    local scripts_dir="$root/scripts"
+
+    # Change to project root so scripts work correctly
+    cd "$root"
+
+    case "$cmd" in
+        init)
+            "$scripts_dir/init_workflow.sh" "$@"
+            ;;
+        status)
+            "$scripts_dir/status.sh" "$@"
+            ;;
+        checkpoint)
+            "$scripts_dir/checkpoint.sh" "$@"
+            ;;
+        recover)
+            "$scripts_dir/recover_context.sh" "$@"
+            ;;
+        agent)
+            "$scripts_dir/activate_agent.sh" "$@"
+            ;;
+        skill)
+            "$scripts_dir/enable_skill.sh" "$@"
+            ;;
+        sdlc)
+            "$scripts_dir/sdlc.sh" "$@"
+            ;;
+        research)
+            "$scripts_dir/research.sh" "$@"
+            ;;
+        spiral)
+            "$scripts_dir/spiral.sh" "$@"
+            ;;
+        review)
+            "$scripts_dir/review.sh" "$@"
+            ;;
+        pm)
+            "$scripts_dir/pm.sh" "$@"
+            ;;
+        submit)
+            "$scripts_dir/submit.sh" "$@"
+            ;;
+        detect)
+            "$scripts_dir/detect_and_configure.sh" "$@"
+            ;;
+        company-os)
+            local subcmd="${1:-start}"
+            shift 2>/dev/null || true
+            case "$subcmd" in
+                start)
+                    "$scripts_dir/start_company_os.sh" "$@"
+                    ;;
+                dashboard)
+                    "$scripts_dir/start_dashboard.sh" "$@"
+                    ;;
+                *)
+                    echo "Unknown company-os subcommand: $subcmd" >&2
+                    echo "Usage: uws company-os [start|dashboard]" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+        *)
+            echo "Unknown command: $cmd" >&2
+            echo "Run 'uws help' for available commands." >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

@@ -325,5 +325,5 @@ echo ""
 
 # Footer
 echo -e "${BOLD}────────────────────────────────────────────────────────────────────────────────${NC}"
-echo -e "${DIM}Universal Workflow System v1.0.0 | $(date '+%Y-%m-%d %H:%M:%S')${NC}"
+echo -e "${DIM}Universal Workflow System v1.1.0 | $(date '+%Y-%m-%d %H:%M:%S')${NC}"
 echo -e "${BOLD}────────────────────────────────────────────────────────────────────────────────${NC}"

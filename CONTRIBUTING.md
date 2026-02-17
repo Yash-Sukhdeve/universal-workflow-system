@@ -122,11 +122,11 @@ Add screenshots here
 
 ```bash
 # Run all tests
-./scripts/run_tests.sh
+./tests/run_all_tests.sh
 
 # Test specific component
-./scripts/test_agent.sh researcher
-./scripts/test_skill.sh quantization
+bats tests/unit/test_activate_agent.bats
+bats tests/unit/test_enable_skill.bats
 ```
 
 ### Writing Tests
@@ -147,7 +147,7 @@ universal-workflow-system/
 ├── scripts/           # Utility scripts
 ├── docs/             # Documentation
 ├── tests/            # Test files
-└── examples/         # Example projects
+└── docs/             # Documentation & tutorials
 ```
 
 ## 🎨 Code Style
@@ -253,7 +253,7 @@ When optimizing:
 ## 🙏 Recognition
 
 Contributors will be:
-- Listed in CONTRIBUTORS.md
+- Listed in [CONTRIBUTORS.md](CONTRIBUTORS.md)
 - Mentioned in release notes
 - Given credit in documentation
 

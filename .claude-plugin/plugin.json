@@ -1,9 +1,9 @@
 {
   "name": "universal-workflow-system",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Git-native workflow system with multi-agent orchestration, context recovery, and checkpoint management for AI-assisted development",
   "author": "Yash Sukhdeve",
-  "homepage": "https://github.com/lab2208/universal-workflow-system",
+  "homepage": "https://github.com/Yash-Sukhdeve/universal-workflow-system",
   "license": "MIT",
   "keywords": [
     "workflow",
