@@ -672,7 +672,10 @@ show_checkpoint_status() {
     # Phase progress
     echo -e "${CYAN}Phase Progress:${NC}"
     for phase in $(seq 1 5); do
-        local count=$(grep -c "CP_${phase}_" .workflow/checkpoints.log 2>/dev/null || echo 0)
+        local count
+        count=$(grep -c "CP_${phase}_" .workflow/checkpoints.log 2>/dev/null || echo 0)
+        count=$(echo "$count" | tr -d '[:space:]')
+        [[ -z "$count" || ! "$count" =~ ^[0-9]+$ ]] && count=0
         local phase_name=""
         case $phase in
             1) phase_name="Planning    " ;;
@@ -685,7 +688,7 @@ show_checkpoint_status() {
         # Create progress bar
         local progress=""
         for i in $(seq 1 10); do
-            if [ $i -le $count ]; then
+            if [ "$i" -le "$count" ]; then
                 progress="${progress}█"
             else
                 progress="${progress}░"

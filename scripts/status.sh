@@ -211,9 +211,9 @@ if [ -f .workflow/agents/active.yaml ]; then
     
     echo -e "  ${AGENT_ICON} ${BOLD}${ACTIVE_AGENT}${NC}"
     echo -e "     ${CYAN}Task:${NC}     ${YELLOW}${AGENT_TASK}${NC}"
-    local agent_pct="${AGENT_PROGRESS:-0}"
+    agent_pct="${AGENT_PROGRESS:-0}"
     [[ "$agent_pct" == "N/A" ]] && agent_pct=0
-    echo -e "     ${CYAN}Progress:${NC} $(create_progress_bar ${agent_pct} 100) ${agent_pct}%"
+    echo -e "     ${CYAN}Progress:${NC} $(create_progress_bar "${agent_pct}" 100) ${agent_pct}%"
 else
     echo -e "  ${DIM}No active agents${NC}"
 fi
@@ -226,15 +226,16 @@ echo -e "${BLUE}└────────────────────�
 
 if [ -f .workflow/skills/enabled.yaml ]; then
     SKILL_COUNT=$(grep -c "^  - " .workflow/skills/enabled.yaml 2>/dev/null || echo 0)
-    
-    if [ $SKILL_COUNT -gt 0 ]; then
+    SKILL_COUNT=$(echo "$SKILL_COUNT" | tr -d '[:space:]')
+
+    if [ "$SKILL_COUNT" -gt 0 ] 2>/dev/null; then
         echo -e "  ${CYAN}Active Skills (${SKILL_COUNT}):${NC}"
         grep "^  - " .workflow/skills/enabled.yaml | head -5 | while read -r line; do
-            skill=$(echo $line | sed 's/^  - //')
+            skill=$(echo "$line" | sed 's/^  - //')
             echo -e "    ✓ ${GREEN}${skill}${NC}"
         done
-        
-        if [ $SKILL_COUNT -gt 5 ]; then
+
+        if [ "$SKILL_COUNT" -gt 5 ] 2>/dev/null; then
             echo -e "    ${DIM}... and $((SKILL_COUNT - 5)) more${NC}"
         fi
     else
@@ -255,21 +256,24 @@ LAST_COMMIT=$(git log -1 --format="%h - %s (%cr)" 2>/dev/null || echo "No commit
 MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || echo 0)
 UNTRACKED=$(git status --porcelain 2>/dev/null | grep -c "^??" || echo 0)
 STAGED=$(git status --porcelain 2>/dev/null | grep -c "^[AM]" || echo 0)
+MODIFIED=$(echo "$MODIFIED" | tr -d '[:space:]')
+UNTRACKED=$(echo "$UNTRACKED" | tr -d '[:space:]')
+STAGED=$(echo "$STAGED" | tr -d '[:space:]')
 
 echo -e "  ${CYAN}Branch:${NC}       ${GREEN}${CURRENT_BRANCH}${NC}"
 echo -e "  ${CYAN}Last Commit:${NC}  ${DIM}${LAST_COMMIT}${NC}"
 echo -e "  ${CYAN}Changes:${NC}      "
 
-if [ $STAGED -gt 0 ]; then
+if [ "$STAGED" -gt 0 ] 2>/dev/null; then
     echo -e "    ${GREEN}●${NC} Staged: ${STAGED} files"
 fi
-if [ $MODIFIED -gt 0 ]; then
+if [ "$MODIFIED" -gt 0 ] 2>/dev/null; then
     echo -e "    ${YELLOW}●${NC} Modified: ${MODIFIED} files"
 fi
-if [ $UNTRACKED -gt 0 ]; then
+if [ "$UNTRACKED" -gt 0 ] 2>/dev/null; then
     echo -e "    ${MAGENTA}●${NC} Untracked: ${UNTRACKED} files"
 fi
-if [ $STAGED -eq 0 ] && [ $MODIFIED -eq 0 ] && [ $UNTRACKED -eq 0 ]; then
+if [ "$STAGED" -eq 0 ] 2>/dev/null && [ "$MODIFIED" -eq 0 ] 2>/dev/null && [ "$UNTRACKED" -eq 0 ] 2>/dev/null; then
     echo -e "    ${GREEN}✓${NC} Working tree clean"
 fi
 echo ""
