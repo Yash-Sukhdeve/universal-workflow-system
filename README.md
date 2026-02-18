@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-646%20passing-green.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-662%20passing-green.svg)](#testing)
 [![CI](https://github.com/Yash-Sukhdeve/universal-workflow-system/actions/workflows/ci.yml/badge.svg)](https://github.com/Yash-Sukhdeve/universal-workflow-system/actions)
 
 **Context-preserving workflow system for AI-assisted development.** Maintains state across sessions, survives context resets, and works with any project type.
@@ -78,7 +78,8 @@ cd universal-workflow-system
 | **Research Workflow** | Scientific method workflow | `scripts/research.sh` |
 | **Claude Code Plugin** | Slash commands & hooks | `.claude/` |
 | **Gemini Integration** | Antigravity workflows | `antigravity-integration/` |
-| **Test Suite** | 646+ BATS tests | `tests/` |
+| **Vector Memory** | Semantic search across sessions | `scripts/lib/vector_memory_setup.sh` |
+| **Test Suite** | 662+ BATS tests | `tests/` |
 
 ---
 
@@ -89,7 +90,7 @@ cd universal-workflow-system
 - **Bash 4.0+** (or 3.x for basic features)
 - **Git** for version control
 - **Node.js 18+** (optional — only for Company OS dashboard)
-- **Python 3.9+** (optional — only for Company OS backend)
+- **Python 3.9+** (optional — for vector memory and Company OS backend)
 
 ### Step 1: Clone Repository
 
@@ -103,6 +104,8 @@ cd universal-workflow-system
 ```bash
 ./scripts/init_workflow.sh
 ```
+
+During initialization, UWS will offer to install the vector memory server for semantic search across sessions. This requires Python 3.9+ and ~1.5GB of disk space. You can skip it with `UWS_SKIP_VECTOR_MEMORY=true` or install it later by running `./scripts/lib/vector_memory_setup.sh`.
 
 ### Step 3: (Optional) Start Company OS
 
@@ -448,7 +451,7 @@ pytest tests/integration/company_os/ -v
 
 | Component | Tests | Framework |
 |-----------|-------|-----------|
-| Core Scripts | 646+ | BATS |
+| Core Scripts | 662+ | BATS |
 | Dashboard Unit | 123 | Vitest |
 | Dashboard E2E | 64 | Playwright |
 | Backend Unit | 50+ | Pytest |
@@ -490,6 +493,7 @@ universal-workflow-system/
 │       └── e2e/                # E2E tests
 ├── scripts/                    # Core workflow scripts
 │   ├── lib/                    # Utility libraries
+│   │   └── vector_memory_setup.sh  # Vector memory installer
 │   ├── init_workflow.sh        # Initialize workflow
 │   ├── status.sh               # Show status
 │   ├── checkpoint.sh           # Manage checkpoints
@@ -593,6 +597,26 @@ UWS integrates semantic vector memory for cross-session knowledge retrieval:
 - **Global DB**: Cross-project generalizable lessons (tool gotchas, design patterns)
 
 Memories are stored atomically (one idea per entry, max 200 words) and retrieved via semantic similarity search. The system includes a generalizability gate that evaluates whether local lessons should be promoted to the global knowledge base.
+
+### Setup
+
+Vector memory is automatically offered during `init_workflow.sh` and `install.sh`. You can also set it up manually:
+
+```bash
+# Standalone setup (from UWS repo root)
+./scripts/lib/vector_memory_setup.sh
+
+# Skip vector memory during init
+UWS_SKIP_VECTOR_MEMORY=true ./scripts/init_workflow.sh
+```
+
+**Requirements**: Python 3.9+, ~1.5GB disk space (packages + sentence-transformers model).
+
+The setup library (`scripts/lib/vector_memory_setup.sh`) handles:
+- Cloning the [vector-memory-mcp](https://github.com/cornebidouil/vector-memory-mcp) server
+- Creating a Python venv with dependencies (`sqlite-vec`, `sentence-transformers`, `fastmcp`)
+- Configuring `.mcp.json` with local and global server entries
+- Adding `memory/` to `.gitignore`
 
 See [Vector Memory Integration Plan](docs/uws-vector-memory-integration-plan.md) for full documentation.
 

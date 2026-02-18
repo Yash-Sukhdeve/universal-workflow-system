@@ -15,12 +15,17 @@ PROJECT_TYPE_ARG="${1:-}"
 if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/validation_utils.sh"
 fi
+if [[ -f "${SCRIPT_DIR}/lib/vector_memory_setup.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/vector_memory_setup.sh"
+fi
 
-# Color codes for output
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly NC='\033[0m' # No Color
+# Color codes for output (guard matching validation_utils.sh:14-19)
+if [[ -z "${RED:-}" ]]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    NC='\033[0m' # No Color
+fi
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "   Universal Workflow System - Project Initialization"
@@ -564,6 +569,13 @@ main() {
     initialize_knowledge_base
     initialize_agent_registry
     initialize_skill_catalog
+
+    # Vector memory setup (optional, graceful failure)
+    if declare -f setup_vector_memory > /dev/null 2>&1; then
+        if ! setup_vector_memory "${PROJECT_ROOT}"; then
+            echo -e "${YELLOW}  Vector memory setup skipped (optional)${NC}"
+        fi
+    fi
 
     echo ""
     echo "═══════════════════════════════════════════════════════════════"

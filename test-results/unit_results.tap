@@ -1,4 +1,4 @@
-1..361
+1..403
 ok 1 activate_agent.sh exists and is executable
 ok 2 activate_agent.sh activates researcher agent
 ok 3 activate_agent.sh activates implementer agent
@@ -341,22 +341,64 @@ ok 339 research.sh handles special characters in rejection details
 ok 340 research.sh does not execute embedded commands
 ok 341 state.yaml remains valid after special character operations
 ok 342 checkpoints.log remains valid after special character operations
-ok 343 yaml_utils.sh exists and is sourceable
-ok 344 yaml_get function exists after sourcing
-ok 345 yaml_set function exists after sourcing
-ok 346 yaml_get retrieves simple string value
-ok 347 yaml_get retrieves nested value
-ok 348 yaml_get returns null for missing key
-ok 349 yaml_get handles numeric values
-ok 350 yaml_get handles boolean values
-ok 351 yaml_set creates new key
-ok 352 yaml_set updates existing key
-ok 353 yaml_validate function exists
-ok 354 yaml_validate accepts valid YAML
-ok 355 yaml_get handles empty file
-ok 356 yaml_get handles file with comments
-ok 357 yaml_get handles special characters in values
-ok 358 yaml_get handles multiword values
-ok 359 yaml_utils works without yq (fallback mode)
-ok 360 yaml_get handles array access
-ok 361 yaml_get completes within 1 second
+ok 343 uws help exits 0 and shows usage
+ok 344 uws --help exits 0
+ok 345 uws -h exits 0
+ok 346 uws with no args shows help
+ok 347 uws version prints version string
+ok 348 uws --version prints version string
+ok 349 uws unknown-command exits non-zero
+ok 350 uws init dispatches to init_workflow.sh
+ok 351 uws init works without .workflow/ directory (fresh project)
+ok 352 uws status dispatches to status.sh
+ok 353 uws status -v passes flags through
+ok 354 uws checkpoint dispatches to checkpoint.sh
+ok 355 uws recover dispatches to recover_context.sh
+ok 356 uws agent dispatches to activate_agent.sh
+ok 357 uws skill dispatches to enable_skill.sh
+ok 358 uws sdlc dispatches to sdlc.sh
+ok 359 uws research dispatches to research.sh
+ok 360 uws spiral dispatches to spiral.sh
+ok 361 uws review dispatches to review.sh
+ok 362 uws pm dispatches to pm.sh
+ok 363 uws submit dispatches to submit.sh
+ok 364 uws detect dispatches to detect_and_configure.sh
+ok 365 uws company-os start dispatches to start_company_os.sh
+ok 366 uws company-os dashboard dispatches to start_dashboard.sh
+ok 367 uws finds .workflow/ from subdirectory
+ok 368 UWS_ROOT env var overrides discovery
+ok 369 uws exits with error when no .workflow/ found
+ok 370 vector_memory_setup.sh loads without error
+ok 371 double-source guard prevents re-loading
+ok 372 UWS_SKIP_VECTOR_MEMORY=true skips all setup
+ok 373 uws_vm_check_python returns 0 or 1 without crashing
+ok 374 uws_vm_check_disk_space returns 0 or 1 without crashing
+ok 375 uws_vm_configure_mcp_json creates .mcp.json when absent
+ok 376 uws_vm_configure_mcp_json merges into existing .mcp.json preserving other servers
+ok 377 uws_vm_configure_mcp_json is idempotent
+ok 378 uws_vm_configure_mcp_json updates --working-dir when project path differs
+ok 379 path with spaces handled correctly in .mcp.json
+ok 380 uws_vm_update_gitignore adds memory/ when absent
+ok 381 uws_vm_update_gitignore is idempotent
+ok 382 uws_vm_update_gitignore creates .gitignore if missing
+ok 383 non-interactive mode skips prompt
+ok 384 setup_vector_memory returns 0 even when Python is missing (graceful degradation)
+ok 385 yaml_utils.sh exists and is sourceable
+ok 386 yaml_get function exists after sourcing
+ok 387 yaml_set function exists after sourcing
+ok 388 yaml_get retrieves simple string value
+ok 389 yaml_get retrieves nested value
+ok 390 yaml_get returns null for missing key
+ok 391 yaml_get handles numeric values
+ok 392 yaml_get handles boolean values
+ok 393 yaml_set creates new key
+ok 394 yaml_set updates existing key
+ok 395 yaml_validate function exists
+ok 396 yaml_validate accepts valid YAML
+ok 397 yaml_get handles empty file
+ok 398 yaml_get handles file with comments
+ok 399 yaml_get handles special characters in values
+ok 400 yaml_get handles multiword values
+ok 401 yaml_utils works without yq (fallback mode)
+ok 402 yaml_get handles array access
+ok 403 yaml_get completes within 1 second

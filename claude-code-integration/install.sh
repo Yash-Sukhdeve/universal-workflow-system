@@ -51,7 +51,7 @@ echo ""
 # ============================================================================
 # Step 1: Create directory structure
 # ============================================================================
-echo -e "${BLUE}[1/6]${NC} Creating directory structure..."
+echo -e "${BLUE}[1/7]${NC} Creating directory structure..."
 
 mkdir -p "${UWS_DIR}/hooks"
 mkdir -p "${WORKFLOW_DIR}"
@@ -62,7 +62,7 @@ echo -e "  ${GREEN}✓${NC} Directories created"
 # ============================================================================
 # Step 2: Create hook scripts
 # ============================================================================
-echo -e "${BLUE}[2/6]${NC} Creating Claude Code hooks..."
+echo -e "${BLUE}[2/7]${NC} Creating Claude Code hooks..."
 
 # SessionStart hook - injects context silently
 cat > "${UWS_DIR}/hooks/session_start.sh" << 'HOOK_EOF'
@@ -161,7 +161,7 @@ echo -e "  ${GREEN}✓${NC} Hooks created"
 # ============================================================================
 # Step 3: Create slash commands
 # ============================================================================
-echo -e "${BLUE}[3/6]${NC} Creating slash commands..."
+echo -e "${BLUE}[3/7]${NC} Creating slash commands..."
 
 mkdir -p "${CLAUDE_DIR}/commands"
 
@@ -420,7 +420,7 @@ echo -e "  ${GREEN}✓${NC} Slash commands created"
 # ============================================================================
 # Step 4: Initialize workflow state
 # ============================================================================
-echo -e "${BLUE}[4/6]${NC} Initializing workflow state..."
+echo -e "${BLUE}[4/7]${NC} Initializing workflow state..."
 
 # Detect project type
 PROJECT_TYPE="software"
@@ -556,7 +556,7 @@ fi
 # ============================================================================
 # Step 5: Configure Claude Code settings
 # ============================================================================
-echo -e "${BLUE}[5/6]${NC} Configuring Claude Code hooks..."
+echo -e "${BLUE}[5/7]${NC} Configuring Claude Code hooks..."
 
 # Create or merge settings.json
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
@@ -607,7 +607,7 @@ echo -e "  ${GREEN}✓${NC} Configured hooks in settings.json"
 # ============================================================================
 # Step 6: Update CLAUDE.md
 # ============================================================================
-echo -e "${BLUE}[6/6]${NC} Updating CLAUDE.md..."
+echo -e "${BLUE}[6/7]${NC} Updating CLAUDE.md..."
 
 UWS_SECTION='
 <!-- UWS-BEGIN -->
@@ -658,6 +658,28 @@ fi
 
 # Save version
 echo "$UWS_VERSION" > "${UWS_DIR}/version"
+
+# ============================================================================
+# Step 7: Setup vector memory (requires UWS source tree)
+# ============================================================================
+echo -e "${BLUE}[7/7]${NC} Setting up vector memory..."
+
+VECTOR_SETUP_LIB=""
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+    _INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -f "${_INSTALLER_DIR}/../scripts/lib/vector_memory_setup.sh" ]]; then
+        VECTOR_SETUP_LIB="${_INSTALLER_DIR}/../scripts/lib/vector_memory_setup.sh"
+    fi
+fi
+
+if [[ -n "${VECTOR_SETUP_LIB}" ]]; then
+    source "${VECTOR_SETUP_LIB}"
+    if ! setup_vector_memory "${PROJECT_DIR}"; then
+        echo -e "  ${YELLOW}Vector memory setup skipped (optional)${NC}"
+    fi
+else
+    echo -e "  ${YELLOW}Skipped (run ./scripts/lib/vector_memory_setup.sh from UWS repo)${NC}"
+fi
 
 # ============================================================================
 # Done!
