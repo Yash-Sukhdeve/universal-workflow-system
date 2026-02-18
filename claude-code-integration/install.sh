@@ -165,7 +165,7 @@ echo -e "${BLUE}[3/6]${NC} Creating slash commands..."
 
 mkdir -p "${CLAUDE_DIR}/commands"
 
-# /uws:status command
+# /uws-status command
 cat > "${CLAUDE_DIR}/commands/uws-status" << 'CMD_EOF'
 ---
 description: "Show UWS workflow status"
@@ -191,7 +191,7 @@ Show the current workflow state including phase, checkpoint, and recent activity
 Summarize the workflow status concisely.
 CMD_EOF
 
-# /uws:checkpoint command
+# /uws-checkpoint command
 cat > "${CLAUDE_DIR}/commands/uws-checkpoint" << 'CMD_EOF'
 ---
 description: "Create a UWS checkpoint with message"
@@ -231,7 +231,7 @@ echo "Checkpoint ${NEW_CP} created: $ARGUMENTS"
 After creating the checkpoint, confirm it was created successfully.
 CMD_EOF
 
-# /uws:recover command
+# /uws-recover command
 cat > "${CLAUDE_DIR}/commands/uws-recover" << 'CMD_EOF'
 ---
 description: "Recover full UWS context after session break"
@@ -266,7 +266,7 @@ Based on this context:
 4. Ask if I should continue with the next action
 CMD_EOF
 
-# /uws:handoff command
+# /uws-handoff command
 cat > "${CLAUDE_DIR}/commands/uws-handoff" << 'CMD_EOF'
 ---
 description: "Prepare handoff document for session end"
@@ -543,10 +543,10 @@ None currently.
 This project uses UWS for maintaining context across Claude Code sessions.
 
 ### Quick Commands
-- \`/uws:status\` - Check current workflow state
-- \`/uws:checkpoint "message"\` - Create a checkpoint
-- \`/uws:recover\` - Full context recovery
-- \`/uws:handoff\` - Prepare for session end
+- \`/uws-status\` - Check current workflow state
+- \`/uws-checkpoint "message"\` - Create a checkpoint
+- \`/uws-recover\` - Full context recovery
+- \`/uws-handoff\` - Prepare for session end
 EOF
     echo -e "  ${GREEN}✓${NC} Created handoff.md"
 else
@@ -616,10 +616,10 @@ UWS_SECTION='
 This project uses UWS (Universal Workflow System) for context persistence across sessions.
 
 ### Quick Commands
-- `/uws:status` - Show current workflow state
-- `/uws:checkpoint "msg"` - Create checkpoint
-- `/uws:recover` - Full context recovery after break
-- `/uws:handoff` - Prepare handoff before ending session
+- `/uws-status` - Show current workflow state
+- `/uws-checkpoint "msg"` - Create checkpoint
+- `/uws-recover` - Full context recovery after break
+- `/uws-handoff` - Prepare handoff before ending session
 
 ### Workflow Files
 - `.workflow/state.yaml` - Current phase and checkpoint
@@ -628,8 +628,8 @@ This project uses UWS (Universal Workflow System) for context persistence across
 
 ### Session Workflow
 1. **Start**: Context is automatically loaded via SessionStart hook
-2. **During**: Create checkpoints at milestones with `/uws:checkpoint`
-3. **End**: Run `/uws:handoff` to update context for next session
+2. **During**: Create checkpoints at milestones with `/uws-checkpoint`
+3. **End**: Run `/uws-handoff` to update context for next session
 
 ### Auto-Checkpoint
 UWS automatically creates checkpoints before context compaction to prevent state loss.
@@ -679,8 +679,8 @@ echo ""
 echo -e "${CYAN}Quick start:${NC}"
 echo "  1. Open project in Claude Code: ${BOLD}claude${NC}"
 echo "  2. Context loads automatically on session start"
-echo "  3. Use ${BOLD}/uws:status${NC} to see current state"
-echo "  4. Use ${BOLD}/uws:checkpoint \"message\"${NC} to save progress"
+echo "  3. Use ${BOLD}/uws-status${NC} to see current state"
+echo "  4. Use ${BOLD}/uws-checkpoint \"message\"${NC} to save progress"
 echo ""
 echo -e "${YELLOW}Tip:${NC} Add .uws/ to .gitignore if you don't want to share hooks"
 echo -e "${YELLOW}Tip:${NC} Commit .workflow/ to preserve state across clones"

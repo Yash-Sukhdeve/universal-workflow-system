@@ -78,7 +78,7 @@ cd universal-workflow-system
 | **Research Workflow** | Scientific method workflow | `scripts/research.sh` |
 | **Claude Code Plugin** | Slash commands & hooks | `.claude/` |
 | **Gemini Integration** | Antigravity workflows | `antigravity-integration/` |
-| **Test Suite** | 620+ BATS tests | `tests/` |
+| **Test Suite** | 646+ BATS tests | `tests/` |
 
 ---
 
@@ -88,8 +88,8 @@ cd universal-workflow-system
 
 - **Bash 4.0+** (or 3.x for basic features)
 - **Git** for version control
-- **Node.js 18+** (for dashboard)
-- **Python 3.9+** (for backend)
+- **Node.js 18+** (optional — only for Company OS dashboard)
+- **Python 3.9+** (optional — only for Company OS backend)
 
 ### Step 1: Clone Repository
 
@@ -448,7 +448,7 @@ pytest tests/integration/company_os/ -v
 
 | Component | Tests | Framework |
 |-----------|-------|-----------|
-| Core Scripts | 620+ | BATS |
+| Core Scripts | 646+ | BATS |
 | Dashboard Unit | 123 | Vitest |
 | Dashboard E2E | 64 | Playwright |
 | Backend Unit | 50+ | Pytest |

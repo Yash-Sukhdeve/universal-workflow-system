@@ -17,7 +17,7 @@ git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git /tmp/uw
 
 1. **Auto-loads context** - On session start, Claude automatically knows your project state
 2. **Auto-checkpoints** - Before context compaction, state is saved automatically
-3. **Simple commands** - `/uws:status`, `/uws:checkpoint`, `/uws:recover`
+3. **Simple commands** - `/uws-status`, `/uws-checkpoint`, `/uws-recover`
 
 ## Files Created
 
@@ -39,29 +39,29 @@ your-project/
 
 | Command | Description |
 |---------|-------------|
-| `/uws:status` | Show current workflow state |
-| `/uws:checkpoint "msg"` | Create a checkpoint with message |
-| `/uws:recover` | Full context recovery after break |
-| `/uws:handoff` | Prepare handoff before session end |
+| `/uws-status` | Show current workflow state |
+| `/uws-checkpoint "msg"` | Create a checkpoint with message |
+| `/uws-recover` | Full context recovery after break |
+| `/uws-handoff` | Prepare handoff before session end |
 
 ## Session Workflow
 
 ### Starting a Session
 Context loads automatically. If you need a full refresh:
 ```
-/uws:recover
+/uws-recover
 ```
 
 ### During Work
 Create checkpoints at milestones:
 ```
-/uws:checkpoint "Completed feature X"
+/uws-checkpoint "Completed feature X"
 ```
 
 ### Ending a Session
 Update the handoff document:
 ```
-/uws:handoff
+/uws-handoff
 ```
 
 ## Git Integration
@@ -89,7 +89,7 @@ Update the handoff document:
 ### Context not loading?
 1. Check `.uws/hooks/` scripts are executable: `chmod +x .uws/hooks/*.sh`
 2. Verify `.claude/settings.json` has hook configuration
-3. Run `/uws:recover` manually
+3. Run `/uws-recover` manually
 
 ### Checkpoints not incrementing?
 Check `.workflow/checkpoints.log` format is correct (TIMESTAMP | ID | MSG)

@@ -92,6 +92,18 @@ teardown() {
     assert_output "CALLED: init_workflow.sh software"
 }
 
+@test "uws init works without .workflow/ directory (fresh project)" {
+    local fresh_dir
+    fresh_dir="$(mktemp -d)"
+    cd "$fresh_dir"
+    # No .workflow/ exists — init should still work by finding scripts relative to binary
+    run "$PROJECT_ROOT/bin/uws" init
+    # It should attempt to run init_workflow.sh (may prompt or auto-detect)
+    # The key test: it must NOT fail with "No UWS project found"
+    [[ "$output" != *"No UWS project found"* ]]
+    rm -rf "$fresh_dir"
+}
+
 @test "uws status dispatches to status.sh" {
     cd "$TEST_TMP_DIR"
     run "$TEST_TMP_DIR/bin/uws" status

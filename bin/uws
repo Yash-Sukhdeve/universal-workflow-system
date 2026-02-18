@@ -95,6 +95,18 @@ main() {
             echo "uws $UWS_VERSION"
             exit 0
             ;;
+        init)
+            # init doesn't need .workflow/ to exist yet — find scripts via $0 location
+            local self_dir
+            self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+            if [[ -x "$self_dir/scripts/init_workflow.sh" ]]; then
+                "$self_dir/scripts/init_workflow.sh" "$@"
+            else
+                echo "Error: Cannot find init_workflow.sh relative to uws binary." >&2
+                exit 1
+            fi
+            exit $?
+            ;;
     esac
 
     # Find UWS root
