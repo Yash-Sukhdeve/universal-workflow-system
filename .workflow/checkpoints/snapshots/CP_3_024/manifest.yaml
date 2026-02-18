@@ -1,0 +1,31 @@
+# Checkpoint Manifest - v2 format
+snapshot_id: "CP_3_024"
+created: "2026-02-18T12:51:01-05:00"
+version: "2.0"
+files:
+  - path: "active_agent.yaml"
+    checksum: "eeb5bd95d6b1ab91d9f08f9a1467608222922445acf6251296bc3f27ba645807"
+    required: true
+  - path: "enabled_skills.yaml"
+    checksum: "ecb189a521d8ed86d9d93642880a3e68f3d8c574aebc8f912c316b9b590fd30e"
+    required: true
+  - path: "handoff.md"
+    checksum: "a3c2751fc5caa59a279b2c49a4663b07b2b2149f7b7a6b4aff3711105c0d5f39"
+    required: true
+  - path: "metadata.yaml"
+    checksum: "9af051012aac3954c6b142d2f799ca7f7a25c656ec8f06cc949d7d03ba45b945"
+    required: true
+  - path: "state.yaml"
+    checksum: "0b626a498e8db1f71d840532843b74fabdbc0eae38fee38244945a787a20189c"
+    required: true
+  - path: "active_state/agent.yaml"
+    checksum: "eeb5bd95d6b1ab91d9f08f9a1467608222922445acf6251296bc3f27ba645807"
+    required: false
+  - path: "active_state/session.yaml"
+    checksum: "4c1f5dd4f0321cec72e8038bb769e64201fb5aa9eca1b2c497e4dec92212e624"
+    required: false
+  - path: "active_state/skills.yaml"
+    checksum: "ecb189a521d8ed86d9d93642880a3e68f3d8c574aebc8f912c316b9b590fd30e"
+    required: false
+total_files: 8
+combined_checksum: "61c4deced74113252fbf7c9bcf21cca03ad74738a81abaf7ca8bea57da0e214d"
