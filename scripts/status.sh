@@ -7,7 +7,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source utility libraries
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_DIR}/lib/resolve_project.sh"
+
+# Source utility libraries (suppress yq warning)
+YAML_UTILS_QUIET=true
 if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/validation_utils.sh"
 fi
@@ -20,16 +24,16 @@ if [[ -f "${SCRIPT_DIR}/lib/workflow_routing.sh" ]]; then
     source "${SCRIPT_DIR}/lib/workflow_routing.sh"
 fi
 
-# Color codes
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly MAGENTA='\033[0;35m'
-readonly CYAN='\033[0;36m'
-readonly BOLD='\033[1m'
-readonly DIM='\033[2m'
-readonly NC='\033[0m'
+# Color codes (no readonly — safe to reassign if sourced libraries set them)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m'
 
 # Parse arguments
 VERBOSE=false
@@ -60,9 +64,9 @@ done
 
 # Check if workflow is initialized
 if ! validate_workflow_initialized 2>/dev/null; then
-    if [[ ! -d .workflow ]]; then
-        echo -e "${RED}❌ Error: Workflow not initialized${NC}"
-        echo -e "   Run: ${CYAN}./scripts/init_workflow.sh${NC} first"
+    if [[ ! -d "${WORKFLOW_DIR}" ]]; then
+        echo -e "${RED}Error: Workflow not initialized in $(pwd)${NC}"
+        echo -e "   Run: ${CYAN}~/Documents/universal-workflow-system/scripts/init_workflow.sh${NC} first"
         exit 1
     fi
 fi
@@ -80,6 +84,14 @@ get_yaml_value() {
         # Fallback
         grep "^$key:" "$file" 2>/dev/null | cut -d':' -f2- | sed 's/^ *//;s/"//g' | xargs || echo "N/A"
     fi
+}
+
+# Helper function to get nested phase status from state.yaml
+# Extracts phases.<phase_name>.status using sed (yaml_get only supports top-level)
+get_phase_status() {
+    local phase_name="$1"
+    local file="${2:-.workflow/state.yaml}"
+    sed -n "/^  ${phase_name}:/,/^  [^ ]/{ s/^    status: *\"\{0,1\}\([^\"]*\)\"\{0,1\}/\1/p; }" "$file" 2>/dev/null | head -1
 }
 
 # Helper function to create progress bar
@@ -110,14 +122,14 @@ create_progress_bar() {
 
 # Compact view
 if [ "$COMPACT" = true ]; then
-    PROJECT_TYPE=$(get_yaml_value "project_type" ".workflow/state.yaml")
-    CURRENT_PHASE=$(get_yaml_value "current_phase" ".workflow/state.yaml")
-    CURRENT_CHECKPOINT=$(get_yaml_value "current_checkpoint" ".workflow/state.yaml")
+    PROJECT_TYPE=$(get_yaml_value "project_type" "${STATE_FILE}")
+    CURRENT_PHASE=$(get_yaml_value "current_phase" "${STATE_FILE}")
+    CURRENT_CHECKPOINT=$(get_yaml_value "current_checkpoint" "${STATE_FILE}")
     
     echo -e "${BOLD}Workflow:${NC} ${GREEN}${PROJECT_TYPE}${NC} | ${BOLD}Phase:${NC} ${YELLOW}${CURRENT_PHASE}${NC} | ${BOLD}CP:${NC} ${CYAN}${CURRENT_CHECKPOINT}${NC}"
     
-    if [ -f .workflow/agents/active.yaml ]; then
-        ACTIVE_AGENT=$(get_yaml_value "current_agent" ".workflow/agents/active.yaml")
+    if [ -f ${WORKFLOW_DIR}/agents/active.yaml ]; then
+        ACTIVE_AGENT=$(get_yaml_value "current_agent" "${WORKFLOW_DIR}/agents/active.yaml")
         echo -e "${BOLD}Agent:${NC} ${GREEN}${ACTIVE_AGENT}${NC}"
     fi
     
@@ -137,8 +149,8 @@ echo -e "${BLUE}│ ${BOLD}PROJECT INFORMATION${NC}                             
 echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
 
 PROJECT_NAME=$(basename "$(pwd)")
-PROJECT_TYPE=$(get_yaml_value "project_type" ".workflow/state.yaml")
-CREATED=$(get_yaml_value "created" ".workflow/state.yaml")
+PROJECT_TYPE=$(get_yaml_value "project_type" "${STATE_FILE}")
+CREATED=$(get_yaml_value "created" "${STATE_FILE}")
 
 echo -e "  ${CYAN}Name:${NC}         ${BOLD}${PROJECT_NAME}${NC}"
 echo -e "  ${CYAN}Type:${NC}         ${GREEN}${PROJECT_TYPE}${NC}"
@@ -151,20 +163,43 @@ echo -e "${BLUE}┌────────────────────�
 echo -e "${BLUE}│ ${BOLD}WORKFLOW STATE${NC}                                                             ${BLUE}│${NC}"
 echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
 
-CURRENT_PHASE=$(get_yaml_value "current_phase" ".workflow/state.yaml")
-CURRENT_CHECKPOINT=$(get_yaml_value "current_checkpoint" ".workflow/state.yaml")
-LAST_UPDATED=$(get_yaml_value "last_updated" ".workflow/state.yaml")
-
-# Calculate phase progress
-PHASE_NUM=$(echo $CURRENT_PHASE | grep -oE '[0-9]+' || echo 1)
-TOTAL_CHECKPOINTS=$(grep -c "CP_${PHASE_NUM}_" .workflow/checkpoints.log 2>/dev/null || echo 0)
-PROGRESS_BAR=$(create_progress_bar $PHASE_NUM 5)
+CURRENT_PHASE=$(get_yaml_value "current_phase" "${STATE_FILE}")
+CURRENT_CHECKPOINT=$(get_yaml_value "current_checkpoint" "${STATE_FILE}")
+LAST_UPDATED=$(get_yaml_value "last_updated" "${STATE_FILE}")
 
 echo -e "  ${CYAN}Current Phase:${NC}     ${YELLOW}${CURRENT_PHASE}${NC}"
-echo -e "  ${CYAN}Progress:${NC}          ${PROGRESS_BAR} Phase $PHASE_NUM/5"
 echo -e "  ${CYAN}Checkpoint:${NC}        ${GREEN}${CURRENT_CHECKPOINT}${NC}"
-echo -e "  ${CYAN}Phase Checkpoints:${NC} ${TOTAL_CHECKPOINTS}"
 echo -e "  ${CYAN}Last Updated:${NC}      ${DIM}${LAST_UPDATED}${NC}"
+echo ""
+
+# Per-phase progress display
+echo -e "  ${CYAN}Phase Progress:${NC}"
+for _phase_name in phase_1_planning phase_2_implementation phase_3_validation phase_4_delivery phase_5_maintenance; do
+    _phase_stat=$(get_phase_status "$_phase_name" "${STATE_FILE}")
+    _phase_stat="${_phase_stat:-pending}"
+    _phase_num=$(echo "$_phase_name" | cut -d'_' -f2)
+    _cp_count=$(grep -c "CP_${_phase_num}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null) || _cp_count=0
+
+    case "$_phase_stat" in
+        completed)
+            _icon="${GREEN}✓${NC}"
+            _status_label="${GREEN}completed${NC}"
+            _cp_info="  (${_cp_count} checkpoints)"
+            ;;
+        active)
+            _icon="${YELLOW}►${NC}"
+            _status_label="${YELLOW}active${NC}"
+            _cp_info="  (${_cp_count} checkpoints)"
+            ;;
+        *)
+            _icon="${DIM}○${NC}"
+            _status_label="${DIM}pending${NC}"
+            _cp_info=""
+            ;;
+    esac
+
+    printf "    %b %-25s %b%b\n" "$_icon" "$_phase_name" "$_status_label" "$_cp_info"
+done
 echo ""
 
 # Active Methodology
@@ -178,8 +213,8 @@ if declare -f get_active_methodology > /dev/null 2>&1; then
     echo -e "  ${CYAN}Methodology:${NC}    ${GREEN}${ACTIVE_METHODOLOGY}${NC}"
 
     # Show relevant phase(s)
-    RESEARCH_PHASE=$(get_yaml_value "research_phase" ".workflow/state.yaml")
-    SDLC_PHASE=$(get_yaml_value "sdlc_phase" ".workflow/state.yaml")
+    RESEARCH_PHASE=$(get_yaml_value "research_phase" "${STATE_FILE}")
+    SDLC_PHASE=$(get_yaml_value "sdlc_phase" "${STATE_FILE}")
 
     if [[ "$ACTIVE_METHODOLOGY" == "research" || "$ACTIVE_METHODOLOGY" == "both" ]]; then
         echo -e "  ${CYAN}Research Phase:${NC} ${YELLOW}${RESEARCH_PHASE:-none}${NC}"
@@ -197,14 +232,14 @@ echo -e "${BLUE}┌────────────────────�
 echo -e "${BLUE}│ ${BOLD}ACTIVE AGENTS${NC}                                                              ${BLUE}│${NC}"
 echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
 
-if [ -f .workflow/agents/active.yaml ]; then
-    ACTIVE_AGENT=$(get_yaml_value "current_agent" ".workflow/agents/active.yaml")
-    AGENT_TASK=$(get_yaml_value "task" ".workflow/agents/active.yaml")
-    AGENT_PROGRESS=$(get_yaml_value "progress" ".workflow/agents/active.yaml")
+if [ -f ${WORKFLOW_DIR}/agents/active.yaml ]; then
+    ACTIVE_AGENT=$(get_yaml_value "current_agent" "${WORKFLOW_DIR}/agents/active.yaml")
+    AGENT_TASK=$(get_yaml_value "task" "${WORKFLOW_DIR}/agents/active.yaml")
+    AGENT_PROGRESS=$(get_yaml_value "progress" "${WORKFLOW_DIR}/agents/active.yaml")
     
     # Get agent icon from registry
-    if [ -f .workflow/agents/registry.yaml ]; then
-        AGENT_ICON=$(grep -A2 "^  ${ACTIVE_AGENT}:" .workflow/agents/registry.yaml | grep "icon:" | cut -d'"' -f2 || echo "👤")
+    if [ -f ${WORKFLOW_DIR}/agents/registry.yaml ]; then
+        AGENT_ICON=$(grep -A2 "^  ${ACTIVE_AGENT}:" ${WORKFLOW_DIR}/agents/registry.yaml | grep "icon:" | cut -d'"' -f2 || echo "👤")
     else
         AGENT_ICON="👤"
     fi
@@ -224,13 +259,13 @@ echo -e "${BLUE}┌────────────────────�
 echo -e "${BLUE}│ ${BOLD}ENABLED SKILLS${NC}                                                             ${BLUE}│${NC}"
 echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
 
-if [ -f .workflow/skills/enabled.yaml ]; then
-    SKILL_COUNT=$(grep -c "^  - " .workflow/skills/enabled.yaml 2>/dev/null || echo 0)
+if [ -f ${WORKFLOW_DIR}/skills/enabled.yaml ]; then
+    SKILL_COUNT=$(grep -c "^  - " ${WORKFLOW_DIR}/skills/enabled.yaml 2>/dev/null || echo 0)
     SKILL_COUNT=$(echo "$SKILL_COUNT" | tr -d '[:space:]')
 
     if [ "$SKILL_COUNT" -gt 0 ] 2>/dev/null; then
         echo -e "  ${CYAN}Active Skills (${SKILL_COUNT}):${NC}"
-        grep "^  - " .workflow/skills/enabled.yaml | head -5 | while read -r line; do
+        grep "^  - " ${WORKFLOW_DIR}/skills/enabled.yaml | head -5 | while read -r line; do
             skill=$(echo "$line" | sed 's/^  - //')
             echo -e "    ✓ ${GREEN}${skill}${NC}"
         done
@@ -285,8 +320,8 @@ if [ "$VERBOSE" = true ]; then
     echo -e "${BLUE}│ ${BOLD}RECENT CHECKPOINTS${NC}                                                         ${BLUE}│${NC}"
     echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
     
-    if [ -f .workflow/checkpoints.log ]; then
-        tail -3 .workflow/checkpoints.log | while IFS='|' read -r timestamp checkpoint description; do
+    if [ -f ${WORKFLOW_DIR}/checkpoints.log ]; then
+        tail -3 ${WORKFLOW_DIR}/checkpoints.log | while IFS='|' read -r timestamp checkpoint description; do
             echo -e "  ${YELLOW}$(echo $checkpoint | xargs)${NC} - $(echo $description | xargs)"
             echo -e "    ${DIM}$(echo $timestamp | xargs)${NC}"
         done
@@ -300,9 +335,9 @@ if [ "$VERBOSE" = true ]; then
     echo -e "${BLUE}│ ${BOLD}KNOWLEDGE BASE${NC}                                                             ${BLUE}│${NC}"
     echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
     
-    if [ -d .workflow/knowledge ]; then
-        PATTERN_COUNT=$(grep -c "pattern:" .workflow/knowledge/*.yaml 2>/dev/null || echo 0)
-        SOLUTION_COUNT=$(grep -c "solution:" .workflow/knowledge/*.yaml 2>/dev/null || echo 0)
+    if [ -d ${WORKFLOW_DIR}/knowledge ]; then
+        PATTERN_COUNT=$(grep -c "pattern:" ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null || echo 0)
+        SOLUTION_COUNT=$(grep -c "solution:" ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null || echo 0)
         
         echo -e "  ${CYAN}Patterns Learned:${NC}  ${GREEN}${PATTERN_COUNT}${NC}"
         echo -e "  ${CYAN}Solutions Stored:${NC}  ${GREEN}${SOLUTION_COUNT}${NC}"

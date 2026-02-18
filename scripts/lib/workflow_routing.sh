@@ -12,9 +12,12 @@ if [[ "${_WORKFLOW_ROUTING_LOADED:-}" == "true" ]]; then
 fi
 _WORKFLOW_ROUTING_LOADED="true"
 
-# Resolve paths relative to this library
+# Resolve paths — use WORKFLOW_DIR from resolve_project.sh if already set
 _WR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-_WR_WORKFLOW_DIR="${WORKFLOW_DIR:-${_WR_SCRIPT_DIR}/../.workflow}"
+if [[ -z "${WORKFLOW_DIR:-}" ]]; then
+    source "${_WR_SCRIPT_DIR}/lib/resolve_project.sh"
+fi
+_WR_WORKFLOW_DIR="${WORKFLOW_DIR}"
 
 #######################################
 # Map project type to active methodology

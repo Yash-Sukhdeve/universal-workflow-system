@@ -9,6 +9,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
 
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_LIB_DIR}/resolve_project.sh"
+
 # Smart argument parsing: support both `checkpoint.sh "msg"` and `checkpoint.sh create "msg"`
 if [[ "${1:-}" =~ ^(create|list|restore|status|verify|help|--help|-h)$ ]]; then
     COMMAND="${1:-create}"
@@ -44,7 +47,7 @@ readonly CHECKPOINT_VERSION="2.0"
 source_lib() {
     local lib="$1"
     if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
-        source "${SCRIPT_LIB_DIR}/${lib}"
+        YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/${lib}"
         return 0
     fi
     return 1
@@ -100,23 +103,24 @@ show_usage() {
 
 # Check if workflow is initialized
 if ! validate_workflow_initialized 2>/dev/null; then
-    if [[ ! -d .workflow ]]; then
-        echo -e "${RED}Error: Workflow not initialized. Run ./scripts/init_workflow.sh first${NC}"
+    if [[ ! -d "${WORKFLOW_DIR}" ]]; then
+        echo -e "${RED}Error: Workflow not initialized in $(dirname "${WORKFLOW_DIR}")${NC}"
+        echo -e "  Run: ${CYAN}~/Documents/universal-workflow-system/scripts/init_workflow.sh${NC}"
         exit 1
     fi
 fi
 
 # Create checkpoint directories if they don't exist
-mkdir -p .workflow/checkpoints/snapshots
+mkdir -p ${WORKFLOW_DIR}/checkpoints/snapshots
 
 # Function to generate checkpoint ID
 generate_checkpoint_id() {
     # Get current phase number using YAML utilities
     local phase_full
     if declare -f yaml_get > /dev/null 2>&1; then
-        phase_full=$(yaml_get .workflow/state.yaml "current_phase")
+        phase_full=$(yaml_get ${WORKFLOW_DIR}/state.yaml "current_phase")
     else
-        phase_full=$(grep 'current_phase:' .workflow/state.yaml | cut -d':' -f2 | xargs)
+        phase_full=$(grep 'current_phase:' ${WORKFLOW_DIR}/state.yaml | cut -d':' -f2 | xargs)
     fi
 
     # Extract phase number (e.g., "phase_1_planning" -> "1")
@@ -129,7 +133,8 @@ generate_checkpoint_id() {
     fi
 
     # Get next checkpoint number for this phase
-    local count=$(grep -c "CP_${phase}_" .workflow/checkpoints.log 2>/dev/null || echo 0)
+    local count
+    count=$(grep -c "CP_${phase}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null) || count=0
     local next_num=$(printf "%03d" $((count + 1)))
 
     echo "CP_${phase}_${next_num}"
@@ -168,43 +173,68 @@ create_checkpoint() {
 
     # Update state file atomically
     if declare -f atomic_yaml_set > /dev/null 2>&1; then
-        atomic_yaml_set .workflow/state.yaml "current_checkpoint" "$checkpoint_id" || {
+        atomic_yaml_set ${WORKFLOW_DIR}/state.yaml "current_checkpoint" "$checkpoint_id" || {
             echo -e "${RED}Error: Failed to update state file atomically${NC}"
             return 1
         }
-        atomic_yaml_set .workflow/state.yaml "metadata.last_updated" "$timestamp"
+        atomic_yaml_set ${WORKFLOW_DIR}/state.yaml "metadata.last_updated" "$timestamp"
     elif declare -f yaml_set > /dev/null 2>&1; then
-        yaml_set .workflow/state.yaml "current_checkpoint" "$checkpoint_id" || {
+        yaml_set ${WORKFLOW_DIR}/state.yaml "current_checkpoint" "$checkpoint_id" || {
             echo -e "${RED}Error: Failed to update state file${NC}"
             return 1
         }
-        yaml_set .workflow/state.yaml "metadata.last_updated" "$timestamp"
+        yaml_set ${WORKFLOW_DIR}/state.yaml "metadata.last_updated" "$timestamp"
     else
         # Fallback to sed with backup - using safe escaping
-        cp .workflow/state.yaml .workflow/state.yaml.bak
+        cp ${WORKFLOW_DIR}/state.yaml ${WORKFLOW_DIR}/state.yaml.bak
         if declare -f safe_sed_replace > /dev/null 2>&1; then
-            safe_sed_replace .workflow/state.yaml "current_checkpoint" "${checkpoint_id}"
-            safe_sed_replace .workflow/state.yaml "last_updated" "${timestamp}"
+            safe_sed_replace ${WORKFLOW_DIR}/state.yaml "current_checkpoint" "${checkpoint_id}"
+            safe_sed_replace ${WORKFLOW_DIR}/state.yaml "last_updated" "${timestamp}"
         else
             # Ultimate fallback with manual escaping
             local escaped_id escaped_ts
             escaped_id=$(printf '%s\n' "${checkpoint_id}" | sed 's/[&/\]/\\&/g')
             escaped_ts=$(printf '%s\n' "${timestamp}" | sed 's/[&/\]/\\&/g')
-            sed -i "s|^current_checkpoint:.*|current_checkpoint: \"${escaped_id}\"|" .workflow/state.yaml
-            sed -i "s|^last_updated:.*|last_updated: \"${escaped_ts}\"|" .workflow/state.yaml
+            sed -i "s|^current_checkpoint:.*|current_checkpoint: \"${escaped_id}\"|" ${WORKFLOW_DIR}/state.yaml
+            sed -i "s|^last_updated:.*|last_updated: \"${escaped_ts}\"|" ${WORKFLOW_DIR}/state.yaml
         fi
-        rm -f .workflow/state.yaml.bak
+        rm -f ${WORKFLOW_DIR}/state.yaml.bak
     fi
 
     # Add to checkpoint log atomically
     # First ensure file ends with newline to prevent concatenation
-    if [[ -s .workflow/checkpoints.log ]] && [[ "$(tail -c1 .workflow/checkpoints.log | wc -l)" -eq 0 ]]; then
-        echo "" >> .workflow/checkpoints.log
+    if [[ -s ${WORKFLOW_DIR}/checkpoints.log ]] && [[ "$(tail -c1 ${WORKFLOW_DIR}/checkpoints.log | wc -l)" -eq 0 ]]; then
+        echo "" >> ${WORKFLOW_DIR}/checkpoints.log
     fi
     if declare -f atomic_append > /dev/null 2>&1; then
-        atomic_append .workflow/checkpoints.log "${timestamp} | ${checkpoint_id} | ${message}"
+        atomic_append ${WORKFLOW_DIR}/checkpoints.log "${timestamp} | ${checkpoint_id} | ${message}"
     else
-        echo "${timestamp} | ${checkpoint_id} | ${message}" >> .workflow/checkpoints.log
+        echo "${timestamp} | ${checkpoint_id} | ${message}" >> ${WORKFLOW_DIR}/checkpoints.log
+    fi
+
+    # Auto-update phase progress in state.yaml
+    # Heuristic: progress = min(checkpoint_count * 10, 95)
+    # Only explicit phase completion sets 100
+    local _phase_num
+    _phase_num=$(echo "$checkpoint_id" | cut -d'_' -f2)
+    if [[ "$_phase_num" =~ ^[1-5]$ ]]; then
+        local _cp_count _progress _phase_key
+        _cp_count=$(grep -c "CP_${_phase_num}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null) || _cp_count=0
+        _progress=$(( _cp_count * 10 ))
+        if (( _progress > 95 )); then
+            _progress=95
+        fi
+        # Map phase number to full phase name
+        case "$_phase_num" in
+            1) _phase_key="phase_1_planning" ;;
+            2) _phase_key="phase_2_implementation" ;;
+            3) _phase_key="phase_3_validation" ;;
+            4) _phase_key="phase_4_delivery" ;;
+            5) _phase_key="phase_5_maintenance" ;;
+        esac
+        # Update progress using sed on the nested YAML structure
+        # Match the phase block, then update the progress line within it
+        sed -i "/^  ${_phase_key}:/,/^  [^ ]/{s/^\(    progress: \).*/\1${_progress}/}" ${WORKFLOW_DIR}/state.yaml
     fi
 
     # Create checkpoint snapshot directory structure (v2 format)
@@ -221,18 +251,18 @@ create_checkpoint() {
     echo -e "  ${CYAN}Saving state files...${NC}"
 
     # Save core state files
-    cp .workflow/state.yaml "$snapshot_dir/state.yaml"
-    [[ -f .workflow/handoff.md ]] && cp .workflow/handoff.md "$snapshot_dir/handoff.md"
+    cp ${WORKFLOW_DIR}/state.yaml "$snapshot_dir/state.yaml"
+    [[ -f ${WORKFLOW_DIR}/handoff.md ]] && cp ${WORKFLOW_DIR}/handoff.md "$snapshot_dir/handoff.md"
 
     # Save active state (v2)
-    if [[ -f .workflow/agents/active.yaml ]]; then
-        cp .workflow/agents/active.yaml "$snapshot_dir/active_state/agent.yaml"
+    if [[ -f ${WORKFLOW_DIR}/agents/active.yaml ]]; then
+        cp ${WORKFLOW_DIR}/agents/active.yaml "$snapshot_dir/active_state/agent.yaml"
         # Also copy to old location for backward compatibility
-        cp .workflow/agents/active.yaml "$snapshot_dir/active_agent.yaml"
+        cp ${WORKFLOW_DIR}/agents/active.yaml "$snapshot_dir/active_agent.yaml"
     fi
-    if [[ -f .workflow/skills/enabled.yaml ]]; then
-        cp .workflow/skills/enabled.yaml "$snapshot_dir/active_state/skills.yaml"
-        cp .workflow/skills/enabled.yaml "$snapshot_dir/enabled_skills.yaml"
+    if [[ -f ${WORKFLOW_DIR}/skills/enabled.yaml ]]; then
+        cp ${WORKFLOW_DIR}/skills/enabled.yaml "$snapshot_dir/active_state/skills.yaml"
+        cp ${WORKFLOW_DIR}/skills/enabled.yaml "$snapshot_dir/enabled_skills.yaml"
     fi
 
     # Create session state (v2)
@@ -240,17 +270,17 @@ create_checkpoint() {
 session_id: "$(date +%Y%m%d_%H%M%S)_$$"
 started: "${timestamp}"
 checkpoint_version: "${CHECKPOINT_VERSION}"
-context_size_estimate: $(wc -c < .workflow/state.yaml 2>/dev/null || echo 0)
-handoff_present: $([[ -f .workflow/handoff.md ]] && echo "true" || echo "false")
+context_size_estimate: $(wc -c < ${WORKFLOW_DIR}/state.yaml 2>/dev/null || echo 0)
+handoff_present: $([[ -f ${WORKFLOW_DIR}/handoff.md ]] && echo "true" || echo "false")
 EOF
 
     # Save context (v2) - recent decisions and execution log
-    if [[ -f .workflow/logs/decisions.log ]]; then
+    if [[ -f ${WORKFLOW_DIR}/logs/decisions.log ]]; then
         # Copy last 50 entries
-        tail -100 .workflow/logs/decisions.log > "$snapshot_dir/context/decisions.log" 2>/dev/null || true
+        tail -100 ${WORKFLOW_DIR}/logs/decisions.log > "$snapshot_dir/context/decisions.log" 2>/dev/null || true
     fi
-    if [[ -f .workflow/logs/execution.log ]]; then
-        tail -200 .workflow/logs/execution.log > "$snapshot_dir/context/execution.log" 2>/dev/null || true
+    if [[ -f ${WORKFLOW_DIR}/logs/execution.log ]]; then
+        tail -200 ${WORKFLOW_DIR}/logs/execution.log > "$snapshot_dir/context/execution.log" 2>/dev/null || true
     fi
 
     # Get git info safely
@@ -262,9 +292,9 @@ EOF
     # Get current phase
     local current_phase
     if declare -f yaml_get > /dev/null 2>&1; then
-        current_phase=$(yaml_get .workflow/state.yaml "current_phase" 2>/dev/null || echo "unknown")
+        current_phase=$(yaml_get ${WORKFLOW_DIR}/state.yaml "current_phase" 2>/dev/null || echo "unknown")
     else
-        current_phase=$(grep 'current_phase:' .workflow/state.yaml 2>/dev/null | cut -d':' -f2 | xargs || echo "unknown")
+        current_phase=$(grep 'current_phase:' ${WORKFLOW_DIR}/state.yaml 2>/dev/null | cut -d':' -f2 | xargs || echo "unknown")
     fi
 
     # Create enhanced metadata (v2)
@@ -320,8 +350,8 @@ EOF
     fi
 
     # Git commit if enabled
-    if grep -q "auto_commit_state: true" .workflow/config.yaml 2>/dev/null; then
-        git add .workflow/ 2>/dev/null || true
+    if grep -q "auto_commit_state: true" ${WORKFLOW_DIR}/config.yaml 2>/dev/null; then
+        git add ${WORKFLOW_DIR}/ 2>/dev/null || true
         git commit -m "[CHECKPOINT] ${checkpoint_id}: ${message}" 2>/dev/null || true
     fi
 
@@ -354,7 +384,7 @@ list_checkpoints() {
     echo -e "${BLUE}═════════════════════════════════════════${NC}"
     echo ""
     
-    if [ ! -f .workflow/checkpoints.log ]; then
+    if [ ! -f ${WORKFLOW_DIR}/checkpoints.log ]; then
         echo -e "${YELLOW}No checkpoints found${NC}"
         return
     fi
@@ -362,11 +392,11 @@ list_checkpoints() {
     # Get current phase using YAML utilities
     local current_phase current_checkpoint
     if declare -f yaml_get > /dev/null 2>&1; then
-        current_phase=$(yaml_get .workflow/state.yaml "current_phase")
-        current_checkpoint=$(yaml_get .workflow/state.yaml "current_checkpoint")
+        current_phase=$(yaml_get ${WORKFLOW_DIR}/state.yaml "current_phase")
+        current_checkpoint=$(yaml_get ${WORKFLOW_DIR}/state.yaml "current_checkpoint")
     else
-        current_phase=$(grep 'current_phase:' .workflow/state.yaml | cut -d':' -f2 | xargs)
-        current_checkpoint=$(grep 'current_checkpoint:' .workflow/state.yaml | cut -d':' -f2 | xargs)
+        current_phase=$(grep 'current_phase:' ${WORKFLOW_DIR}/state.yaml | cut -d':' -f2 | xargs)
+        current_checkpoint=$(grep 'current_checkpoint:' ${WORKFLOW_DIR}/state.yaml | cut -d':' -f2 | xargs)
     fi
     
     echo -e "${CYAN}Current Phase:${NC} ${GREEN}${current_phase}${NC}"
@@ -376,7 +406,7 @@ list_checkpoints() {
     # Group checkpoints by phase
     for phase in $(seq 1 5); do
         local phase_name="phase_${phase}"
-        local checkpoints=$(grep "CP_${phase}_" .workflow/checkpoints.log 2>/dev/null)
+        local checkpoints=$(grep "CP_${phase}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null)
         
         if [ -n "$checkpoints" ]; then
             case $phase in
@@ -403,8 +433,8 @@ list_checkpoints() {
     done
     
     # Show statistics
-    local total=$(wc -l < .workflow/checkpoints.log)
-    local today=$(grep "$(date +%Y-%m-%d)" .workflow/checkpoints.log | wc -l)
+    local total=$(wc -l < ${WORKFLOW_DIR}/checkpoints.log)
+    local today=$(grep "$(date +%Y-%m-%d)" ${WORKFLOW_DIR}/checkpoints.log | wc -l)
     
     echo -e "${BLUE}─────────────────────────────────────────${NC}"
     echo -e "Total checkpoints: ${GREEN}${total}${NC}"
@@ -535,14 +565,14 @@ restore_checkpoint() {
 
     # Use atomic backup if available
     if declare -f safe_backup > /dev/null 2>&1; then
-        safe_backup .workflow/state.yaml "$backup_dir/state.yaml"
+        safe_backup ${WORKFLOW_DIR}/state.yaml "$backup_dir/state.yaml"
     else
-        cp .workflow/state.yaml "$backup_dir/state.yaml" 2>/dev/null || true
+        cp ${WORKFLOW_DIR}/state.yaml "$backup_dir/state.yaml" 2>/dev/null || true
     fi
 
-    [[ -f .workflow/handoff.md ]] && cp .workflow/handoff.md "$backup_dir/handoff.md"
-    [[ -f .workflow/agents/active.yaml ]] && cp .workflow/agents/active.yaml "$backup_dir/active_agent.yaml"
-    [[ -f .workflow/skills/enabled.yaml ]] && cp .workflow/skills/enabled.yaml "$backup_dir/enabled_skills.yaml"
+    [[ -f ${WORKFLOW_DIR}/handoff.md ]] && cp ${WORKFLOW_DIR}/handoff.md "$backup_dir/handoff.md"
+    [[ -f ${WORKFLOW_DIR}/agents/active.yaml ]] && cp ${WORKFLOW_DIR}/agents/active.yaml "$backup_dir/active_agent.yaml"
+    [[ -f ${WORKFLOW_DIR}/skills/enabled.yaml ]] && cp ${WORKFLOW_DIR}/skills/enabled.yaml "$backup_dir/enabled_skills.yaml"
 
     # Create backup metadata
     cat > "$backup_dir/metadata.yaml" << EOF
@@ -562,11 +592,11 @@ EOF
 
     # Restore core state file
     if declare -f atomic_write > /dev/null 2>&1; then
-        if ! atomic_write .workflow/state.yaml "$(cat "$snapshot_dir/state.yaml")"; then
+        if ! atomic_write ${WORKFLOW_DIR}/state.yaml "$(cat "$snapshot_dir/state.yaml")"; then
             restore_failed=1
         fi
     else
-        if ! cp "$snapshot_dir/state.yaml" .workflow/state.yaml; then
+        if ! cp "$snapshot_dir/state.yaml" ${WORKFLOW_DIR}/state.yaml; then
             restore_failed=1
         fi
     fi
@@ -581,23 +611,23 @@ EOF
     fi
 
     # Restore handoff
-    [[ -f "$snapshot_dir/handoff.md" ]] && cp "$snapshot_dir/handoff.md" .workflow/handoff.md
+    [[ -f "$snapshot_dir/handoff.md" ]] && cp "$snapshot_dir/handoff.md" ${WORKFLOW_DIR}/handoff.md
 
     # Restore agent and skills - check v2 locations first, then v1
     if [[ -f "$snapshot_dir/active_state/agent.yaml" ]]; then
-        mkdir -p .workflow/agents
-        cp "$snapshot_dir/active_state/agent.yaml" .workflow/agents/active.yaml
+        mkdir -p ${WORKFLOW_DIR}/agents
+        cp "$snapshot_dir/active_state/agent.yaml" ${WORKFLOW_DIR}/agents/active.yaml
     elif [[ -f "$snapshot_dir/active_agent.yaml" ]]; then
-        mkdir -p .workflow/agents
-        cp "$snapshot_dir/active_agent.yaml" .workflow/agents/active.yaml
+        mkdir -p ${WORKFLOW_DIR}/agents
+        cp "$snapshot_dir/active_agent.yaml" ${WORKFLOW_DIR}/agents/active.yaml
     fi
 
     if [[ -f "$snapshot_dir/active_state/skills.yaml" ]]; then
-        mkdir -p .workflow/skills
-        cp "$snapshot_dir/active_state/skills.yaml" .workflow/skills/enabled.yaml
+        mkdir -p ${WORKFLOW_DIR}/skills
+        cp "$snapshot_dir/active_state/skills.yaml" ${WORKFLOW_DIR}/skills/enabled.yaml
     elif [[ -f "$snapshot_dir/enabled_skills.yaml" ]]; then
-        mkdir -p .workflow/skills
-        cp "$snapshot_dir/enabled_skills.yaml" .workflow/skills/enabled.yaml
+        mkdir -p ${WORKFLOW_DIR}/skills
+        cp "$snapshot_dir/enabled_skills.yaml" ${WORKFLOW_DIR}/skills/enabled.yaml
     fi
 
     # Commit atomic transaction if available
@@ -607,15 +637,15 @@ EOF
 
     # Log restoration in checkpoint log
     if declare -f atomic_append > /dev/null 2>&1; then
-        atomic_append .workflow/checkpoints.log "${timestamp} | RESTORED | Restored to checkpoint ${checkpoint_id}"
+        atomic_append ${WORKFLOW_DIR}/checkpoints.log "${timestamp} | RESTORED | Restored to checkpoint ${checkpoint_id}"
     else
-        echo "${timestamp} | RESTORED | Restored to checkpoint ${checkpoint_id}" >> .workflow/checkpoints.log
+        echo "${timestamp} | RESTORED | Restored to checkpoint ${checkpoint_id}" >> ${WORKFLOW_DIR}/checkpoints.log
     fi
 
     # Update session recovery flag
     if declare -f yaml_set > /dev/null 2>&1; then
-        yaml_set .workflow/state.yaml "session.context_recovered" "true" 2>/dev/null || true
-        yaml_set .workflow/state.yaml "session.recovery_source" "$checkpoint_id" 2>/dev/null || true
+        yaml_set ${WORKFLOW_DIR}/state.yaml "session.context_recovered" "true" 2>/dev/null || true
+        yaml_set ${WORKFLOW_DIR}/state.yaml "session.recovery_source" "$checkpoint_id" 2>/dev/null || true
     fi
 
     # Verify recovery completeness if available
@@ -636,7 +666,7 @@ EOF
     # Show restored state
     echo ""
     echo -e "${CYAN}Restored State:${NC}"
-    grep -E "current_phase|current_checkpoint" .workflow/state.yaml 2>/dev/null | while IFS=':' read -r key value; do
+    grep -E "current_phase|current_checkpoint" ${WORKFLOW_DIR}/state.yaml 2>/dev/null | while IFS=':' read -r key value; do
         echo -e "  ${key}: ${GREEN}$(echo $value | xargs)${NC}"
     done
 }
@@ -649,8 +679,8 @@ show_checkpoint_status() {
     echo ""
     
     # Current checkpoint
-    local current_checkpoint=$(grep 'current_checkpoint:' .workflow/state.yaml | cut -d':' -f2 | xargs)
-    local current_phase=$(grep 'current_phase:' .workflow/state.yaml | cut -d':' -f2 | xargs)
+    local current_checkpoint=$(grep 'current_checkpoint:' ${WORKFLOW_DIR}/state.yaml | cut -d':' -f2 | xargs)
+    local current_phase=$(grep 'current_phase:' ${WORKFLOW_DIR}/state.yaml | cut -d':' -f2 | xargs)
     
     echo -e "${CYAN}Current Position:${NC}"
     echo -e "  Phase:      ${GREEN}${current_phase}${NC}"
@@ -658,8 +688,8 @@ show_checkpoint_status() {
     echo ""
     
     # Last checkpoint details
-    if [ -f .workflow/checkpoints.log ]; then
-        local last_checkpoint=$(tail -1 .workflow/checkpoints.log)
+    if [ -f ${WORKFLOW_DIR}/checkpoints.log ]; then
+        local last_checkpoint=$(tail -1 ${WORKFLOW_DIR}/checkpoints.log)
         IFS='|' read -r timestamp checkpoint description <<< "$last_checkpoint"
         
         echo -e "${CYAN}Last Checkpoint:${NC}"
@@ -673,7 +703,7 @@ show_checkpoint_status() {
     echo -e "${CYAN}Phase Progress:${NC}"
     for phase in $(seq 1 5); do
         local count
-        count=$(grep -c "CP_${phase}_" .workflow/checkpoints.log 2>/dev/null || echo 0)
+        count=$(grep -c "CP_${phase}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null || echo 0)
         count=$(echo "$count" | tr -d '[:space:]')
         [[ -z "$count" || ! "$count" =~ ^[0-9]+$ ]] && count=0
         local phase_name=""
@@ -705,9 +735,9 @@ show_checkpoint_status() {
     # Snapshot information
     echo ""
     echo -e "${CYAN}Snapshots:${NC}"
-    if [ -d .workflow/snapshots ]; then
-        local snapshot_count=$(find .workflow/snapshots -maxdepth 1 -type d | wc -l)
-        local snapshot_size=$(du -sh .workflow/snapshots 2>/dev/null | cut -f1)
+    if [ -d ${WORKFLOW_DIR}/snapshots ]; then
+        local snapshot_count=$(find ${WORKFLOW_DIR}/snapshots -maxdepth 1 -type d | wc -l)
+        local snapshot_size=$(du -sh ${WORKFLOW_DIR}/snapshots 2>/dev/null | cut -f1)
         echo -e "  Total snapshots: ${YELLOW}$((snapshot_count - 1))${NC}"
         echo -e "  Storage used:    ${YELLOW}${snapshot_size}${NC}"
     else
@@ -852,14 +882,14 @@ show_completeness_report() {
 
         echo ""
         echo -e "${CYAN}Required Files:${NC}"
-        if [[ -f .workflow/state.yaml ]]; then
+        if [[ -f ${WORKFLOW_DIR}/state.yaml ]]; then
             echo -e "  ${GREEN}✓${NC} state.yaml"
             ((score += 35))
         else
             echo -e "  ${RED}✗${NC} state.yaml"
         fi
 
-        if [[ -f .workflow/checkpoints.log ]]; then
+        if [[ -f ${WORKFLOW_DIR}/checkpoints.log ]]; then
             echo -e "  ${GREEN}✓${NC} checkpoints.log"
             ((score += 35))
         else
@@ -868,28 +898,28 @@ show_completeness_report() {
 
         echo ""
         echo -e "${CYAN}Optional Files:${NC}"
-        if [[ -f .workflow/handoff.md ]]; then
+        if [[ -f ${WORKFLOW_DIR}/handoff.md ]]; then
             echo -e "  ${GREEN}✓${NC} handoff.md"
             ((score += 10))
         else
             echo -e "  ${YELLOW}○${NC} handoff.md"
         fi
 
-        if [[ -f .workflow/config.yaml ]]; then
+        if [[ -f ${WORKFLOW_DIR}/config.yaml ]]; then
             echo -e "  ${GREEN}✓${NC} config.yaml"
             ((score += 10))
         else
             echo -e "  ${YELLOW}○${NC} config.yaml"
         fi
 
-        if [[ -f .workflow/agents/registry.yaml ]]; then
+        if [[ -f ${WORKFLOW_DIR}/agents/registry.yaml ]]; then
             echo -e "  ${GREEN}✓${NC} agents/registry.yaml"
             ((score += 5))
         else
             echo -e "  ${YELLOW}○${NC} agents/registry.yaml"
         fi
 
-        if [[ -f .workflow/skills/catalog.yaml ]]; then
+        if [[ -f ${WORKFLOW_DIR}/skills/catalog.yaml ]]; then
             echo -e "  ${GREEN}✓${NC} skills/catalog.yaml"
             ((score += 5))
         else
@@ -917,18 +947,18 @@ show_completeness_report() {
 
 # Function to toggle auto checkpointing
 toggle_auto_checkpoint() {
-    if [ ! -f .workflow/config.yaml ]; then
+    if [ ! -f ${WORKFLOW_DIR}/config.yaml ]; then
         echo -e "${RED}Error: Configuration file not found${NC}"
         exit 1
     fi
     
-    local current=$(grep 'auto_checkpoint:' .workflow/config.yaml | cut -d':' -f2 | xargs)
+    local current=$(grep 'auto_checkpoint:' ${WORKFLOW_DIR}/config.yaml | cut -d':' -f2 | xargs)
     
     if [ "$current" = "true" ]; then
-        sed -i 's/auto_checkpoint: true/auto_checkpoint: false/' .workflow/config.yaml
+        sed -i 's/auto_checkpoint: true/auto_checkpoint: false/' ${WORKFLOW_DIR}/config.yaml
         echo -e "${YELLOW}⏸  Auto-checkpointing disabled${NC}"
     else
-        sed -i 's/auto_checkpoint: false/auto_checkpoint: true/' .workflow/config.yaml
+        sed -i 's/auto_checkpoint: false/auto_checkpoint: true/' ${WORKFLOW_DIR}/config.yaml
         echo -e "${GREEN}▶  Auto-checkpointing enabled${NC}"
         
         # Setup cron job for hourly checkpoints
@@ -941,7 +971,7 @@ setup_auto_checkpoint() {
     echo -e "${CYAN}Setting up auto-checkpoint...${NC}"
     
     # Create auto-checkpoint script
-    cat > .workflow/scripts/auto_checkpoint.sh << 'EOF'
+    cat > ${WORKFLOW_DIR}/scripts/auto_checkpoint.sh << 'EOF'
 #!/bin/bash
 # Auto checkpoint script
 
@@ -953,7 +983,7 @@ if grep -q "auto_checkpoint: true" .workflow/config.yaml; then
 fi
 EOF
     
-    chmod +x .workflow/scripts/auto_checkpoint.sh
+    chmod +x ${WORKFLOW_DIR}/scripts/auto_checkpoint.sh
     
     echo -e "${GREEN}✓ Auto-checkpoint configured${NC}"
     echo -e "  Add to crontab for hourly execution:"

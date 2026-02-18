@@ -7,9 +7,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="${PROJECT_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 
-# Source utility libraries if available
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_DIR}/lib/resolve_project.sh"
+
+PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
+
+# Source utility libraries if available (suppress yq warning)
+YAML_UTILS_QUIET=true
 if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/yaml_utils.sh"
 fi

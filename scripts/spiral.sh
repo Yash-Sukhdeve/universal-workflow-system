@@ -9,8 +9,10 @@ set -e
 
 ACTION="${1:-status}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKFLOW_DIR="${SCRIPT_DIR}/../.workflow"
-STATE_FILE="${WORKFLOW_DIR}/state.yaml"
+
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_DIR}/lib/resolve_project.sh"
+
 PM_SCRIPT="${SCRIPT_DIR}/pm.sh"
 
 # Ensure workflow directory exists

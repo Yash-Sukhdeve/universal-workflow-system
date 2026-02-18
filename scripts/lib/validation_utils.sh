@@ -295,15 +295,16 @@ validate_identifier() {
 #   0 if initialized, 1 if not
 #######################################
 validate_workflow_initialized() {
-    if [[ ! -d ".workflow" ]]; then
+    local wf_dir="${WORKFLOW_DIR:-.workflow}"
+    if [[ ! -d "${wf_dir}" ]]; then
         echo -e "${RED}Error: Workflow not initialized${NC}" >&2
-        echo -e "${YELLOW}Run './scripts/init_workflow.sh' to initialize${NC}" >&2
+        echo -e "${YELLOW}Run init_workflow.sh in your project directory${NC}" >&2
         return $INVALID
     fi
 
-    if [[ ! -f ".workflow/state.yaml" ]]; then
+    if [[ ! -f "${wf_dir}/state.yaml" ]]; then
         echo -e "${RED}Error: Workflow state file not found${NC}" >&2
-        echo -e "${YELLOW}Run './scripts/init_workflow.sh' to initialize${NC}" >&2
+        echo -e "${YELLOW}Run init_workflow.sh in your project directory${NC}" >&2
         return $INVALID
     fi
 

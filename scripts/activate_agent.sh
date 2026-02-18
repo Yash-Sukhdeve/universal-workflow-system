@@ -9,6 +9,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
 
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_LIB_DIR}/resolve_project.sh"
+
 AGENT_NAME="${1:-}"
 COMMAND="${2:-activate}"
 
@@ -16,7 +19,7 @@ COMMAND="${2:-activate}"
 source_lib() {
     local lib="$1"
     if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
-        source "${SCRIPT_LIB_DIR}/${lib}"
+        YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/${lib}"
         return 0
     fi
     return 1

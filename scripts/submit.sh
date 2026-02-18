@@ -11,9 +11,12 @@ MESSAGE="${1:-Update}"
 TICKET_ID="${2:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="${SCRIPT_DIR}/.."
+
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_DIR}/lib/resolve_project.sh"
+
+PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 UWS_DIR="${PROJECT_ROOT}/.uws"
-WORKFLOW_DIR="${PROJECT_ROOT}/.workflow"
 STAGING_DIR="${UWS_DIR}/crs"
 NOTIFICATIONS_FILE="${PROJECT_ROOT}/NOTIFICATIONS.md"
 ACTIVE_AGENT_FILE="${WORKFLOW_DIR}/agents/active.yaml"

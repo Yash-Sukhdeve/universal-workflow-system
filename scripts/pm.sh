@@ -9,7 +9,11 @@ set -e
 
 COMMAND="${1:-list}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="${SCRIPT_DIR}/.."
+
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_DIR}/lib/resolve_project.sh"
+
+PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 ISSUES_DIR="${PROJECT_ROOT}/.uws/issues"
 BOARD_FILE="${PROJECT_ROOT}/BOARD.md"
 

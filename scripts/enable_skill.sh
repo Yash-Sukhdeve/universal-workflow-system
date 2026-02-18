@@ -6,11 +6,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
+
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_LIB_DIR}/resolve_project.sh"
 SKILL_NAME="${1:-}"
 COMMAND="${2:-enable}"
 PARAMS="${3:-}"
 
-# Source utility libraries
+# Source utility libraries (suppress yq warning)
+YAML_UTILS_QUIET=true
 if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/validation_utils.sh"
 fi

@@ -17,9 +17,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
-# Use environment variable if set, otherwise default to script-relative path
-WORKFLOW_DIR="${WORKFLOW_DIR:-${SCRIPT_DIR}/../.workflow}"
-STATE_FILE="${WORKFLOW_DIR}/state.yaml"
+
+# Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
+source "${SCRIPT_LIB_DIR}/resolve_project.sh"
 
 # SDLC Phase definitions
 readonly SDLC_PHASES=("requirements" "design" "implementation" "verification" "deployment" "maintenance")
