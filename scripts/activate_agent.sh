@@ -286,7 +286,7 @@ capabilities:"
     # Create agent workspace
     mkdir -p "workspace/${agent}"
 
-    # Load agent-specific skills
+    # Load universal protocol + agent-specific skills
     load_agent_skills "$agent"
 
     # Update state file with active agent info
@@ -342,41 +342,58 @@ capabilities:"
             echo "- **Responsibilities**:"
             case $agent in
                 researcher)
-                    echo "  - Review existing literature and prior art"
-                    echo "  - Form and validate hypotheses"
-                    echo "  - Design experiments with statistical rigor"
+                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
+                    echo "  - Deep-dive requirements: assign REQ IDs, ask 5+ probing questions"
+                    echo "  - Produce gap analysis table (no unresolved rows)"
+                    echo "  - Enumerate failure modes per subsystem (min 3 each)"
+                    echo "  - Review prior art and cite sources"
+                    echo "  - Full protocol: docs/personas/researcher.md"
                     ;;
                 architect)
-                    echo "  - Design system architecture with component diagrams"
-                    echo "  - Define all APIs, data models, and interfaces"
-                    echo "  - Document technical constraints and failure modes"
-                    echo "  - Produce architecture document before passing to implementer"
+                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
+                    echo "  - Verify researcher requirements (complete REQ IDs, acceptance criteria)"
+                    echo "  - Design all subsystems: components, APIs, data models, integrations"
+                    echo "  - Produce failure mode analysis table per component (min 3 modes each)"
+                    echo "  - Trace end-to-end flows for every user feature"
+                    echo "  - Document cross-cutting concerns: security, observability, deployment"
+                    echo "  - Full protocol: docs/personas/architect.md"
                     ;;
                 implementer)
-                    echo "  - Implement all features per design specification"
-                    echo "  - Write zero placeholder/stub code"
-                    echo "  - Create tests for new functionality"
-                    echo "  - Update dependencies and configuration"
+                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
+                    echo "  - Verify architect design completeness before coding"
+                    echo "  - Implement ALL components: zero stubs, zero TODOs, zero placeholders"
+                    echo "  - Follow implementation order: data -> logic -> API -> workers -> integration"
+                    echo "  - Test count >= 2x endpoint count"
+                    echo "  - Full protocol: docs/personas/implementer.md"
                     ;;
                 experimenter)
-                    echo "  - Execute full test suite and report results"
-                    echo "  - Perform integration and system testing"
-                    echo "  - Report verification coverage and gaps"
+                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
+                    echo "  - Audit implementation against design (coverage matrix)"
+                    echo "  - End-to-end verification per user feature (not just HTTP status)"
+                    echo "  - Failure injection testing per integration point"
+                    echo "  - Establish performance baselines"
+                    echo "  - Full protocol: docs/personas/experimenter.md"
                     ;;
                 optimizer)
-                    echo "  - Profile performance bottlenecks"
-                    echo "  - Optimize critical paths"
-                    echo "  - Measure and report improvements"
+                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
+                    echo "  - Establish baselines BEFORE any optimization"
+                    echo "  - Hypothesis-driven optimization with before/after evidence"
+                    echo "  - Verify zero regressions after each change"
+                    echo "  - Full protocol: docs/personas/optimizer.md"
                     ;;
                 deployer)
-                    echo "  - Containerize application"
-                    echo "  - Configure health checks and monitoring"
-                    echo "  - Update deployment documentation"
+                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
+                    echo "  - Verify health checks, graceful shutdown, non-root container"
+                    echo "  - Configure CI/CD pipeline with automated rollback"
+                    echo "  - Set up monitoring, alerting, and runbooks"
+                    echo "  - Full protocol: docs/personas/deployer.md"
                     ;;
                 documenter)
-                    echo "  - Write/update README and API docs"
-                    echo "  - Document architecture decisions"
-                    echo "  - Create user guides"
+                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
+                    echo "  - Audit documentation coverage (every component, API, feature)"
+                    echo "  - Test all code examples (must actually run)"
+                    echo "  - Document all error responses and troubleshooting (min 5 entries)"
+                    echo "  - Full protocol: docs/personas/documenter.md"
                     ;;
             esac
         } >> "$handoff_file"
@@ -397,11 +414,19 @@ load_agent_skills() {
     
     echo -e "${BLUE}Loading skills for ${agent}...${NC}"
 
-    # 1. Load Persona (The "Senior" Upgrade)
+    # 1. Load Universal Protocol (shared by ALL agents)
+    PROTOCOL_FILE="docs/personas/_universal_protocol.md"
+    if [[ -f "$PROTOCOL_FILE" ]]; then
+        echo -e "${YELLOW}📜 Loading Universal Protocol${NC}"
+        echo "" >> .workflow/agents/active.yaml
+        echo "universal_protocol: |" >> .workflow/agents/active.yaml
+        sed 's/^/  /' "$PROTOCOL_FILE" >> .workflow/agents/active.yaml
+    fi
+
+    # 2. Load Agent-Specific Persona
     PERSONA_FILE="docs/personas/${agent}.md"
     if [[ -f "$PERSONA_FILE" ]]; then
-        echo -e "${YELLOW}📜 Loading Persona: ${agent} (Senior Mode)${NC}"
-        # Inject persona into active.yaml (append)
+        echo -e "${YELLOW}📜 Loading Persona: ${agent} (Operational Protocol)${NC}"
         echo "" >> .workflow/agents/active.yaml
         echo "persona: |" >> .workflow/agents/active.yaml
         sed 's/^/  /' "$PERSONA_FILE" >> .workflow/agents/active.yaml

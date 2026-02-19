@@ -18,6 +18,16 @@
             "statusMessage": "Loading memory context..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\" && [ -f .workflow/agents/active.yaml ] && grep -q 'universal_protocol:' .workflow/agents/active.yaml 2>/dev/null && AGENT=$(grep 'current_agent:' .workflow/agents/active.yaml | cut -d'\"' -f2) && echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"SessionStart\\\",\\\"additionalContext\\\":\\\"ACTIVE AGENT: ${AGENT}. Read .workflow/agents/active.yaml for the universal_protocol and persona blocks. Follow Phase 0 Context Intake before starting work. Checklists are gates, not suggestions.\\\"}}\" || true",
+            "timeout": 5,
+            "statusMessage": "Loading agent persona..."
+          }
+        ]
       }
     ],
     "PreCompact": [
