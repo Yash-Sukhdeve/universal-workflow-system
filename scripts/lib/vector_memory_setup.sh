@@ -20,10 +20,21 @@ if [[ -z "${RED:-}" ]]; then
     NC='\033[0m'
 fi
 
-# Constants
+# Source config resolution library
+_VMS_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${_VMS_LIB_DIR}/uws_config.sh" ]]; then
+    source "${_VMS_LIB_DIR}/uws_config.sh"
+fi
+
+# Constants — resolve via config chain if available, else use defaults
 UWS_VECTOR_REPO="https://github.com/cornebidouil/vector-memory-mcp.git"
-UWS_VECTOR_INSTALL_DIR="${HOME}/.uws/tools/vector-memory"
-UWS_VECTOR_GLOBAL_DIR="${HOME}/uws-global-knowledge"
+if declare -f uws_resolve_vector_server_dir &>/dev/null; then
+    UWS_VECTOR_INSTALL_DIR="$(uws_resolve_vector_server_dir)"
+    UWS_VECTOR_GLOBAL_DIR="$(uws_resolve_global_memory_dir)"
+else
+    UWS_VECTOR_INSTALL_DIR="${HOME}/.uws/tools/vector-memory"
+    UWS_VECTOR_GLOBAL_DIR="${HOME}/uws-global-knowledge"
+fi
 UWS_VECTOR_PACKAGES="sqlite-vec sentence-transformers fastmcp"
 UWS_VECTOR_MIN_DISK_KB=8388608  # 8 GB in KB
 
@@ -210,6 +221,14 @@ uws_vm_setup_venv() {
 uws_vm_create_global_dir() {
     if [[ -d "${UWS_VECTOR_GLOBAL_DIR}" ]]; then
         return 0
+    fi
+
+    # Validate path has no dot-prefixed components (security.py rejects them)
+    if declare -f uws_validate_global_dir_path &>/dev/null; then
+        if ! uws_validate_global_dir_path "${UWS_VECTOR_GLOBAL_DIR}"; then
+            echo -e "${YELLOW}  Global dir path rejected: ${UWS_VECTOR_GLOBAL_DIR}${NC}" >&2
+            return 1
+        fi
     fi
 
     mkdir -p "${UWS_VECTOR_GLOBAL_DIR}" || {
@@ -460,6 +479,11 @@ setup_vector_memory() {
         echo -e "  ${GREEN}✓${NC} Vector memory setup complete"
     else
         echo -e "  ${YELLOW}Warning: verification failed, but files are in place${NC}"
+    fi
+
+    # Persist resolved paths to global config for subsequent project inits
+    if declare -f uws_persist_config &>/dev/null; then
+        uws_persist_config || true
     fi
 
     return 0

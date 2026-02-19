@@ -12,6 +12,9 @@ PROJECT_ROOT="$(pwd)"
 PROJECT_TYPE_ARG="${1:-}"
 
 # Source utility libraries
+if [[ -f "${SCRIPT_DIR}/lib/uws_config.sh" ]]; then
+    source "${SCRIPT_DIR}/lib/uws_config.sh"
+fi
 if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/validation_utils.sh"
 fi
@@ -509,7 +512,18 @@ create_uws_wrapper() {
 
 set -euo pipefail
 
-UWS_SCRIPTS="${SCRIPT_DIR}"
+# Resolve UWS install dir: config file → baked-in fallback
+_UWS_CONFIG_FILE="\${XDG_CONFIG_HOME:-\${HOME}/.config}/uws/config.yaml"
+_UWS_BAKED_DIR="${SCRIPT_DIR}"
+if [[ -f "\$_UWS_CONFIG_FILE" ]]; then
+    _UWS_CFG_DIR="\$(grep -E '^uws_install_dir:' "\$_UWS_CONFIG_FILE" 2>/dev/null | head -1 | sed 's/^[^:]*:[[:space:]]*//' | sed 's/^"//;s/"$//' | sed "s/^'//;s/'$//")" || true
+fi
+UWS_SCRIPTS="\${_UWS_CFG_DIR:-\$_UWS_BAKED_DIR}"
+# Validate resolved dir exists; fall back if not
+if [[ ! -d "\$UWS_SCRIPTS" ]]; then
+    UWS_SCRIPTS="\$_UWS_BAKED_DIR"
+fi
+
 export WORKFLOW_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/.workflow"
 export STATE_FILE="\${WORKFLOW_DIR}/state.yaml"
 
