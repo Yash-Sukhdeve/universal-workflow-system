@@ -58,6 +58,7 @@ Project Management:
   pm [args]                Project management (issues/board)
   submit [args]            Submit code for review
   detect                   Auto-detect and configure project type
+  uninstall [opts]         Remove UWS (--project|--global|--all) [--dry-run]
 
 Company OS:
   company-os start         Start Company OS backend
@@ -76,6 +77,8 @@ Examples:
   uws checkpoint create "Feature complete"
   uws agent researcher     Activate the researcher agent
   uws sdlc next            Advance to next SDLC phase
+  uws uninstall --dry-run  Preview what uninstall would remove
+  uws uninstall --all      Remove UWS from project + system
 EOF
 }
 
@@ -103,6 +106,18 @@ main() {
                 "$self_dir/scripts/init_workflow.sh" "$@"
             else
                 echo "Error: Cannot find init_workflow.sh relative to uws binary." >&2
+                exit 1
+            fi
+            exit $?
+            ;;
+        uninstall)
+            # uninstall doesn't need .workflow/ — find scripts via $0 location
+            local self_dir
+            self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+            if [[ -x "$self_dir/scripts/uninstall.sh" ]]; then
+                "$self_dir/scripts/uninstall.sh" "$@"
+            else
+                echo "Error: Cannot find uninstall.sh relative to uws binary." >&2
                 exit 1
             fi
             exit $?
