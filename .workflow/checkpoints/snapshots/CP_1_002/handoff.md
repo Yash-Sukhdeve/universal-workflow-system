@@ -1,52 +1,26 @@
-# Workflow Handoff
+# Context Handoff Document
 
-**Last Updated**: Template
-**Phase**: phase_1_planning
-**Checkpoint**: CP_1_001
+## Last Session Summary
+- **Date**: 2026-02-19T11:45:15-05:00
+- **Phase**: phase_1_planning
+- **Checkpoint**: CP_1_001
+- **Working on**: Initial setup
 
----
-
-## Current Status
-
-This is the Universal Workflow System template. Initialize this for your project using:
-
-```bash
-./scripts/init_workflow.sh
-```
-
-Or install Claude Code integration:
-
-```bash
-./claude-code-integration/install.sh
-```
+## Critical Context
+1. Project type: llm
+2. Workflow system initialized
+3. Ready to begin planning phase
 
 ## Next Actions
+- [ ] Define project scope
+- [ ] Document requirements
+- [ ] Set up development environment
 
-- [ ] Initialize workflow for your project
-- [ ] Configure project type (research, software, ML, etc.)
-- [ ] Activate an agent to begin work
-
-## Quick Commands
-
+## Commands to Resume
 ```bash
-# Initialize
-./scripts/init_workflow.sh
-
-# Check status
-./scripts/status.sh
-
-# Recover context
+cd "/home/lab2208/Documents/universal-workflow-system"
 ./scripts/recover_context.sh
-
-# Create checkpoint
-./scripts/checkpoint.sh "Your message"
-
-# Activate agent
-./scripts/activate_agent.sh implementer
 ```
 
-## Documentation
-
-- [README.md](../README.md) - Getting started
-- [CLAUDE.md](../CLAUDE.md) - Claude Code integration
-- [CONTRIBUTING.md](../CONTRIBUTING.md) - Contributing guide
+## Notes
+_Add session-specific notes here_

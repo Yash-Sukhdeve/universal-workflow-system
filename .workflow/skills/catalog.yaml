@@ -1,528 +1,73 @@
-# Universal Skill Catalog
-# Comprehensive catalog of all available skills
-
-skill_categories:
-  research:
-    name: "Research Skills"
-    description: "Skills for academic and industrial research"
-    icon: "🔬"
-    
-  development:
-    name: "Development Skills"
-    description: "Software and model development skills"
-    icon: "💻"
-    
-  ml_ai:
-    name: "ML/AI Skills"
-    description: "Machine learning and AI specific skills"
-    icon: "🤖"
-    
-  optimization:
-    name: "Optimization Skills"
-    description: "Performance and efficiency optimization"
-    icon: "⚡"
-    
-  deployment:
-    name: "Deployment Skills"
-    description: "Deployment and operations skills"
-    icon: "🚀"
-    
-  documentation:
-    name: "Documentation Skills"
-    description: "Writing and communication skills"
-    icon: "📝"
+# Skill Catalog - Available Skills
 
 skills:
   # Research Skills
   literature_review:
-    category: research
-    description: "Systematic literature review and analysis"
-    complexity: medium
-    time_estimate: "2-4 hours"
-    inputs:
-      - search_query
-      - paper_sources
-      - inclusion_criteria
-    outputs:
-      - paper_database.json
-      - literature_synthesis.md
-      - research_gaps.md
-    tools:
-      - python
-      - scholarly
-      - bibtex
-    templates:
-      - search_protocol.md
-      - paper_summary.md
-      
+    description: "Search and analyze academic literature"
+    agent: researcher
+
   experimental_design:
-    category: research
-    description: "Design rigorous experiments"
-    complexity: high
-    time_estimate: "1-2 hours"
-    inputs:
-      - research_questions
-      - variables
-      - constraints
-    outputs:
-      - experiment_plan.yaml
-      - evaluation_matrix.md
-      - statistical_plan.md
-    tools:
-      - python
-      - scipy
-      
+    description: "Design experiments and studies"
+    agent: researcher
+
   statistical_validation:
-    category: research
-    description: "Statistical testing and validation"
-    complexity: medium
-    time_estimate: "1-2 hours"
-    inputs:
-      - results_data
-      - hypothesis
-      - significance_level
-    outputs:
-      - statistical_report.md
-      - p_values.yaml
-      - confidence_intervals.yaml
-    tools:
-      - python
-      - scipy
-      - statsmodels
-      
-  # Development Skills
+    description: "Statistical analysis and validation"
+    agent: researcher
+
+  # Architecture Skills
+  system_design:
+    description: "High-level system architecture design"
+    agent: architect
+
+  api_design:
+    description: "API design and documentation"
+    agent: architect
+
+  # Implementation Skills
   code_generation:
-    category: development
     description: "Generate code from specifications"
-    complexity: medium
-    time_estimate: "1-3 hours"
-    inputs:
-      - specification
-      - language
-      - style_guide
-    outputs:
-      - source_code/
-      - unit_tests/
-      - documentation.md
-    tools:
-      - python
-      - black
-      - pytest
-      
+    agent: implementer
+
   debugging:
-    category: development
-    description: "Debug and fix code issues"
-    complexity: medium
-    time_estimate: "30min-2 hours"
-    inputs:
-      - error_logs
-      - source_code
-      - test_cases
-    outputs:
-      - fixed_code/
-      - debug_report.md
-      - root_cause.md
-    tools:
-      - debugger
-      - profiler
-      - linter
-      
+    description: "Debug and fix issues"
+    agent: implementer
+
   testing:
-    category: development
-    description: "Create and run comprehensive tests"
-    complexity: medium
-    time_estimate: "1-2 hours"
-    inputs:
-      - source_code
-      - requirements
-      - test_strategy
-    outputs:
-      - test_suite/
-      - coverage_report.html
-      - test_results.yaml
-    tools:
-      - pytest
-      - coverage
-      - tox
-      
-  refactoring:
-    category: development
-    description: "Refactor code for better design"
-    complexity: medium
-    time_estimate: "1-3 hours"
-    inputs:
-      - source_code
-      - design_patterns
-      - performance_goals
-    outputs:
-      - refactored_code/
-      - refactoring_report.md
-      - performance_comparison.yaml
-    tools:
-      - ast
-      - black
-      - pylint
-      
-  # ML/AI Skills
-  model_development:
-    category: ml_ai
-    description: "Build machine learning models"
-    complexity: high
-    time_estimate: "2-8 hours"
-    inputs:
-      - dataset
-      - task_type
-      - performance_target
-    outputs:
-      - model/
-      - training_logs/
-      - model_card.md
-    tools:
-      - pytorch
-      - tensorflow
-      - transformers
-      
-  fine_tuning:
-    category: ml_ai
-    description: "Fine-tune pre-trained models"
-    complexity: high
-    time_estimate: "4-12 hours"
-    inputs:
-      - base_model
-      - training_data
-      - hyperparameters
-    outputs:
-      - fine_tuned_model/
-      - training_curves.png
-      - evaluation_metrics.yaml
-    tools:
-      - transformers
-      - accelerate
-      - wandb
-      
-  quantization:
-    category: ml_ai
-    description: "Quantize models for efficiency"
-    complexity: high
-    time_estimate: "2-4 hours"
-    inputs:
-      - model
-      - target_bits
-      - calibration_data
-    outputs:
-      - quantized_model/
-      - compression_ratio.yaml
-      - performance_report.md
-    tools:
-      - pytorch
-      - onnx
-      - tensorrt
-      
-  pruning:
-    category: ml_ai
-    description: "Prune models to reduce size"
-    complexity: high
-    time_estimate: "2-4 hours"
-    inputs:
-      - model
-      - sparsity_target
-      - importance_metric
-    outputs:
-      - pruned_model/
-      - sparsity_report.yaml
-      - accuracy_comparison.md
-    tools:
-      - pytorch
-      - neural_compressor
-      
-  distillation:
-    category: ml_ai
-    description: "Knowledge distillation"
-    complexity: high
-    time_estimate: "4-8 hours"
-    inputs:
-      - teacher_model
-      - student_architecture
-      - training_data
-    outputs:
-      - student_model/
-      - distillation_logs/
-      - performance_comparison.yaml
-    tools:
-      - pytorch
-      - transformers
-      
-  # Optimization Skills
-  profiling:
-    category: optimization
-    description: "Profile code performance"
-    complexity: medium
-    time_estimate: "1-2 hours"
-    inputs:
-      - source_code
-      - workload
-      - metrics
-    outputs:
-      - profiling_report.html
-      - bottlenecks.yaml
-      - optimization_suggestions.md
-    tools:
-      - cProfile
-      - line_profiler
-      - memory_profiler
-      
+    description: "Write and run tests"
+    agent: implementer
+
+  # Experiment Skills
   benchmarking:
-    category: optimization
-    description: "Run comprehensive benchmarks"
-    complexity: medium
-    time_estimate: "1-3 hours"
-    inputs:
-      - system
-      - test_suite
-      - baseline
-    outputs:
-      - benchmark_results.yaml
-      - performance_graphs/
-      - comparison_report.md
-    tools:
-      - pytest-benchmark
-      - locust
-      - apache-bench
-      
-  hyperparameter_tuning:
-    category: optimization
-    description: "Optimize hyperparameters"
-    complexity: high
-    time_estimate: "4-24 hours"
-    inputs:
-      - model
-      - search_space
-      - objective_metric
-    outputs:
-      - best_params.yaml
-      - tuning_history.csv
-      - optimization_curves.png
-    tools:
-      - optuna
-      - ray-tune
-      - wandb
-      
-  resource_optimization:
-    category: optimization
-    description: "Optimize resource usage"
-    complexity: medium
-    time_estimate: "2-4 hours"
-    inputs:
-      - system_profile
-      - constraints
-      - priorities
-    outputs:
-      - optimization_plan.yaml
-      - resource_allocation.md
-      - cost_analysis.yaml
-    tools:
-      - kubernetes
-      - prometheus
-      - grafana
-      
+    description: "Performance benchmarking"
+    agent: experimenter
+
+  data_analysis:
+    description: "Analyze experimental data"
+    agent: experimenter
+
+  # Optimization Skills
+  performance_profiling:
+    description: "Profile and analyze performance"
+    agent: optimizer
+
+  quantization:
+    description: "Model quantization for efficiency"
+    agent: optimizer
+
   # Deployment Skills
-  containerization:
-    category: deployment
-    description: "Create container images"
-    complexity: medium
-    time_estimate: "1-2 hours"
-    inputs:
-      - application
-      - dependencies
-      - configuration
-    outputs:
-      - Dockerfile
-      - docker-compose.yaml
-      - container_image
-    tools:
-      - docker
-      - buildah
-      - podman
-      
   ci_cd:
-    category: deployment
-    description: "Setup CI/CD pipelines"
-    complexity: high
-    time_estimate: "2-4 hours"
-    inputs:
-      - repository
-      - test_suite
-      - deployment_target
-    outputs:
-      - .github/workflows/
-      - gitlab-ci.yaml
-      - jenkins_pipeline
-    tools:
-      - github_actions
-      - gitlab_ci
-      - jenkins
-      
-  monitoring:
-    category: deployment
-    description: "Setup monitoring and alerting"
-    complexity: medium
-    time_estimate: "2-3 hours"
-    inputs:
-      - application
-      - metrics
-      - sla_requirements
-    outputs:
-      - monitoring_config/
-      - dashboards/
-      - alert_rules.yaml
-    tools:
-      - prometheus
-      - grafana
-      - datadog
-      
-  scaling:
-    category: deployment
-    description: "Configure auto-scaling"
-    complexity: high
-    time_estimate: "2-4 hours"
-    inputs:
-      - application
-      - load_patterns
-      - cost_constraints
-    outputs:
-      - scaling_policy.yaml
-      - hpa_config.yaml
-      - cost_projection.md
-    tools:
-      - kubernetes
-      - aws_autoscaling
-      - terraform
-      
+    description: "Continuous integration and deployment"
+    agent: deployer
+
+  containerization:
+    description: "Docker and container management"
+    agent: deployer
+
   # Documentation Skills
   technical_writing:
-    category: documentation
     description: "Write technical documentation"
-    complexity: medium
-    time_estimate: "2-4 hours"
-    inputs:
-      - subject_matter
-      - audience
-      - format
-    outputs:
-      - documentation/
-      - api_reference.md
-      - user_guide.md
-    tools:
-      - markdown
-      - sphinx
-      - mkdocs
-      
-  paper_writing:
-    category: documentation
-    description: "Write academic papers"
-    complexity: high
-    time_estimate: "8-40 hours"
-    inputs:
-      - research_results
-      - literature_review
-      - target_venue
-    outputs:
-      - paper.tex
-      - figures/
-      - bibliography.bib
-    tools:
-      - latex
-      - bibtex
-      - overleaf
-      
-  visualization:
-    category: documentation
-    description: "Create data visualizations"
-    complexity: medium
-    time_estimate: "1-3 hours"
-    inputs:
-      - data
-      - chart_types
-      - style_guide
-    outputs:
-      - visualizations/
-      - interactive_plots.html
-      - static_figures/
-    tools:
-      - matplotlib
-      - plotly
-      - d3js
-      
-  presentation:
-    category: documentation
-    description: "Create presentations"
-    complexity: medium
-    time_estimate: "2-4 hours"
-    inputs:
-      - content
-      - audience
-      - duration
-    outputs:
-      - slides.pptx
-      - speaker_notes.md
-      - handouts.pdf
-    tools:
-      - powerpoint
-      - reveal.js
-      - beamer
+    agent: documenter
 
-# Skill chains for complex workflows
-skill_chains:
-  full_research_pipeline:
-    description: "Complete research workflow"
-    sequence:
-      - literature_review
-      - experimental_design
-      - model_development
-      - experimenter_execution
-      - statistical_validation
-      - paper_writing
-      
-  ml_optimization_pipeline:
-    description: "ML model optimization workflow"
-    sequence:
-      - profiling
-      - quantization
-      - pruning
-      - benchmarking
-      - deployment_optimization
-      
-  production_deployment:
-    description: "Production deployment workflow"
-    sequence:
-      - testing
-      - containerization
-      - ci_cd
-      - monitoring
-      - scaling
-
-# Skill dependencies and requirements
-skill_requirements:
-  quantization:
-    requires:
-      - model_development
-      - benchmarking
-    recommended:
-      - profiling
-      - pruning
-      
-  paper_writing:
-    requires:
-      - literature_review
-      - statistical_validation
-    recommended:
-      - visualization
-      - presentation
-      
-  deployment:
-    requires:
-      - testing
-      - containerization
-    recommended:
-      - monitoring
-      - ci_cd
+  api_documentation:
+    description: "Generate API documentation"
+    agent: documenter

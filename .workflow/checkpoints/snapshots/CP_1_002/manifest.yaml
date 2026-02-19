@@ -1,19 +1,19 @@
 # Checkpoint Manifest - v2 format
 snapshot_id: "CP_1_002"
-created: "2025-12-15T11:21:03-05:00"
+created: "2026-02-19T11:47:48-05:00"
 version: "2.0"
 files:
   - path: "handoff.md"
-    checksum: "5ad724d91ab0396a1b6666d5b56a828fce63cc4659990f603b8d2ff65d99b398"
+    checksum: "02209c618e2d5ad7ef3f42f67bc65b7cba5c15caabd5e3ae77f69e495704ed9d"
     required: true
   - path: "metadata.yaml"
-    checksum: "c553828ce99f75a1a5e7a44a1c287dc9a7db610b8dfd062a51715e488283a794"
+    checksum: "6862ba28463709ddb2ae9b57395f0f7db126578cc209f70e1cfd69718ab30913"
     required: true
   - path: "state.yaml"
-    checksum: "0c1e95ee3fafa91cbb84d30654d908fd14f37c75400d4280aa8e538db4115453"
+    checksum: "aa34b883e859c9dfb5eb0a28784d5d68bab504614b727ada4a7a36c50d111fb2"
     required: true
   - path: "active_state/session.yaml"
-    checksum: "7bb2fbcc6cfb9227baa79e5327992c5000bee01e32194f1fa0783dd3697ed67a"
+    checksum: "a29ba3a89c47b14c2d8d24970218a1ae55f6612ef22bc740c57b05f3bcac700d"
     required: false
 total_files: 4
-combined_checksum: "0380e1672193adafdeefde245f1fa498c1eca53fbb0dfe3fe862a8184d3314f1"
+combined_checksum: "f110f3b10c8d6b3b60fd9578951dd6d3f3ef6839f0f577771134446140478e96"

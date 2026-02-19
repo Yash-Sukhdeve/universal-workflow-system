@@ -140,3 +140,9 @@ memory/
 .env.production
 secrets/
 credentials/
+
+# Workflow system
+.workflow/agents/memory/*
+.workflow/*.tmp
+workspace/*
+!workspace/.gitkeep
