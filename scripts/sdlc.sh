@@ -8,6 +8,7 @@
 #   status  - Show current SDLC phase
 #   start   - Begin SDLC cycle at requirements phase
 #   next    - Advance to next phase
+#   goto    - Jump to a specific phase (e.g., goto requirements)
 #   fail    - Report failure in current phase (triggers regression)
 #   reset   - Reset SDLC state
 #
@@ -205,6 +206,71 @@ get_regression_phase() {
 }
 
 #######################################
+# Phase deliverables (exit criteria)
+# Returns recommended deliverables for a phase
+#######################################
+get_phase_deliverables() {
+    local phase="$1"
+
+    case "$phase" in
+        "requirements")
+            echo "- Requirements document with user stories and acceptance criteria"
+            echo "- Non-functional requirements defined"
+            echo "- Failure modes documented for each feature"
+            ;;
+        "design")
+            echo "- Architecture document with component diagram"
+            echo "- API specification with all endpoints"
+            echo "- Database schema documented"
+            echo "- Config system defined"
+            ;;
+        "implementation")
+            echo "- All features implemented per design"
+            echo "- No stubbed or placeholder code"
+            echo "- Dependencies declared in requirements file"
+            ;;
+        "verification")
+            echo "- All tests pass"
+            echo "- Input validation on all models"
+            echo "- Security review completed"
+            ;;
+        "deployment")
+            echo "- Docker/container build succeeds"
+            echo "- Health endpoint responds"
+            echo "- README updated with setup instructions"
+            ;;
+        "maintenance")
+            echo "- Audit document updated"
+            echo "- All original gaps verified closed"
+            ;;
+    esac
+}
+
+#######################################
+# Append phase transition to handoff.md (G6 fix)
+#######################################
+append_to_handoff() {
+    local from_phase="$1"
+    local to_phase="$2"
+    local handoff_file="${WORKFLOW_DIR}/handoff.md"
+
+    if [[ ! -f "$handoff_file" ]]; then
+        return
+    fi
+
+    local timestamp
+    timestamp=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+
+    {
+        echo ""
+        echo "## Phase Transition: ${from_phase} -> ${to_phase}"
+        echo "- **When**: ${timestamp}"
+        echo "- **Deliverables for ${to_phase}**:"
+        get_phase_deliverables "$to_phase" | sed 's/^/  /'
+    } >> "$handoff_file"
+}
+
+#######################################
 # Show phase status with formatting
 #######################################
 show_status() {
@@ -303,10 +369,20 @@ main() {
                 exit 1
             fi
 
+            # Show exit criteria for current phase before advancing
+            echo -e "${CYAN}Exit criteria for ${current_phase}:${NC}"
+            get_phase_deliverables "$current_phase" | while IFS= read -r line; do
+                echo -e "  ${line}"
+            done
+            echo ""
+
             local next_phase
             if next_phase=$(get_next_phase "$current_phase"); then
                 set_phase "$next_phase"
                 echo -e "${GREEN}✅ Advancing to: ${next_phase}${NC}"
+
+                # G6: Auto-append transition to handoff.md
+                append_to_handoff "$current_phase" "$next_phase"
 
                 # Auto-switch agent if routing library and config allow
                 if declare -f get_agent_for_phase > /dev/null 2>&1; then
@@ -325,27 +401,39 @@ main() {
                     fi
                 fi
 
+                # Show deliverables for the new phase
+                echo ""
+                echo -e "${CYAN}Deliverables for ${next_phase}:${NC}"
+                get_phase_deliverables "$next_phase" | while IFS= read -r line; do
+                    echo -e "  ${line}"
+                done
+
                 # Phase-specific hints
                 case "$next_phase" in
                     design)
+                        echo -e ""
                         echo -e "  • Create system architecture documents"
                         echo -e "  • Define APIs and data models"
                         ;;
                     implementation)
+                        echo -e ""
                         echo -e "  • Write code following design specs"
                         echo -e "  • Create unit tests as you go"
                         ;;
                     verification)
+                        echo -e ""
                         echo -e "  • Run full test suite"
                         echo -e "  • Perform code review"
                         echo -e "  • If tests fail: ${CYAN}./scripts/sdlc.sh fail \"reason\"${NC}"
                         ;;
                     deployment)
+                        echo -e ""
                         echo -e "  • Deploy to staging environment"
                         echo -e "  • Run integration tests"
                         echo -e "  • If deployment fails: ${CYAN}./scripts/sdlc.sh fail \"reason\"${NC}"
                         ;;
                     maintenance)
+                        echo -e ""
                         echo -e "  • Monitor production systems"
                         echo -e "  • Handle bug reports and improvements"
                         echo -e "  ${GREEN}SDLC cycle complete!${NC}"
@@ -355,6 +443,44 @@ main() {
                 echo -e "${GREEN}SDLC cycle complete!${NC}"
                 echo -e "Already at maintenance phase (final phase)."
             fi
+            ;;
+
+        goto)
+            # G2: Jump to a specific phase
+            local target_phase="$details"
+
+            if [[ -z "$target_phase" ]]; then
+                echo -e "${RED}Error: Specify target phase.${NC}"
+                echo -e "Usage: ${CYAN}./scripts/sdlc.sh goto <phase>${NC}"
+                echo -e "Phases: ${CYAN}${SDLC_PHASES[*]}${NC}"
+                exit 1
+            fi
+
+            local current_phase
+            current_phase=$(get_phase)
+
+            if [[ "$current_phase" == "none" ]]; then
+                echo -e "${RED}Error: SDLC not started.${NC}"
+                echo -e "Run ${CYAN}./scripts/sdlc.sh start${NC} first."
+                exit 1
+            fi
+
+            if [[ "$target_phase" == "$current_phase" ]]; then
+                echo -e "${YELLOW}Already at ${target_phase} phase.${NC}"
+                exit 0
+            fi
+
+            set_phase "$target_phase"
+            echo -e "${GREEN}✅ Jumped to: ${target_phase}${NC} (from ${current_phase})"
+
+            # G6: Auto-append transition to handoff
+            append_to_handoff "$current_phase" "$target_phase"
+
+            echo ""
+            echo -e "${CYAN}Deliverables for ${target_phase}:${NC}"
+            get_phase_deliverables "$target_phase" | while IFS= read -r line; do
+                echo -e "  ${line}"
+            done
             ;;
 
         fail)
@@ -388,9 +514,17 @@ main() {
         reset)
             echo -e "${YELLOW}Resetting SDLC state...${NC}"
 
-            # Remove sdlc_phase from state file
+            # G1 fix: Remove sdlc_phase AND clear sdlc-related state consistently
             if grep -q "^sdlc_phase:" "$STATE_FILE" 2>/dev/null; then
                 sed -i '/^sdlc_phase:/d' "$STATE_FILE"
+            fi
+
+            # Also reset current_phase back to phase_1_planning to prevent
+            # stale phase_4/phase_5 values from a prior SDLC run
+            if declare -f yaml_set > /dev/null 2>&1; then
+                yaml_set "$STATE_FILE" "current_phase" "phase_1_planning" 2>/dev/null || true
+            else
+                sed -i 's/^current_phase:.*/current_phase: "phase_1_planning"/' "$STATE_FILE" 2>/dev/null || true
             fi
 
             echo -e "${GREEN}SDLC state reset.${NC}"
@@ -401,11 +535,12 @@ main() {
             echo "Usage: ./scripts/sdlc.sh [action] [details]"
             echo ""
             echo "Actions:"
-            echo "  status  Show current SDLC phase (default)"
-            echo "  start   Begin SDLC at requirements phase"
-            echo "  next    Advance to next phase"
-            echo "  fail    Report failure (optional: details message)"
-            echo "  reset   Reset SDLC state to start over"
+            echo "  status        Show current SDLC phase (default)"
+            echo "  start         Begin SDLC at requirements phase"
+            echo "  next          Advance to next phase (shows exit criteria)"
+            echo "  goto <phase>  Jump to a specific phase"
+            echo "  fail          Report failure (optional: details message)"
+            echo "  reset         Reset SDLC state to start over"
             echo ""
             echo "SDLC Phases:"
             echo "  requirements → design → implementation → verification → deployment → maintenance"
@@ -413,6 +548,8 @@ main() {
             echo "Failure Handling:"
             echo "  verification fails → regresses to implementation"
             echo "  deployment fails   → regresses to verification"
+            echo ""
+            echo "Each phase has defined exit criteria (deliverables) shown on transition."
             ;;
 
         *)

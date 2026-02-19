@@ -1,4 +1,4 @@
-1..403
+1..431
 ok 1 activate_agent.sh exists and is executable
 ok 2 activate_agent.sh activates researcher agent
 ok 3 activate_agent.sh activates implementer agent
@@ -368,37 +368,65 @@ ok 366 uws company-os dashboard dispatches to start_dashboard.sh
 ok 367 uws finds .workflow/ from subdirectory
 ok 368 UWS_ROOT env var overrides discovery
 ok 369 uws exits with error when no .workflow/ found
-ok 370 vector_memory_setup.sh loads without error
+ok 370 uws_config.sh loads without error
 ok 371 double-source guard prevents re-loading
-ok 372 UWS_SKIP_VECTOR_MEMORY=true skips all setup
-ok 373 uws_vm_check_python returns 0 or 1 without crashing
-ok 374 uws_vm_check_disk_space returns 0 or 1 without crashing
-ok 375 uws_vm_configure_mcp_json creates .mcp.json when absent
-ok 376 uws_vm_configure_mcp_json merges into existing .mcp.json preserving other servers
-ok 377 uws_vm_configure_mcp_json is idempotent
-ok 378 uws_vm_configure_mcp_json updates --working-dir when project path differs
-ok 379 path with spaces handled correctly in .mcp.json
-ok 380 uws_vm_update_gitignore adds memory/ when absent
-ok 381 uws_vm_update_gitignore is idempotent
-ok 382 uws_vm_update_gitignore creates .gitignore if missing
-ok 383 non-interactive mode skips prompt
-ok 384 setup_vector_memory returns 0 even when Python is missing (graceful degradation)
-ok 385 yaml_utils.sh exists and is sourceable
-ok 386 yaml_get function exists after sourcing
-ok 387 yaml_set function exists after sourcing
-ok 388 yaml_get retrieves simple string value
-ok 389 yaml_get retrieves nested value
-ok 390 yaml_get returns null for missing key
-ok 391 yaml_get handles numeric values
-ok 392 yaml_get handles boolean values
-ok 393 yaml_set creates new key
-ok 394 yaml_set updates existing key
-ok 395 yaml_validate function exists
-ok 396 yaml_validate accepts valid YAML
-ok 397 yaml_get handles empty file
-ok 398 yaml_get handles file with comments
-ok 399 yaml_get handles special characters in values
-ok 400 yaml_get handles multiword values
-ok 401 yaml_utils works without yq (fallback mode)
-ok 402 yaml_get handles array access
-ok 403 yaml_get completes within 1 second
+ok 372 config dir respects XDG_CONFIG_HOME
+ok 373 config file path is under XDG_CONFIG_HOME
+ok 374 uws_config_write creates directory and file
+ok 375 uws_config_write writes correct key=value
+ok 376 uws_config_write handles multiple pairs
+ok 377 uws_config_write is idempotent — no duplicate keys
+ok 378 uws_config_write returns 1 with no arguments
+ok 379 uws_config_read_key returns value for existing key
+ok 380 uws_config_read_key returns 1 for missing key
+ok 381 uws_config_read_key returns 1 when no config file exists
+ok 382 uws_resolve_global_memory_dir: env var wins over config and default
+ok 383 uws_resolve_global_memory_dir: config wins over default
+ok 384 uws_resolve_global_memory_dir: default when nothing set
+ok 385 uws_resolve_install_dir: env var wins
+ok 386 uws_resolve_install_dir: config wins over self-discovery
+ok 387 uws_resolve_install_dir: self-discovery falls back to project root
+ok 388 uws_resolve_vector_server_dir: env var wins
+ok 389 uws_resolve_vector_server_dir: config wins over default
+ok 390 uws_resolve_vector_server_dir: default when nothing set
+ok 391 uws_validate_global_dir_path accepts clean paths
+ok 392 uws_validate_global_dir_path accepts paths with tilde
+ok 393 uws_validate_global_dir_path rejects dot-prefixed components
+ok 394 uws_validate_global_dir_path rejects nested dot-prefixed
+ok 395 uws_validate_global_dir_path allows .gitkeep
+ok 396 uws_persist_config writes all 3 keys
+ok 397 uws_persist_config is idempotent
+ok 398 vector_memory_setup.sh loads without error
+ok 399 double-source guard prevents re-loading
+ok 400 UWS_SKIP_VECTOR_MEMORY=true skips all setup
+ok 401 uws_vm_check_python returns 0 or 1 without crashing
+ok 402 uws_vm_check_disk_space returns 0 or 1 without crashing
+ok 403 uws_vm_configure_mcp_json creates .mcp.json when absent
+ok 404 uws_vm_configure_mcp_json merges into existing .mcp.json preserving other servers
+ok 405 uws_vm_configure_mcp_json is idempotent
+ok 406 uws_vm_configure_mcp_json updates --working-dir when project path differs
+ok 407 path with spaces handled correctly in .mcp.json
+ok 408 uws_vm_update_gitignore adds memory/ when absent
+ok 409 uws_vm_update_gitignore is idempotent
+ok 410 uws_vm_update_gitignore creates .gitignore if missing
+ok 411 non-interactive mode skips prompt
+ok 412 setup_vector_memory returns 0 even when Python is missing (graceful degradation)
+ok 413 yaml_utils.sh exists and is sourceable
+ok 414 yaml_get function exists after sourcing
+ok 415 yaml_set function exists after sourcing
+ok 416 yaml_get retrieves simple string value
+ok 417 yaml_get retrieves nested value
+ok 418 yaml_get returns null for missing key
+ok 419 yaml_get handles numeric values
+ok 420 yaml_get handles boolean values
+ok 421 yaml_set creates new key
+ok 422 yaml_set updates existing key
+ok 423 yaml_validate function exists
+ok 424 yaml_validate accepts valid YAML
+ok 425 yaml_get handles empty file
+ok 426 yaml_get handles file with comments
+ok 427 yaml_get handles special characters in values
+ok 428 yaml_get handles multiword values
+ok 429 yaml_utils works without yq (fallback mode)
+ok 430 yaml_get handles array access
+ok 431 yaml_get completes within 1 second

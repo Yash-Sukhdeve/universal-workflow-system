@@ -246,7 +246,7 @@ class UWSAdapter:
         for s in sessions_data:
             sessions.append(SessionInfo(
                 id=s.get("id", ""),
-                agent_type=s.get("agent_type", ""),
+                agent_type=s.get("agent", "") or s.get("agent_type", ""),  # sessions.yaml uses "agent" field
                 task=s.get("task", ""),
                 status=s.get("status", "unknown"),
                 progress=s.get("progress", 0),

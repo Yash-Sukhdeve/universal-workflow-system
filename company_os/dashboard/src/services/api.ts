@@ -12,14 +12,16 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 const UserSchema = z.object({
   id: z.string(),
   email: z.string().email(),
-  role: z.enum(['admin', 'developer', 'viewer']),
-  organization_id: z.string(),
+  name: z.string().optional(),
+  role: z.enum(['owner', 'admin', 'developer', 'viewer']),
+  org_id: z.string(),
 })
 
 const AuthResponseSchema = z.object({
   access_token: z.string(),
   token_type: z.string(),
-  user: UserSchema,
+  refresh_token: z.string().optional(),
+  expires_in: z.number().optional(),
 })
 
 const TaskSchema = z.object({
@@ -35,11 +37,11 @@ const TaskSchema = z.object({
 })
 
 const AgentSchema = z.object({
+  type: z.string(),
   name: z.string(),
-  status: z.enum(['active', 'inactive']),
+  description: z.string(),
   capabilities: z.array(z.string()),
-  current_task: z.string().optional().nullable(),
-  activated_at: z.string().optional().nullable(),
+  icon: z.string(),
 })
 
 const MemorySchema = z.object({
@@ -189,12 +191,7 @@ api.interceptors.response.use(
 export const authApi = {
   login: async (email: string, password: string): Promise<AuthResponse> => {
     return apiCall(async () => {
-      const formData = new URLSearchParams()
-      formData.append('username', email)
-      formData.append('password', password)
-      const { data } = await api.post('/auth/login', formData, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      })
+      const { data } = await api.post('/auth/login', { email, password })
       return AuthResponseSchema.parse(data)
     }, { showErrorToast: false }) // Handle login errors in component
   },
@@ -221,9 +218,9 @@ export const authApi = {
 // =============================================================================
 
 export const tasksApi = {
-  list: async (page = 1, perPage = 20): Promise<PaginatedResponse<Task>> => {
-    const { data } = await api.get('/tasks', { params: { page, per_page: perPage } })
-    return PaginatedResponseSchema(TaskSchema).parse(data)
+  list: async (limit = 50, offset = 0): Promise<Task[]> => {
+    const { data } = await api.get('/tasks', { params: { limit, offset } })
+    return z.array(TaskSchema).parse(data)
   },
 
   get: async (id: string): Promise<Task> => {
@@ -291,22 +288,26 @@ export const agentsApi = {
     return z.array(AgentSchema).parse(data)
   },
 
-  activate: async (name: string, task?: string): Promise<Agent> => {
+  activate: async (agentType: string, taskDescription: string, taskId?: string): Promise<unknown> => {
     return apiCall(async () => {
-      const { data } = await api.post(`/agents/${name}/activate`, { task })
-      return AgentSchema.parse(data)
+      const { data } = await api.post('/agents/activate', {
+        agent_type: agentType,
+        task_description: taskDescription,
+        task_id: taskId
+      })
+      return data
     }, {
-      successMessage: `Agent ${name} activated`,
+      successMessage: `Agent ${agentType} activated`,
       showSuccessToast: true,
     })
   },
 
-  deactivate: async (name: string): Promise<Agent> => {
+  deactivate: async (sessionId: string): Promise<unknown> => {
     return apiCall(async () => {
-      const { data } = await api.post(`/agents/${name}/deactivate`)
-      return AgentSchema.parse(data)
+      const { data } = await api.post(`/agents/sessions/${sessionId}/complete`)
+      return data
     }, {
-      successMessage: `Agent ${name} deactivated`,
+      successMessage: 'Agent session completed',
       showSuccessToast: true,
     })
   },

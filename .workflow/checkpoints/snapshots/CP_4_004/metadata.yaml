@@ -1,0 +1,17 @@
+# Checkpoint Metadata - v2 format
+version: "2.0"
+checkpoint_id: "CP_4_004"
+created: "2026-02-19T10:04:09-05:00"
+message: "UWS gap fixes G1-G6: goto command, phase gates, auto-handoff, reset consistency"
+
+git:
+  commit: "18f0e32"
+  branch: "master"
+  files_changed: 69
+
+workflow:
+  phase: "phase_4_delivery"
+
+recovery:
+  compatible_versions: ["1.0", "2.0"]
+  restore_priority: ["state.yaml", "handoff.md", "active_state/agent.yaml"]

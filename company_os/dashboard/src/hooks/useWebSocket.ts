@@ -8,6 +8,18 @@ const WEBSOCKET_CONFIG = {
   AUTH_TIMEOUT_MS: 5000,
 } as const
 
+const WS_URL = import.meta.env.VITE_WS_URL
+const DEFAULT_WS_PATH = '/ws'
+
+function buildWebSocketUrl() {
+  if (WS_URL && typeof WS_URL === 'string') {
+    return WS_URL
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}${DEFAULT_WS_PATH}`
+}
+
 interface UseWebSocketOptions {
   onMessage?: (event: WSEvent) => void
   onOpen?: () => void
@@ -57,7 +69,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
     // SECURITY FIX: Don't pass token in URL - send it after connection
     // This prevents token exposure in server logs, browser history, and referrer headers
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+    const wsUrl = buildWebSocketUrl()
 
     try {
       wsRef.current = new WebSocket(wsUrl)

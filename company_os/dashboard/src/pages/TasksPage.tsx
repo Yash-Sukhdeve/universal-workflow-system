@@ -29,9 +29,9 @@ export function TasksPage() {
 
   const loadTasks = useCallback(async () => {
     try {
-      const response = await tasksApi.list(1, 50)
+      const tasksList = await tasksApi.list(50, 0)
       if (isMountedRef.current) {
-        setTasks(response.items || [])
+        setTasks(tasksList || [])
       }
     } catch (error) {
       if (isMountedRef.current) {

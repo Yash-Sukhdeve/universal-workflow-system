@@ -2,14 +2,16 @@
 export interface User {
   id: string
   email: string
-  role: 'admin' | 'developer' | 'viewer'
-  organization_id: string
+  name?: string
+  role: 'owner' | 'admin' | 'developer' | 'viewer'
+  org_id: string
 }
 
 export interface AuthResponse {
   access_token: string
   token_type: string
-  user: User
+  refresh_token?: string
+  expires_in?: number
 }
 
 // Task types
@@ -35,11 +37,11 @@ export interface CreateTaskInput {
 
 // Agent types
 export interface Agent {
+  type: string
   name: string
-  status: 'active' | 'inactive'
+  description: string
   capabilities: string[]
-  current_task?: string | null
-  activated_at?: string | null
+  icon: string
 }
 
 // Memory types

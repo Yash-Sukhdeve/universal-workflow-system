@@ -21,7 +21,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        // Don't rewrite - mock server now has /api prefix
       },
       '/ws': {
         target: 'ws://localhost:8000',

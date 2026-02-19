@@ -53,10 +53,11 @@ export function AgentsPage() {
     }
   }, [agentEvents.length, loadAgents])
 
-  const handleActivate = async (agentName: string) => {
-    setActivatingAgent(agentName)
+  const handleActivate = async (agent: Agent) => {
+    setActivatingAgent(agent.type)
     try {
-      await agentsApi.activate(agentName)
+      // Use agent type and a default task description
+      await agentsApi.activate(agent.type, `Dashboard-initiated ${agent.name} session`)
       await loadAgents()
     } catch (error) {
       console.error('Failed to activate agent:', error)
@@ -108,10 +109,10 @@ export function AgentsPage() {
             <AgentCard
               key={agent.name}
               agent={agent}
-              colorClass={agentColors[agent.name] || 'bg-gray-100 text-gray-700 border-gray-200'}
-              onActivate={() => handleActivate(agent.name)}
+              colorClass={agentColors[agent.type] || 'bg-gray-100 text-gray-700 border-gray-200'}
+              onActivate={() => handleActivate(agent)}
               onDeactivate={() => handleDeactivate(agent.name)}
-              isLoading={activatingAgent === agent.name}
+              isLoading={activatingAgent === agent.type}
             />
           ))
         ) : (

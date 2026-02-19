@@ -45,24 +45,23 @@ export function DashboardPage() {
 
     const loadDashboard = async () => {
       try {
-        const [tasksRes, agentsList] = await Promise.all([
-          tasksApi.list(1, 5),
+        const [tasksList, agentsList] = await Promise.all([
+          tasksApi.list(5, 0),
           agentsApi.list(),
         ])
 
         // Prevent state updates if component unmounted
         if (!isMounted) return
 
-        setRecentTasks(tasksRes.items || [])
+        setRecentTasks(tasksList || [])
         setAgents(agentsList || [])
 
-        const completed = (tasksRes.items || []).filter((t: Task) => t.status === 'completed').length
-        const active = (agentsList || []).filter((a: Agent) => a.status === 'active').length
+        const completed = (tasksList || []).filter((t: Task) => t.status === 'completed').length
 
         setStats({
-          totalTasks: tasksRes.total || 0,
+          totalTasks: tasksList.length || 0,
           completedTasks: completed,
-          activeAgents: active,
+          activeAgents: agentsList.length || 0,
           recentMemories: memoryEvents.length,
         })
       } catch (error) {
@@ -78,7 +77,7 @@ export function DashboardPage() {
     return () => {
       isMounted = false
     }
-  }, [memoryEvents.length])
+  }, [taskEvents.length, agentEvents.length, memoryEvents.length])
 
   if (isLoading) {
     return (

@@ -43,8 +43,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     const response = await authApi.login(email, password)
     localStorage.setItem('token', response.access_token)
-    localStorage.setItem('user', JSON.stringify(response.user))
-    setUser(response.user)
+    if (response.refresh_token) {
+      localStorage.setItem('refresh_token', response.refresh_token)
+    }
+    // Fetch user data after login since API only returns tokens
+    const currentUser = await authApi.me()
+    localStorage.setItem('user', JSON.stringify(currentUser))
+    setUser(currentUser)
   }
 
   const register = async (email: string, password: string, organizationId?: string) => {

@@ -331,6 +331,57 @@ capabilities:"
         echo -e "${BLUE}📊 Dashboard session: ${session_id}${NC}"
     fi
 
+    # G5: Append agent responsibilities to handoff.md
+    local handoff_file="${WORKFLOW_DIR}/handoff.md"
+    if [[ -f "$handoff_file" ]]; then
+        {
+            echo ""
+            echo "## Agent Activated: ${agent}"
+            echo "- **When**: ${timestamp}"
+            echo "- **Phase**: ${current_phase}"
+            echo "- **Responsibilities**:"
+            case $agent in
+                researcher)
+                    echo "  - Review existing literature and prior art"
+                    echo "  - Form and validate hypotheses"
+                    echo "  - Design experiments with statistical rigor"
+                    ;;
+                architect)
+                    echo "  - Design system architecture with component diagrams"
+                    echo "  - Define all APIs, data models, and interfaces"
+                    echo "  - Document technical constraints and failure modes"
+                    echo "  - Produce architecture document before passing to implementer"
+                    ;;
+                implementer)
+                    echo "  - Implement all features per design specification"
+                    echo "  - Write zero placeholder/stub code"
+                    echo "  - Create tests for new functionality"
+                    echo "  - Update dependencies and configuration"
+                    ;;
+                experimenter)
+                    echo "  - Execute full test suite and report results"
+                    echo "  - Perform integration and system testing"
+                    echo "  - Report verification coverage and gaps"
+                    ;;
+                optimizer)
+                    echo "  - Profile performance bottlenecks"
+                    echo "  - Optimize critical paths"
+                    echo "  - Measure and report improvements"
+                    ;;
+                deployer)
+                    echo "  - Containerize application"
+                    echo "  - Configure health checks and monitoring"
+                    echo "  - Update deployment documentation"
+                    ;;
+                documenter)
+                    echo "  - Write/update README and API docs"
+                    echo "  - Document architecture decisions"
+                    echo "  - Create user guides"
+                    ;;
+            esac
+        } >> "$handoff_file"
+    fi
+
     echo -e "${GREEN}✓ ${agent} agent activated${NC}"
     echo ""
     echo -e "Agent workspace: ${YELLOW}workspace/${agent}${NC}"
