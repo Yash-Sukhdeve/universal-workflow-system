@@ -5,69 +5,115 @@ skills:
   literature_review:
     description: "Search and analyze academic literature"
     agent: researcher
+    enabled: false
 
   experimental_design:
     description: "Design experiments and studies"
     agent: researcher
+    enabled: false
 
   statistical_validation:
     description: "Statistical analysis and validation"
     agent: researcher
+    enabled: false
 
   # Architecture Skills
   system_design:
     description: "High-level system architecture design"
     agent: architect
+    enabled: false
 
   api_design:
     description: "API design and documentation"
     agent: architect
+    enabled: false
+
+  data_modeling:
+    description: "Data modeling and schema design"
+    agent: architect
+    enabled: false
 
   # Implementation Skills
   code_generation:
     description: "Generate code from specifications"
     agent: implementer
+    enabled: false
 
   debugging:
     description: "Debug and fix issues"
     agent: implementer
+    enabled: false
 
   testing:
     description: "Write and run tests"
     agent: implementer
+    enabled: false
 
   # Experiment Skills
+  experiment_design:
+    description: "Design and execute experimental protocols"
+    agent: experimenter
+    enabled: false
+
   benchmarking:
     description: "Performance benchmarking"
     agent: experimenter
+    enabled: false
 
   data_analysis:
     description: "Analyze experimental data"
     agent: experimenter
+    enabled: false
 
   # Optimization Skills
   performance_profiling:
     description: "Profile and analyze performance"
     agent: optimizer
+    enabled: false
+
+  memory_optimization:
+    description: "Optimize memory usage and allocation"
+    agent: optimizer
+    enabled: false
+
+  algorithm_optimization:
+    description: "Optimize algorithm efficiency and complexity"
+    agent: optimizer
+    enabled: false
 
   quantization:
     description: "Model quantization for efficiency"
     agent: optimizer
+    enabled: false
 
   # Deployment Skills
   ci_cd:
     description: "Continuous integration and deployment"
     agent: deployer
+    enabled: false
 
   containerization:
     description: "Docker and container management"
     agent: deployer
+    enabled: false
+
+  monitoring:
+    description: "System monitoring and observability"
+    agent: deployer
+    enabled: false
 
   # Documentation Skills
   technical_writing:
     description: "Write technical documentation"
     agent: documenter
+    enabled: false
 
   api_documentation:
     description: "Generate API documentation"
     agent: documenter
+    enabled: false
+
+  user_guides:
+    description: "Create user guides and tutorials"
+    agent: documenter
+    enabled: false

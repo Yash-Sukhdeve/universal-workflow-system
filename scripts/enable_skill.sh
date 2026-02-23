@@ -10,7 +10,7 @@ SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
 
 # Resolve WORKFLOW_DIR: CWD first, then git root, then UWS fallback
 source "${SCRIPT_LIB_DIR}/resolve_project.sh"
-SKILL_NAME="${1:-}"
+FIRST_ARG="${1:-}"
 COMMAND="${2:-enable}"
 PARAMS="${3:-}"
 
@@ -22,6 +22,21 @@ fi
 
 if [[ -f "${SCRIPT_DIR}/lib/yaml_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/yaml_utils.sh"
+fi
+
+# Handle help/list/status as first arg (before treating as skill name)
+# Note: show_usage is defined below; for --help we defer to the case statement
+if [[ "$FIRST_ARG" =~ ^(--help|-h|help)$ ]]; then
+    SKILL_NAME=""
+    COMMAND="help"
+elif [[ "$FIRST_ARG" == "list" ]]; then
+    SKILL_NAME=""
+    COMMAND="list"
+elif [[ "$FIRST_ARG" == "status" ]]; then
+    SKILL_NAME=""
+    COMMAND="status"
+else
+    SKILL_NAME="$FIRST_ARG"
 fi
 
 # Color codes
@@ -89,11 +104,41 @@ skill_configs: {}
 EOF
 fi
 
+# Function to validate skill name
+validate_skill_name() {
+    local skill=$1
+
+    # Reject empty or invalid names
+    if [[ -z "$skill" ]]; then
+        echo -e "${RED}Error: Skill name cannot be empty${NC}"
+        return 1
+    fi
+
+    # Reject names that look like flags
+    if [[ "$skill" =~ ^- ]]; then
+        echo -e "${RED}Error: Invalid skill name '${skill}'${NC}"
+        return 1
+    fi
+
+    # Reject names with special characters (allow only alphanumeric and underscores)
+    if [[ ! "$skill" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        echo -e "${RED}Error: Invalid skill name '${skill}'. Use only letters, numbers, and underscores.${NC}"
+        return 1
+    fi
+
+    return 0
+}
+
 # Function to enable a skill
 enable_skill() {
     local skill=$1
     echo -e "${BLUE}🔧 Enabling skill: ${skill}...${NC}"
-    
+
+    # Validate skill name
+    if ! validate_skill_name "$skill"; then
+        return 1
+    fi
+
     # Check if skill is already enabled
     if grep -q "  - ${skill}" .workflow/skills/enabled.yaml; then
         echo -e "${YELLOW}Skill already enabled${NC}"
@@ -267,7 +312,18 @@ EOF
 disable_skill() {
     local skill=$1
     echo -e "${BLUE}🔧 Disabling skill: ${skill}...${NC}"
-    
+
+    # Validate skill name
+    if ! validate_skill_name "$skill"; then
+        return 1
+    fi
+
+    # Check if skill is actually enabled
+    if ! grep -q "  - ${skill}" .workflow/skills/enabled.yaml; then
+        echo -e "${YELLOW}Skill '${skill}' is not currently enabled${NC}"
+        return
+    fi
+
     # Remove from enabled list (simple sed approach)
     sed -i "/  - ${skill}/d" .workflow/skills/enabled.yaml
     
@@ -486,7 +542,7 @@ case $COMMAND in
             show_skill_status $SKILL_NAME
         fi
         ;;
-    *)
+    help|*)
         show_usage
         ;;
 esac

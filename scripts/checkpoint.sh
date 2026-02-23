@@ -13,7 +13,7 @@ SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
 source "${SCRIPT_LIB_DIR}/resolve_project.sh"
 
 # Smart argument parsing: support both `checkpoint.sh "msg"` and `checkpoint.sh create "msg"`
-if [[ "${1:-}" =~ ^(create|list|restore|status|verify|help|--help|-h)$ ]]; then
+if [[ "${1:-}" =~ ^(create|list|restore|status|verify|completeness|auto|help|--help|-h)$ ]]; then
     COMMAND="${1:-create}"
     CHECKPOINT_MSG="${2:-}"
     CHECKPOINT_ID="${2:-}"
