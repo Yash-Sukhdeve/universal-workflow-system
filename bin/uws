@@ -10,6 +10,21 @@ set -euo pipefail
 
 UWS_VERSION="1.1.0"
 
+# ── Resolve symlinks to find the real UWS installation directory ───────────
+
+resolve_uws_dir() {
+    local source="${BASH_SOURCE[0]}"
+    while [[ -L "$source" ]]; do
+        local dir="$(cd "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        # Handle relative symlinks
+        [[ "$source" != /* ]] && source="$dir/$source"
+    done
+    cd "$(dirname "$source")/.." && pwd
+}
+
+UWS_INSTALL_DIR="$(resolve_uws_dir)"
+
 # ── Root discovery ──────────────────────────────────────────────────────────
 
 find_uws_root() {
@@ -99,11 +114,9 @@ main() {
             exit 0
             ;;
         init)
-            # init doesn't need .workflow/ to exist yet — find scripts via $0 location
-            local self_dir
-            self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-            if [[ -x "$self_dir/scripts/init_workflow.sh" ]]; then
-                "$self_dir/scripts/init_workflow.sh" "$@"
+            # init doesn't need .workflow/ to exist yet — find scripts via resolved install dir
+            if [[ -x "$UWS_INSTALL_DIR/scripts/init_workflow.sh" ]]; then
+                "$UWS_INSTALL_DIR/scripts/init_workflow.sh" "$@"
             else
                 echo "Error: Cannot find init_workflow.sh relative to uws binary." >&2
                 exit 1
@@ -111,11 +124,9 @@ main() {
             exit $?
             ;;
         uninstall)
-            # uninstall doesn't need .workflow/ — find scripts via $0 location
-            local self_dir
-            self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-            if [[ -x "$self_dir/scripts/uninstall.sh" ]]; then
-                "$self_dir/scripts/uninstall.sh" "$@"
+            # uninstall doesn't need .workflow/ — find scripts via resolved install dir
+            if [[ -x "$UWS_INSTALL_DIR/scripts/uninstall.sh" ]]; then
+                "$UWS_INSTALL_DIR/scripts/uninstall.sh" "$@"
             else
                 echo "Error: Cannot find uninstall.sh relative to uws binary." >&2
                 exit 1
