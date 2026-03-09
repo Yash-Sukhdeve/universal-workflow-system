@@ -1089,19 +1089,31 @@ UWS_PERMISSIONS=(
     'Bash(git:*)'
 )
 
-# UWS hooks
-UWS_HOOKS_JSON='[
-    {
-      "event": "SessionStart",
-      "type": "command",
-      "command": "./.uws/hooks/session_start.sh"
-    },
-    {
-      "event": "PreCompact",
-      "type": "command",
-      "command": "./.uws/hooks/pre_compact.sh"
-    }
-  ]'
+# UWS hooks (new matcher-based record format)
+UWS_HOOKS_JSON='{
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.uws/hooks/session_start.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.uws/hooks/pre_compact.sh"
+          }
+        ]
+      }
+    ]
+  }'
 
 if [[ -f "$SETTINGS_FILE" ]]; then
     # Backup existing
@@ -1126,8 +1138,8 @@ if [[ -f "$SETTINGS_FILE" ]]; then
           # Remove stale v1.1.0 permissions that reference non-existent ./scripts/*.sh
           .permissions.allow = ([(.permissions.allow // [])[] |
             select(test("^Bash\\(\\./scripts/") | not)] + $uws_perms | unique) |
-          # Remove any old hooks pointing to .uws/ then add fresh ones
-          .hooks = ([(.hooks // [])[] | select(.command | test("^\\./.uws/") | not)] + $uws_hooks)
+          # Migrate old array-style hooks to new record format, then merge UWS hooks
+          .hooks = (if (.hooks | type) == "array" then {} else (.hooks // {}) end) * $uws_hooks
         ' "$SETTINGS_FILE" > "$TEMP_SETTINGS"
 
         if jq empty "$TEMP_SETTINGS" 2>/dev/null; then
@@ -1186,18 +1198,30 @@ else
       "Bash(git:*)"
     ]
   },
-  "hooks": [
-    {
-      "event": "SessionStart",
-      "type": "command",
-      "command": "./.uws/hooks/session_start.sh"
-    },
-    {
-      "event": "PreCompact",
-      "type": "command",
-      "command": "./.uws/hooks/pre_compact.sh"
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.uws/hooks/session_start.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.uws/hooks/pre_compact.sh"
+          }
+        ]
+      }
+    ]
+  }
 }
 SETTINGS_EOF
     echo -e "  ${GREEN}✓${NC} Created settings.json with UWS hooks"
