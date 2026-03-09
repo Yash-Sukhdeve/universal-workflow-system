@@ -1093,7 +1093,7 @@ UWS_PERMISSIONS=(
 UWS_HOOKS_JSON='{
     "SessionStart": [
       {
-        "matcher": {},
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
@@ -1104,7 +1104,7 @@ UWS_HOOKS_JSON='{
     ],
     "PreCompact": [
       {
-        "matcher": {},
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
@@ -1201,7 +1201,7 @@ else
   "hooks": {
     "SessionStart": [
       {
-        "matcher": {},
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
@@ -1212,7 +1212,7 @@ else
     ],
     "PreCompact": [
       {
-        "matcher": {},
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
