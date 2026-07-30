@@ -5,7 +5,7 @@ project_type: "llm"
 goal: "Lightweight Linux face-unlock: lock/screensaver when away or an unknown face appears; on return, face-verify the owner -> 'Welcome back, Yash' -> unlock; anyone else blocked without a password. Prototype-then-harden security."
 current_phase: "phase_2_implementation"
 current_checkpoint: "CP_2_006"
-last_updated: "2026-07-30T16:03:24-04:00"
+last_updated: "2026-07-30T16:16:10-04:00"
 
 context_bridge:
   critical_info: []

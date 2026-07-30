@@ -7,7 +7,7 @@ project:
   description: ""
 
 workflow:
-  auto_checkpoint: true
+  auto_checkpoint: false
   checkpoint_frequency: "hourly"
   state_backup: true
   

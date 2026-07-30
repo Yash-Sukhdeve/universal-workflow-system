@@ -1,4 +1,4 @@
-1..431
+1..449
 ok 1 activate_agent.sh exists and is executable
 ok 2 activate_agent.sh activates researcher agent
 ok 3 activate_agent.sh activates implementer agent
@@ -215,218 +215,236 @@ ok 213 skill definition includes parameters
 ok 214 skill definition includes outputs
 ok 215 skill definition includes dependencies
 ok 216 custom skill gets generic definition
-ok 217 enabled skills persist after script exit
-ok 218 skill definitions persist after script exit
-ok 219 execution logs persist after skill execution
-ok 220 enable skill creates chains directory
-ok 221 skill dependencies shown on enable
-ok 222 enable_skill handles empty skill name
-ok 223 multiple skills can be enabled sequentially
-ok 224 duplicate enable does not duplicate entry
-ok 225 init_workflow.sh exists and is executable
-ok 226 init_workflow.sh creates .workflow directory
-ok 227 init_workflow.sh creates state.yaml
-ok 228 init_workflow.sh creates config.yaml
-ok 229 init_workflow.sh creates agents directory
-ok 230 init_workflow.sh creates skills directory
-ok 231 init_workflow.sh accepts 'software' project type
-ok 232 init_workflow.sh accepts 'research' project type
-ok 233 init_workflow.sh accepts 'ml' project type
-ok 234 init_workflow.sh accepts 'llm' project type
-ok 235 state.yaml contains current_phase
-ok 236 state.yaml contains current_checkpoint
-ok 237 state.yaml initializes to phase_1
-ok 238 state.yaml contains metadata section
-ok 239 init_workflow.sh creates workspace directory
-ok 240 init_workflow.sh creates phases directory
-ok 241 init_workflow.sh creates artifacts directory
-ok 242 init_workflow.sh warns if already initialized
-ok 243 init_workflow.sh does not overwrite existing state
-ok 244 init_workflow.sh handles missing git gracefully
-ok 245 init_workflow.sh creates checkpoints.log
-ok 246 init_workflow.sh creates agent registry
-ok 247 agent registry contains researcher agent
-ok 248 agent registry contains implementer agent
-ok 249 init_workflow.sh creates skill catalog
-ok 250 init_workflow.sh works in git repository
-ok 251 init_workflow.sh works in non-git directory
-ok 252 R1: Precondition validation catches uninitialized workflow
-ok 253 R1: Invalid checkpoint ID is rejected
-ok 254 R1: Invalid agent name is rejected
-ok 255 R1: Valid agents are accepted
-ok 256 R1: State consistency check validates cross-field integrity
-ok 257 R2: Completeness score calculation works
-ok 258 R2: Missing required files reduce completeness score
-ok 259 R2: Required files check identifies missing files
-ok 260 R2: JSON completeness report is valid
-ok 261 R3: Atomic write creates file atomically
-ok 262 R3: Atomic write with invalid path fails gracefully
-ok 263 R3: Safe backup creates backup file
-ok 264 R3: Transaction commit applies all changes
-ok 265 R3: Checkpoint creates v2 snapshot with manifest
-ok 266 R4: Error handler captures and logs errors
-ok 267 R4: capture_error replaces silent 2>/dev/null
-ok 268 R4: warn_on_failure logs but continues
-ok 269 R4: require_success fails on command failure
-ok 270 R4: Assertion catches false condition
-ok 271 R4: assert_file_exists catches missing file
-ok 272 R4: Error stack tracks multiple errors
-ok 273 R5: Checksum calculation is deterministic
-ok 274 R5: Checksums change when content changes
-ok 275 R5: Store and verify checksums round-trip
-ok 276 R5: Checksum verification detects tampering
-ok 277 R5: Snapshot manifest is created for checkpoints
-ok 278 R5: Manifest verification validates snapshot integrity
-ok 279 R5: Recovery completeness is measurable
-ok 280 R5: Completeness summary generates markdown
-ok 281 Timestamps are ISO 8601 formatted
-ok 282 Timestamp validation accepts valid formats
-ok 283 Timestamp validation rejects invalid formats
-ok 284 Decision logging creates entries
-ok 285 Blocker logging creates entries with severity
-ok 286 Open blockers can be retrieved
-ok 287 validate_state_schema passes for valid state
-ok 288 validate_state_schema fails for missing file
-ok 289 validate_state_schema detects invalid phase
-ok 290 validate_state_schema detects invalid checkpoint format
-ok 291 validate_state_schema accepts all valid project types
-ok 292 validate_state_schema detects invalid project type
-ok 293 validate_state_schema validates agent status consistency
-ok 294 validate_checkpoint_schema passes for valid metadata
-ok 295 validate_checkpoint_schema fails for missing required field
-ok 296 validate_checkpoint_schema validates git commit format
-ok 297 validate_checkpoint_schema accepts valid short git hash
-ok 298 validate_checkpoint_schema accepts valid long git hash
-ok 299 validate_agent_schema accepts all valid agents
-ok 300 validate_agent_schema rejects invalid agent
-ok 301 validate_agent_transition allows researcher to architect
-ok 302 validate_agent_transition allows researcher to implementer
-ok 303 validate_agent_transition allows any agent to documenter
-ok 304 validate_agent_transition rejects invalid transition
-ok 305 validate_agent_transition allows implementer to experimenter
-ok 306 validate_agent_transition allows optimizer to deployer
-ok 307 validate_agent_transition allows first activation (no current agent)
-ok 308 validate_pattern matches valid phase pattern
-ok 309 validate_pattern fails on invalid pattern
-ok 310 validate_pattern skips empty values
-ok 311 validate_pattern skips null values
-ok 312 validate_type accepts valid integer
-ok 313 validate_type rejects non-integer
-ok 314 validate_type accepts valid boolean values
-ok 315 validate_type accepts valid iso8601 date
-ok 316 validate_type accepts iso8601 date only format
-ok 317 validate_type rejects invalid iso8601
-ok 318 validate_type accepts string_or_null
-ok 319 schema_clear_results resets errors and warnings
-ok 320 schema_error_count returns correct count
-ok 321 schema_get_errors_json returns valid JSON
-ok 322 schema_get_errors_json returns empty array when no errors
-ok 323 validate_all_schemas validates workflow directory
-ok 324 validate_all_schemas handles missing directory
-ok 325 schema validation handles special characters in values
-ok 326 schema validation handles unicode in messages
-ok 327 safe_sed_replace function exists
-ok 328 safe_sed_replace handles forward slash in value
-ok 329 safe_sed_replace handles ampersand in value
-ok 330 safe_sed_replace handles backslash in value
-ok 331 safe_sed_replace handles mixed special characters
-ok 332 checkpoint handles message with forward slashes
-ok 333 checkpoint handles message with ampersand
-ok 334 checkpoint handles message with special regex characters
-ok 335 checkpoint does not execute embedded commands
-ok 336 checkpoint does not execute backtick commands
-ok 337 sdlc.sh handles special characters in failure details
-ok 338 sdlc.sh does not execute embedded commands
-ok 339 research.sh handles special characters in rejection details
-ok 340 research.sh does not execute embedded commands
-ok 341 state.yaml remains valid after special character operations
-ok 342 checkpoints.log remains valid after special character operations
-ok 343 uws help exits 0 and shows usage
-ok 344 uws --help exits 0
-ok 345 uws -h exits 0
-ok 346 uws with no args shows help
-ok 347 uws version prints version string
-ok 348 uws --version prints version string
-ok 349 uws unknown-command exits non-zero
-ok 350 uws init dispatches to init_workflow.sh
-ok 351 uws init works without .workflow/ directory (fresh project)
-ok 352 uws status dispatches to status.sh
-ok 353 uws status -v passes flags through
-ok 354 uws checkpoint dispatches to checkpoint.sh
-ok 355 uws recover dispatches to recover_context.sh
-ok 356 uws agent dispatches to activate_agent.sh
-ok 357 uws skill dispatches to enable_skill.sh
-ok 358 uws sdlc dispatches to sdlc.sh
-ok 359 uws research dispatches to research.sh
-ok 360 uws spiral dispatches to spiral.sh
-ok 361 uws review dispatches to review.sh
-ok 362 uws pm dispatches to pm.sh
-ok 363 uws submit dispatches to submit.sh
-ok 364 uws detect dispatches to detect_and_configure.sh
-ok 365 uws company-os start dispatches to start_company_os.sh
-ok 366 uws company-os dashboard dispatches to start_dashboard.sh
-ok 367 uws finds .workflow/ from subdirectory
-ok 368 UWS_ROOT env var overrides discovery
-ok 369 uws exits with error when no .workflow/ found
-ok 370 uws_config.sh loads without error
-ok 371 double-source guard prevents re-loading
-ok 372 config dir respects XDG_CONFIG_HOME
-ok 373 config file path is under XDG_CONFIG_HOME
-ok 374 uws_config_write creates directory and file
-ok 375 uws_config_write writes correct key=value
-ok 376 uws_config_write handles multiple pairs
-ok 377 uws_config_write is idempotent — no duplicate keys
-ok 378 uws_config_write returns 1 with no arguments
-ok 379 uws_config_read_key returns value for existing key
-ok 380 uws_config_read_key returns 1 for missing key
-ok 381 uws_config_read_key returns 1 when no config file exists
-ok 382 uws_resolve_global_memory_dir: env var wins over config and default
-ok 383 uws_resolve_global_memory_dir: config wins over default
-ok 384 uws_resolve_global_memory_dir: default when nothing set
-ok 385 uws_resolve_install_dir: env var wins
-ok 386 uws_resolve_install_dir: config wins over self-discovery
-ok 387 uws_resolve_install_dir: self-discovery falls back to project root
-ok 388 uws_resolve_vector_server_dir: env var wins
-ok 389 uws_resolve_vector_server_dir: config wins over default
-ok 390 uws_resolve_vector_server_dir: default when nothing set
-ok 391 uws_validate_global_dir_path accepts clean paths
-ok 392 uws_validate_global_dir_path accepts paths with tilde
-ok 393 uws_validate_global_dir_path rejects dot-prefixed components
-ok 394 uws_validate_global_dir_path rejects nested dot-prefixed
-ok 395 uws_validate_global_dir_path allows .gitkeep
-ok 396 uws_persist_config writes all 3 keys
-ok 397 uws_persist_config is idempotent
-ok 398 vector_memory_setup.sh loads without error
-ok 399 double-source guard prevents re-loading
-ok 400 UWS_SKIP_VECTOR_MEMORY=true skips all setup
-ok 401 uws_vm_check_python returns 0 or 1 without crashing
-ok 402 uws_vm_check_disk_space returns 0 or 1 without crashing
-ok 403 uws_vm_configure_mcp_json creates .mcp.json when absent
-ok 404 uws_vm_configure_mcp_json merges into existing .mcp.json preserving other servers
-ok 405 uws_vm_configure_mcp_json is idempotent
-ok 406 uws_vm_configure_mcp_json updates --working-dir when project path differs
-ok 407 path with spaces handled correctly in .mcp.json
-ok 408 uws_vm_update_gitignore adds memory/ when absent
-ok 409 uws_vm_update_gitignore is idempotent
-ok 410 uws_vm_update_gitignore creates .gitignore if missing
-ok 411 non-interactive mode skips prompt
-ok 412 setup_vector_memory returns 0 even when Python is missing (graceful degradation)
-ok 413 yaml_utils.sh exists and is sourceable
-ok 414 yaml_get function exists after sourcing
-ok 415 yaml_set function exists after sourcing
-ok 416 yaml_get retrieves simple string value
-ok 417 yaml_get retrieves nested value
-ok 418 yaml_get returns null for missing key
-ok 419 yaml_get handles numeric values
-ok 420 yaml_get handles boolean values
-ok 421 yaml_set creates new key
-ok 422 yaml_set updates existing key
-ok 423 yaml_validate function exists
-ok 424 yaml_validate accepts valid YAML
-ok 425 yaml_get handles empty file
-ok 426 yaml_get handles file with comments
-ok 427 yaml_get handles special characters in values
-ok 428 yaml_get handles multiword values
-ok 429 yaml_utils works without yq (fallback mode)
-ok 430 yaml_get handles array access
-ok 431 yaml_get completes within 1 second
+ok 217 enable_skill rejects a skill not in the catalog
+ok 218 enable_skill --force allows a non-catalog skill
+ok 219 enable_skill accepts a catalog skill without --force
+ok 220 enabled skills persist after script exit
+ok 221 skill definitions persist after script exit
+ok 222 execution logs persist after skill execution
+ok 223 enable skill creates chains directory
+ok 224 skill dependencies shown on enable
+ok 225 enable_skill handles empty skill name
+ok 226 multiple skills can be enabled sequentially
+ok 227 duplicate enable does not duplicate entry
+ok 228 init_workflow.sh exists and is executable
+ok 229 init_workflow.sh creates .workflow directory
+ok 230 init_workflow.sh creates state.yaml
+ok 231 init_workflow.sh creates config.yaml
+ok 232 init_workflow.sh creates agents directory
+ok 233 init_workflow.sh creates skills directory
+ok 234 init_workflow.sh accepts 'software' project type
+ok 235 init_workflow.sh accepts 'research' project type
+ok 236 init_workflow.sh accepts 'ml' project type
+ok 237 init_workflow.sh accepts 'llm' project type
+ok 238 state.yaml contains current_phase
+ok 239 state.yaml contains current_checkpoint
+ok 240 state.yaml initializes to phase_1
+ok 241 state.yaml contains metadata section
+ok 242 init_workflow.sh creates workspace directory
+ok 243 init_workflow.sh creates phases directory
+ok 244 init_workflow.sh creates artifacts directory
+ok 245 init_workflow.sh warns if already initialized
+ok 246 init_workflow.sh does not overwrite existing state
+ok 247 init_workflow.sh handles missing git gracefully
+ok 248 init_workflow.sh creates checkpoints.log
+ok 249 init_workflow.sh creates agent registry
+ok 250 agent registry contains researcher agent
+ok 251 agent registry contains implementer agent
+ok 252 init_workflow.sh creates skill catalog
+ok 253 init_workflow.sh works in git repository
+ok 254 init_workflow.sh works in non-git directory
+ok 255 R1: Precondition validation catches uninitialized workflow
+ok 256 R1: Invalid checkpoint ID is rejected
+ok 257 R1: Invalid agent name is rejected
+ok 258 R1: Valid agents are accepted
+ok 259 R1: State consistency check validates cross-field integrity
+ok 260 R2: Completeness score calculation works
+ok 261 R2: Missing required files reduce completeness score
+ok 262 R2: Required files check identifies missing files
+ok 263 R2: JSON completeness report is valid
+ok 264 R3: Atomic write creates file atomically
+ok 265 R3: Atomic write with invalid path fails gracefully
+ok 266 R3: Safe backup creates backup file
+ok 267 R3: Transaction commit applies all changes
+ok 268 R3: Checkpoint creates v2 snapshot with manifest
+ok 269 R4: Error handler captures and logs errors
+ok 270 R4: capture_error replaces silent 2>/dev/null
+ok 271 R4: warn_on_failure logs but continues
+ok 272 R4: require_success fails on command failure
+ok 273 R4: Assertion catches false condition
+ok 274 R4: assert_file_exists catches missing file
+ok 275 R4: Error stack tracks multiple errors
+ok 276 R5: Checksum calculation is deterministic
+ok 277 R5: Checksums change when content changes
+ok 278 R5: Store and verify checksums round-trip
+ok 279 R5: Checksum verification detects tampering
+ok 280 R5: Snapshot manifest is created for checkpoints
+ok 281 R5: Manifest verification validates snapshot integrity
+ok 282 R5: Recovery completeness is measurable
+ok 283 R5: Completeness summary generates markdown
+ok 284 Timestamps are ISO 8601 formatted
+ok 285 Timestamp validation accepts valid formats
+ok 286 Timestamp validation rejects invalid formats
+ok 287 Decision logging creates entries
+ok 288 Blocker logging creates entries with severity
+ok 289 Open blockers can be retrieved
+ok 290 validate_state_schema passes for valid state
+ok 291 validate_state_schema fails for missing file
+ok 292 validate_state_schema detects invalid phase
+ok 293 validate_state_schema detects invalid checkpoint format
+ok 294 validate_state_schema accepts all valid project types
+ok 295 validate_state_schema detects invalid project type
+ok 296 validate_state_schema validates agent status consistency
+ok 297 validate_checkpoint_schema passes for valid metadata
+ok 298 validate_checkpoint_schema fails for missing required field
+ok 299 validate_checkpoint_schema validates git commit format
+ok 300 validate_checkpoint_schema accepts valid short git hash
+ok 301 validate_checkpoint_schema accepts valid long git hash
+ok 302 validate_agent_schema accepts all valid agents
+ok 303 validate_agent_schema rejects invalid agent
+ok 304 validate_agent_transition allows researcher to architect
+ok 305 validate_agent_transition allows researcher to implementer
+ok 306 validate_agent_transition allows any agent to documenter
+ok 307 validate_agent_transition rejects invalid transition
+ok 308 validate_agent_transition allows implementer to experimenter
+ok 309 validate_agent_transition allows optimizer to deployer
+ok 310 validate_agent_transition allows first activation (no current agent)
+ok 311 validate_pattern matches valid phase pattern
+ok 312 validate_pattern fails on invalid pattern
+ok 313 validate_pattern skips empty values
+ok 314 validate_pattern skips null values
+ok 315 validate_type accepts valid integer
+ok 316 validate_type rejects non-integer
+ok 317 validate_type accepts valid boolean values
+ok 318 validate_type accepts valid iso8601 date
+ok 319 validate_type accepts iso8601 date only format
+ok 320 validate_type rejects invalid iso8601
+ok 321 validate_type accepts string_or_null
+ok 322 schema_clear_results resets errors and warnings
+ok 323 schema_error_count returns correct count
+ok 324 schema_get_errors_json returns valid JSON
+ok 325 schema_get_errors_json returns empty array when no errors
+ok 326 validate_all_schemas validates workflow directory
+ok 327 validate_all_schemas handles missing directory
+ok 328 schema validation handles special characters in values
+ok 329 schema validation handles unicode in messages
+ok 330 safe_sed_replace function exists
+ok 331 safe_sed_replace handles forward slash in value
+ok 332 safe_sed_replace handles ampersand in value
+ok 333 safe_sed_replace handles backslash in value
+ok 334 safe_sed_replace handles mixed special characters
+ok 335 checkpoint handles message with forward slashes
+ok 336 checkpoint handles message with ampersand
+ok 337 checkpoint handles message with special regex characters
+ok 338 checkpoint does not execute embedded commands
+ok 339 checkpoint does not execute backtick commands
+ok 340 sdlc.sh handles special characters in failure details
+ok 341 sdlc.sh does not execute embedded commands
+ok 342 research.sh handles special characters in rejection details
+ok 343 research.sh does not execute embedded commands
+ok 344 state.yaml remains valid after special character operations
+ok 345 checkpoints.log remains valid after special character operations
+ok 346 migration adds goal, phases block, and methodology_progress
+ok 347 migration reconciles current_phase to match sdlc_phase (maintenance)
+ok 348 migration is idempotent (single goal + single phases block after 2 runs)
+ok 349 migration creates a timestamped backup
+ok 350 migration --clean prunes non-catalog enabled skills
+ok 351 uws help exits 0 and shows usage
+ok 352 uws --help exits 0
+ok 353 uws -h exits 0
+ok 354 uws with no args shows help
+ok 355 uws version prints version string
+ok 356 uws --version prints version string
+ok 357 uws unknown-command exits non-zero
+ok 358 uws init dispatches to init_workflow.sh
+ok 359 uws init works without .workflow/ directory (fresh project)
+ok 360 uws status dispatches to status.sh
+ok 361 uws status -v passes flags through
+ok 362 uws checkpoint dispatches to checkpoint.sh
+ok 363 uws recover dispatches to recover_context.sh
+ok 364 uws agent dispatches to activate_agent.sh
+ok 365 uws skill dispatches to enable_skill.sh
+ok 366 uws sdlc dispatches to sdlc.sh
+ok 367 uws research dispatches to research.sh
+ok 368 uws spiral dispatches to spiral.sh
+ok 369 uws review dispatches to review.sh
+ok 370 uws pm dispatches to pm.sh
+ok 371 uws submit dispatches to submit.sh
+ok 372 uws detect dispatches to detect_and_configure.sh
+ok 373 uws company-os start dispatches to start_company_os.sh
+ok 374 uws company-os dashboard dispatches to start_dashboard.sh
+ok 375 uws finds .workflow/ from subdirectory
+ok 376 UWS_ROOT env var overrides discovery
+ok 377 uws exits with error when no .workflow/ found
+ok 378 uws_config.sh loads without error
+ok 379 double-source guard prevents re-loading
+ok 380 config dir respects XDG_CONFIG_HOME
+ok 381 config file path is under XDG_CONFIG_HOME
+ok 382 uws_config_write creates directory and file
+ok 383 uws_config_write writes correct key=value
+ok 384 uws_config_write handles multiple pairs
+ok 385 uws_config_write is idempotent — no duplicate keys
+ok 386 uws_config_write returns 1 with no arguments
+ok 387 uws_config_read_key returns value for existing key
+ok 388 uws_config_read_key returns 1 for missing key
+ok 389 uws_config_read_key returns 1 when no config file exists
+ok 390 uws_resolve_global_memory_dir: env var wins over config and default
+ok 391 uws_resolve_global_memory_dir: config wins over default
+ok 392 uws_resolve_global_memory_dir: default when nothing set
+ok 393 uws_resolve_install_dir: env var wins
+ok 394 uws_resolve_install_dir: config wins over self-discovery
+ok 395 uws_resolve_install_dir: self-discovery falls back to project root
+ok 396 uws_resolve_vector_server_dir: env var wins
+ok 397 uws_resolve_vector_server_dir: config wins over default
+ok 398 uws_resolve_vector_server_dir: default when nothing set
+ok 399 uws_validate_global_dir_path accepts clean paths
+ok 400 uws_validate_global_dir_path accepts paths with tilde
+ok 401 uws_validate_global_dir_path rejects dot-prefixed components
+ok 402 uws_validate_global_dir_path rejects nested dot-prefixed
+ok 403 uws_validate_global_dir_path allows .gitkeep
+ok 404 uws_persist_config writes all 3 keys
+ok 405 uws_persist_config is idempotent
+ok 406 vector_memory_setup.sh loads without error
+ok 407 double-source guard prevents re-loading
+ok 408 UWS_SKIP_VECTOR_MEMORY=true skips all setup
+ok 409 uws_vm_check_python returns 0 or 1 without crashing
+ok 410 uws_vm_check_disk_space returns 0 or 1 without crashing
+ok 411 uws_vm_configure_mcp_json creates .mcp.json when absent
+ok 412 uws_vm_configure_mcp_json merges into existing .mcp.json preserving other servers
+ok 413 uws_vm_configure_mcp_json is idempotent
+ok 414 uws_vm_configure_mcp_json updates --working-dir when project path differs
+ok 415 path with spaces handled correctly in .mcp.json
+ok 416 uws_vm_update_gitignore adds memory/ when absent
+ok 417 uws_vm_update_gitignore is idempotent
+ok 418 uws_vm_update_gitignore creates .gitignore if missing
+ok 419 non-interactive mode skips prompt
+ok 420 setup_vector_memory returns 0 even when Python is missing (graceful degradation)
+ok 421 sdlc requirements and design both map to phase_1_planning
+ok 422 sdlc implementation/verification/deployment/maintenance map correctly
+ok 423 research phases collapse into the 5 UWS phases
+ok 424 get_phase_status reads the initial board
+ok 425 set_phase_status round-trips a single phase without touching others
+ok 426 set_uws_phase advances current_phase and marks earlier phases completed
+ok 427 mp_ensure seeds an entry and deliverables_remaining reflects total
+ok 428 mark_deliverable is idempotent and decrements remaining
+ok 429 ledger edits do not corrupt the phases board
+ok 430 gate_enabled is false with empty goal, true once a goal is declared
+ok 431 yaml_utils.sh exists and is sourceable
+ok 432 yaml_get function exists after sourcing
+ok 433 yaml_set function exists after sourcing
+ok 434 yaml_get retrieves simple string value
+ok 435 yaml_get retrieves nested value
+ok 436 yaml_get returns null for missing key
+ok 437 yaml_get handles numeric values
+ok 438 yaml_get handles boolean values
+ok 439 yaml_set creates new key
+ok 440 yaml_set updates existing key
+ok 441 yaml_validate function exists
+ok 442 yaml_validate accepts valid YAML
+ok 443 yaml_get handles empty file
+ok 444 yaml_get handles file with comments
+ok 445 yaml_get handles special characters in values
+ok 446 yaml_get handles multiword values
+ok 447 yaml_utils works without yq (fallback mode)
+ok 448 yaml_get handles array access
+ok 449 yaml_get completes within 1 second
