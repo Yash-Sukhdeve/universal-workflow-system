@@ -298,8 +298,9 @@ EOF
 @test "enable_skill handles special characters in skill name" {
     cd "${TEST_TMP_DIR}"
 
-    # This should work with underscores
-    run "${SCRIPTS_DIR}/enable_skill.sh" custom_skill_name enable
+    # This should work with underscores. Custom (non-catalog) skills now
+    # require --force since catalog validation was added (Milestone 1).
+    run "${SCRIPTS_DIR}/enable_skill.sh" custom_skill_name enable --force
 
     assert_success
 }
@@ -337,9 +338,40 @@ EOF
 @test "custom skill gets generic definition" {
     cd "${TEST_TMP_DIR}"
 
-    "${SCRIPTS_DIR}/enable_skill.sh" my_custom_skill enable
+    # Custom (non-catalog) skills require --force after catalog validation (Milestone 1).
+    "${SCRIPTS_DIR}/enable_skill.sh" my_custom_skill enable --force
 
     assert_file_contains ".workflow/skills/definitions/my_custom_skill.yaml" "category: custom"
+}
+
+# =============================================================================
+# CATALOG VALIDATION TESTS (Milestone 1)
+# =============================================================================
+
+@test "enable_skill rejects a skill not in the catalog" {
+    cd "${TEST_TMP_DIR}"
+
+    run "${SCRIPTS_DIR}/enable_skill.sh" not_a_real_skill enable
+
+    assert_failure
+    run grep -E '^  - not_a_real_skill$' .workflow/skills/enabled.yaml
+    assert_failure
+}
+
+@test "enable_skill --force allows a non-catalog skill" {
+    cd "${TEST_TMP_DIR}"
+
+    run "${SCRIPTS_DIR}/enable_skill.sh" not_a_real_skill enable --force
+
+    assert_success
+}
+
+@test "enable_skill accepts a catalog skill without --force" {
+    cd "${TEST_TMP_DIR}"
+
+    run "${SCRIPTS_DIR}/enable_skill.sh" literature_review enable
+
+    assert_success
 }
 
 # =============================================================================

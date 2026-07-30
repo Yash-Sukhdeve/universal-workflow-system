@@ -129,6 +129,15 @@ validate_skill_name() {
     return 0
 }
 
+# Function to check catalog membership (Milestone 1)
+# Open-world when no catalog exists; strict when catalog.yaml is present.
+skill_in_catalog() {
+    local skill=$1
+    local catalog=".workflow/skills/catalog.yaml"
+    [[ -f "$catalog" ]] || return 0
+    grep -qE "^  ${skill}:" "$catalog"
+}
+
 # Function to enable a skill
 enable_skill() {
     local skill=$1
@@ -136,6 +145,15 @@ enable_skill() {
 
     # Validate skill name
     if ! validate_skill_name "$skill"; then
+        return 1
+    fi
+
+    # Catalog membership gate (Milestone 1): reject unknown skills unless the
+    # caller explicitly opts into a custom skill via --force. This closes the
+    # gap that let junk names like 'foo' into the enabled set.
+    if ! skill_in_catalog "$skill" && [[ "${PARAMS:-}" != "--force" && "${PARAMS:-}" != "custom" ]]; then
+        echo -e "${RED}Error: Unknown skill '${skill}' — not in .workflow/skills/catalog.yaml${NC}"
+        echo -e "${YELLOW}Enable a custom skill anyway with: $0 ${skill} enable --force${NC}"
         return 1
     fi
 

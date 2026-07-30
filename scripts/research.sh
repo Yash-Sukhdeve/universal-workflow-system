@@ -126,6 +126,13 @@ set_phase() {
         atomic_commit 2>/dev/null || true
     fi
 
+    # Milestone 1: sync current_phase + board, seed the ledger, refresh handoff.
+    if declare -f sync_meta_phase > /dev/null 2>&1; then
+        local _total
+        _total=$(get_phase_deliverables "$new_phase" | wc -l | tr -d '[:space:]')
+        sync_meta_phase "research" "$new_phase" "${_total:-0}"
+    fi
+
     # Log the transition
     if declare -f log_info > /dev/null 2>&1; then
         log_info "research" "Phase changed to: $new_phase"
@@ -218,6 +225,82 @@ get_refinement_phase() {
             echo "analysis"
             ;;
     esac
+}
+
+#######################################
+# Phase deliverables (exit criteria) for the scientific-method phases.
+# Returns one deliverable per line; count backs the goal-driven gate.
+#######################################
+get_phase_deliverables() {
+    local phase="$1"
+
+    case "$phase" in
+        "hypothesis")
+            echo "- Research question (RQ) stated"
+            echo "- Testable, falsifiable hypothesis defined"
+            echo "- Variables and expected outcomes identified"
+            ;;
+        "literature_review")
+            echo "- Survey of prior work related to the hypothesis"
+            echo "- Gap analysis documented"
+            echo "- Key references catalogued with citations"
+            ;;
+        "experiment_design")
+            echo "- Experimental methodology defined"
+            echo "- Sample size and controls specified"
+            echo "- Data-collection protocol documented"
+            ;;
+        "data_collection")
+            echo "- Data collected per protocol"
+            echo "- Deviations from protocol documented"
+            ;;
+        "analysis")
+            echo "- Statistical analysis performed"
+            echo "- Hypothesis tested against results"
+            echo "- Visualizations generated"
+            ;;
+        "peer_review")
+            echo "- Manuscript prepared for review"
+            echo "- Reviewer feedback addressed"
+            ;;
+        "publication")
+            echo "- Findings written up (paper/report)"
+            echo "- Figures and tables prepared"
+            echo "- Submitted to venue"
+            ;;
+    esac
+}
+
+#######################################
+# Hard deliverable gate for `next` (active once a goal is declared; --force overrides)
+# Arguments: $1 - current phase, $2 - force flag
+#######################################
+_deliverable_gate() {
+    local phase="$1" force="${2:-}"
+    [[ "$force" == "--force" ]] && return 0
+    declare -f gate_enabled > /dev/null 2>&1 || return 0
+    gate_enabled || return 0
+
+    local total
+    total=$(get_phase_deliverables "$phase" | wc -l | tr -d '[:space:]')
+    declare -f mp_ensure > /dev/null 2>&1 && mp_ensure "research" "$phase" "${total:-0}"
+
+    local remaining=0
+    declare -f deliverables_remaining > /dev/null 2>&1 && remaining=$(deliverables_remaining "research" "$phase" 2>/dev/null || echo 0)
+    [[ "$remaining" =~ ^[0-9]+$ ]] || remaining=0
+
+    if (( remaining > 0 )); then
+        echo -e "${RED}✗ Blocked: ${remaining} unmet deliverable(s) in '${phase}'.${NC}" >&2
+        echo -e "${CYAN}Deliverables (mark done with: $0 check <n>):${NC}"
+        local i=1 line
+        while IFS= read -r line; do
+            echo -e "   [${i}] ${line#- }"
+            i=$(( i + 1 ))
+        done < <(get_phase_deliverables "$phase")
+        echo -e "${YELLOW}Override with:${NC} $0 next --force"
+        return 1
+    fi
+    return 0
 }
 
 #######################################
@@ -331,6 +414,9 @@ main() {
                 echo -e "Run ${CYAN}./scripts/research.sh start${NC} first."
                 exit 1
             fi
+
+            # Hard deliverable gate (active once a goal is declared; --force overrides)
+            _deliverable_gate "$current_phase" "${details:-}" || exit 1
 
             local next_phase
             if next_phase=$(get_next_phase "$current_phase"); then
@@ -454,6 +540,63 @@ main() {
 
             echo -e "${GREEN}Research state reset.${NC}"
             echo -e "Run ${CYAN}./scripts/research.sh start${NC} to begin a new research project."
+            ;;
+
+        goal)
+            if [[ -z "$details" ]]; then
+                local _g
+                _g=$(yaml_get "$STATE_FILE" "goal" 2>/dev/null || echo "")
+                [[ "$_g" == "null" ]] && _g=""
+                if [[ -z "$_g" ]]; then
+                    echo -e "${YELLOW}No goal declared.${NC} Set one with: ${CYAN}$0 goal \"<objective>\"${NC}"
+                else
+                    echo -e "${CYAN}Goal:${NC} ${_g}"
+                fi
+            else
+                yaml_set "$STATE_FILE" "goal" "$details" >/dev/null 2>&1 || true
+                echo -e "${GREEN}✓ Goal declared:${NC} ${details}"
+                echo -e "  Deliverable gating is now ${GREEN}active${NC} — use ${CYAN}$0 check <n>${NC} then ${CYAN}$0 next${NC}."
+            fi
+            ;;
+
+        check)
+            local current_phase
+            current_phase=$(get_phase)
+            if [[ "$current_phase" == "none" ]]; then
+                echo -e "${RED}Error: Research not started.${NC}"
+                exit 1
+            fi
+            local _total
+            _total=$(get_phase_deliverables "$current_phase" | wc -l | tr -d '[:space:]')
+            if [[ ! "$details" =~ ^[0-9]+$ ]]; then
+                echo -e "${RED}Usage: $0 check <deliverable-number>${NC}"
+                local _i=1 _l
+                while IFS= read -r _l; do echo -e "   [${_i}] ${_l#- }"; _i=$(( _i + 1 )); done < <(get_phase_deliverables "$current_phase")
+                exit 1
+            fi
+            if (( details < 1 || details > _total )); then
+                echo -e "${RED}Error: deliverable number out of range (1..${_total}).${NC}"
+                exit 1
+            fi
+            declare -f mp_ensure > /dev/null 2>&1 && mp_ensure "research" "$current_phase" "${_total:-0}"
+            declare -f mark_deliverable > /dev/null 2>&1 && mark_deliverable "research" "$current_phase" "$details"
+            local _line
+            _line=$(get_phase_deliverables "$current_phase" | sed -n "${details}p")
+            echo -e "${GREEN}✓ Marked [${details}]:${NC} ${_line#- }"
+            local _rem=0
+            declare -f deliverables_remaining > /dev/null 2>&1 && _rem=$(deliverables_remaining "research" "$current_phase" 2>/dev/null || echo 0)
+            if (( _rem == 0 )); then
+                echo -e "  ${GREEN}All deliverables met for ${current_phase}.${NC} Advance with ${CYAN}$0 next${NC}."
+            else
+                echo -e "  ${YELLOW}${_rem} remaining.${NC}"
+            fi
+            ;;
+
+        deliverables)
+            local _p="${details:-}"
+            [[ -z "$_p" ]] && _p="$(get_phase)"
+            [[ "$_p" == "none" || -z "$_p" ]] && _p="hypothesis"
+            get_phase_deliverables "$_p"
             ;;
 
         help|--help|-h)

@@ -994,10 +994,13 @@ async def test_get_status_comprehensive(mock_run: Mock, adapter: UWSAdapter, uws
         )
     ]
 
-    # Create state file
+    # Create state file (real goal-driven schema: current_phase / current_checkpoint)
     state_data = {
-        "phase": "phase_2_implementation",
-        "checkpoint": "CP_2_003",
+        "current_phase": "phase_2_implementation",
+        "current_checkpoint": "CP_2_003",
+        "goal": "ship the thing",
+        "phases": {"phase_2_implementation": {"status": "active"}},
+        "methodology_progress": {"sdlc_implementation": {"total": 3, "done": [1]}},
         "enabled_skills": ["code_review", "testing"]
     }
     state_path = uws_root / ".workflow" / "state.yaml"
@@ -1006,9 +1009,13 @@ async def test_get_status_comprehensive(mock_run: Mock, adapter: UWSAdapter, uws
 
     status = await adapter.get_status()
 
-    assert status["state"]["phase"] == "phase_2_implementation"
+    assert status["state"]["current_phase"] == "phase_2_implementation"
     assert status["current_phase"] == "phase_2_implementation"
     assert status["current_checkpoint"] == "CP_2_003"
+    # Milestone 1: adapter surfaces goal / phases / methodology_progress
+    assert status["goal"] == "ship the thing"
+    assert status["phases"]["phase_2_implementation"]["status"] == "active"
+    assert status["methodology_progress"]["sdlc_implementation"]["done"] == [1]
     assert len(status["active_sessions"]) == 1
     assert status["active_sessions"][0]["agent"] == "researcher"
     assert status["enabled_skills"] == ["code_review", "testing"]

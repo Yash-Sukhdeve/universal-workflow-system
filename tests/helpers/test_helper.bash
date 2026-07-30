@@ -221,6 +221,18 @@ skills:
     category: documentation
     description: "Technical documentation"
 
+  debugging:
+    category: development
+    description: "Debug and fix issues"
+
+  code_generation:
+    category: development
+    description: "Generate code from specifications"
+
+  quantization:
+    category: optimization
+    description: "Model quantization"
+
 skill_chains:
   full_research_pipeline:
     - literature_review

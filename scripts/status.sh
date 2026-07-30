@@ -86,13 +86,9 @@ get_yaml_value() {
     fi
 }
 
-# Helper function to get nested phase status from state.yaml
-# Extracts phases.<phase_name>.status using sed (yaml_get only supports top-level)
-get_phase_status() {
-    local phase_name="$1"
-    local file="${2:-.workflow/state.yaml}"
-    sed -n "/^  ${phase_name}:/,/^  [^ ]/{ s/^    status: *\"\{0,1\}\([^\"]*\)\"\{0,1\}/\1/p; }" "$file" 2>/dev/null | head -1
-}
+# get_phase_status(phase[,file]) is now provided canonically by
+# scripts/lib/workflow_routing.sh (sourced above) so the reader and the
+# writer (set_phase_status) stay in lockstep on the indentation contract.
 
 # Helper function to create progress bar
 create_progress_bar() {
@@ -150,7 +146,8 @@ echo -e "${BLUE}└────────────────────�
 
 PROJECT_NAME=$(basename "$(pwd)")
 PROJECT_TYPE=$(get_yaml_value "project_type" "${STATE_FILE}")
-CREATED=$(get_yaml_value "created" "${STATE_FILE}")
+# 'created' is nested under metadata: in state.yaml; read the dotted key.
+CREATED=$(get_yaml_value "metadata.created" "${STATE_FILE}")
 
 echo -e "  ${CYAN}Name:${NC}         ${BOLD}${PROJECT_NAME}${NC}"
 echo -e "  ${CYAN}Type:${NC}         ${GREEN}${PROJECT_TYPE}${NC}"
