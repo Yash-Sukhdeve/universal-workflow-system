@@ -488,7 +488,8 @@ validate_boolean() {
     local value="$1"
     local field_name="${2:-Boolean value}"
 
-    case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in  # not ${value,,}: bash 3.2
+    # Lowercase with tr: macOS /bin/bash 3.2 has no case-modification expansion
+    case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in
         true|false|yes|no|1|0|on|off)
             return $VALID
             ;;
