@@ -3,6 +3,7 @@
 # Manages concurrent agent sessions for real-time dashboard monitoring
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/portable.sh"
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -126,7 +127,7 @@ EOF
     fi
 
     # Remove "sessions: []" line if present (empty array marker)
-    sed -i 's/^sessions: \[\]/sessions:/' "$temp_file"
+    sed_inplace 's/^sessions: \[\]/sessions:/' "$temp_file"
 
     mv "$temp_file" "$SESSIONS_FILE"
 

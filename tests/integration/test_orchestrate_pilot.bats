@@ -79,5 +79,5 @@ teardown() { teardown_test_environment; }
 @test "the deliverable gate blocks advancement in the pilot until checks" {
     run "${SCRIPTS_DIR}/sdlc.sh" next
     assert_failure
-    grep -q 'sdlc_phase: "requirements"' .workflow/state.yaml
+    grep -Eq 'sdlc_phase: "?requirements"?$' .workflow/state.yaml
 }

@@ -4,6 +4,7 @@
 # Resolution chain: environment variable → config file → default convention.
 
 # Double-source guard
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/portable.sh"
 if [[ "${_UWS_CONFIG_LOADED:-}" == "true" ]]; then
     return 0 2>/dev/null || true
 fi
@@ -90,7 +91,7 @@ HEADER
 
         if grep -qE "^${key}:" "$UWS_CONFIG_FILE" 2>/dev/null; then
             # Update existing key in-place
-            sed -i "s|^${key}:.*|${key}: \"${value}\"|" "$UWS_CONFIG_FILE"
+            sed_inplace "s|^${key}:.*|${key}: \"${value}\"|" "$UWS_CONFIG_FILE"
         else
             # Append new key
             echo "${key}: \"${value}\"" >> "$UWS_CONFIG_FILE"

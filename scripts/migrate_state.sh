@@ -18,6 +18,7 @@
 # RWF Compliance: R3 (State Safety), R5 (Reproducibility)
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
@@ -54,7 +55,7 @@ changed=false
 # --- 1. goal: (top-level) ---
 if ! grep -q '^goal:' "$STATE"; then
     if grep -q '^project_type:' "$STATE"; then
-        sed -i '/^project_type:/a goal: ""' "$STATE"
+        append_after_match "$STATE" '^project_type:' 'goal: ""'
     else
         printf 'goal: ""\n' >> "$STATE"
     fi
@@ -126,7 +127,7 @@ if [[ "$CLEAN" == "true" ]]; then
         while IFS= read -r skill; do
             [[ -z "$skill" ]] && continue
             if ! grep -qE "^  ${skill}:" "$catalog"; then
-                sed -i "/^  - ${skill}\$/d" "$enabled"
+                sed_inplace "/^  - ${skill}\$/d" "$enabled"
                 echo -e "  ${YELLOW}-${NC} pruned unknown enabled skill: ${skill}"
                 changed=true
             fi

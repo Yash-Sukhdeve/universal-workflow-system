@@ -14,6 +14,7 @@
 # RWF Compliance: R3 (State Safety), R4 (Error-Free)
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
@@ -95,7 +96,7 @@ set_phase() {
 
     # Validate phase
     local valid=false
-    for p in "${RESEARCH_PHASES[@]}"; do
+    for p in ${RESEARCH_PHASES[@]+"${RESEARCH_PHASES[@]}"}; do
         if [[ "$p" == "$new_phase" ]]; then
             valid=true
             break
@@ -159,7 +160,7 @@ set_phase_fallback() {
             # Manual escaping as last resort
             local escaped_phase
             escaped_phase=$(printf '%s\n' "$new_phase" | sed 's/[&/\]/\\&/g')
-            sed -i "s|^research_phase:.*|research_phase: \"${escaped_phase}\"|" "$STATE_FILE"
+            sed_inplace "s|^research_phase:.*|research_phase: \"${escaped_phase}\"|" "$STATE_FILE"
         fi
     fi
 }
@@ -173,7 +174,7 @@ get_next_phase() {
     local current="$1"
     local found=false
 
-    for phase in "${RESEARCH_PHASES[@]}"; do
+    for phase in ${RESEARCH_PHASES[@]+"${RESEARCH_PHASES[@]}"}; do
         if [[ "$found" == "true" ]]; then
             echo "$phase"
             return 0
@@ -324,7 +325,7 @@ show_status() {
         # Show phase progression (Scientific Method)
         echo -e "  ${BOLD}Scientific Method Progress:${NC}"
         local found_current=false
-        for phase in "${RESEARCH_PHASES[@]}"; do
+        for phase in ${RESEARCH_PHASES[@]+"${RESEARCH_PHASES[@]}"}; do
             local display_name
             case "$phase" in
                 "hypothesis") display_name="Hypothesis Formation" ;;
@@ -535,7 +536,7 @@ main() {
 
             # Remove research_phase from state file
             if grep -q "^research_phase:" "$STATE_FILE" 2>/dev/null; then
-                sed -i '/^research_phase:/d' "$STATE_FILE"
+                sed_inplace '/^research_phase:/d' "$STATE_FILE"
             fi
 
             echo -e "${GREEN}Research state reset.${NC}"

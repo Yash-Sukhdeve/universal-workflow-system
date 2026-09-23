@@ -4,6 +4,7 @@
 # Enable, disable, and execute workflow skills
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
@@ -343,7 +344,7 @@ disable_skill() {
     fi
 
     # Remove from enabled list (simple sed approach)
-    sed -i "/  - ${skill}/d" .workflow/skills/enabled.yaml
+    sed_inplace "/  - ${skill}/d" .workflow/skills/enabled.yaml
     
     # Log skill disablement
     echo "$(date -Iseconds) | SKILL_DISABLED | ${skill}" >> .workflow/checkpoints.log

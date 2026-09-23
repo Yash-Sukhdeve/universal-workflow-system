@@ -465,7 +465,7 @@ load_agent_skills() {
     esac
     
     # Add skills to enabled list
-    for skill in "${skills[@]}"; do
+    for skill in ${skills[@]+"${skills[@]}"}; do
         echo -e "  + Enabling skill: ${GREEN}${skill}${NC}"
         
         # Check for Expert Guide

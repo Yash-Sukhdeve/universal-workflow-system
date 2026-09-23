@@ -43,7 +43,7 @@ teardown() { teardown_test_environment; }
 
 @test "sdlc start sets current_phase and seeds the ledger" {
     "${SCRIPTS_DIR}/sdlc.sh" start
-    grep -q 'current_phase: "phase_1_planning"' .workflow/state.yaml
+    grep -Eq 'current_phase: "?phase_1_planning"?$' .workflow/state.yaml
     grep -q '^sdlc_phase:' .workflow/state.yaml
     grep -q '^  sdlc_requirements:' .workflow/state.yaml
 }
@@ -52,7 +52,7 @@ teardown() { teardown_test_environment; }
     "${SCRIPTS_DIR}/sdlc.sh" start
     run "${SCRIPTS_DIR}/sdlc.sh" next
     assert_success
-    grep -q 'sdlc_phase: "design"' .workflow/state.yaml
+    grep -Eq 'sdlc_phase: "?design"?$' .workflow/state.yaml
 }
 
 @test "next is BLOCKED once a goal is declared with unmet deliverables" {
@@ -61,7 +61,7 @@ teardown() { teardown_test_environment; }
     run "${SCRIPTS_DIR}/sdlc.sh" next
     assert_failure
     # still at requirements
-    grep -q 'sdlc_phase: "requirements"' .workflow/state.yaml
+    grep -Eq 'sdlc_phase: "?requirements"?$' .workflow/state.yaml
 }
 
 @test "check all deliverables then next advances; --force overrides" {
@@ -72,24 +72,24 @@ teardown() { teardown_test_environment; }
     "${SCRIPTS_DIR}/sdlc.sh" check 3
     run "${SCRIPTS_DIR}/sdlc.sh" next
     assert_success
-    grep -q 'sdlc_phase: "design"' .workflow/state.yaml
+    grep -Eq 'sdlc_phase: "?design"?$' .workflow/state.yaml
     # at design (unmet), --force skips the gate
     run "${SCRIPTS_DIR}/sdlc.sh" next --force
     assert_success
-    grep -q 'sdlc_phase: "implementation"' .workflow/state.yaml
+    grep -Eq 'sdlc_phase: "?implementation"?$' .workflow/state.yaml
 }
 
 @test "current_phase stays phase_1_planning across requirements->design" {
     "${SCRIPTS_DIR}/sdlc.sh" start
     "${SCRIPTS_DIR}/sdlc.sh" next   # design (no goal => free)
-    grep -q 'current_phase: "phase_1_planning"' .workflow/state.yaml
-    grep -q 'sdlc_phase: "design"' .workflow/state.yaml
+    grep -Eq 'current_phase: "?phase_1_planning"?$' .workflow/state.yaml
+    grep -Eq 'sdlc_phase: "?design"?$' .workflow/state.yaml
 }
 
 @test "current_phase advances to phase_2 on design->implementation" {
     "${SCRIPTS_DIR}/sdlc.sh" start
     "${SCRIPTS_DIR}/sdlc.sh" goto implementation
-    grep -q 'current_phase: "phase_2_implementation"' .workflow/state.yaml
+    grep -Eq 'current_phase: "?phase_2_implementation"?$' .workflow/state.yaml
 }
 
 @test "checkpoint ID reflects the current phase (CP_2_* after advancing) — regression" {

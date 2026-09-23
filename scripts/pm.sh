@@ -6,6 +6,7 @@
 #
 
 set -e
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 COMMAND="${1:-list}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -80,7 +81,7 @@ if [[ "$COMMAND" == "move" ]]; then
     fi
     
     # Use sed to update status (simple implementation)
-    sed -i "s/^status:.*/status: ${NEW_STATUS}/" "$FILE"
+    sed_inplace "s/^status:.*/status: ${NEW_STATUS}/" "$FILE"
     echo "Updated $ID status to $NEW_STATUS"
     exit 0
 fi

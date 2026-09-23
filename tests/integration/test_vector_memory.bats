@@ -23,6 +23,8 @@ setup() {
 }
 
 @test "vector memory venv exists" {
+    # Machine-level, opt-in install: absent on fresh machines and CI runners
+    [ -d "${HOME}/.uws/tools/vector-memory" ] || skip "vector memory server not installed on this machine"
     [ -f "${HOME}/.uws/tools/vector-memory/.venv/bin/python" ]
 }
 

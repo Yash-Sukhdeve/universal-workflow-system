@@ -77,7 +77,7 @@ calculate_state_checksum() {
 
     local combined=""
 
-    for file in "${files[@]}"; do
+    for file in ${files[@]+"${files[@]}"}; do
         if [[ -f "$file" ]]; then
             local cs
             cs=$(calculate_checksum "$file")
@@ -122,7 +122,7 @@ files:"
         "skills/catalog.yaml"
     )
 
-    for file in "${files[@]}"; do
+    for file in ${files[@]+"${files[@]}"}; do
         local full_path="${workflow_dir}/${file}"
         if [[ -f "$full_path" ]]; then
             local cs
@@ -437,7 +437,7 @@ get_checksums_json() {
     local first=true
     local files=("state.yaml" "handoff.md" "checkpoints.log")
 
-    for file in "${files[@]}"; do
+    for file in ${files[@]+"${files[@]}"}; do
         local full_path="${workflow_dir}/${file}"
         if [[ -f "$full_path" ]]; then
             local cs

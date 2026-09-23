@@ -105,10 +105,10 @@ EOF
     run env -u WORKFLOW_DIR bash -c "cd '$PROJ' && ./.uws/scripts/checkpoint.sh 'first | second'"
     [ "$status" -eq 0 ]
     grep -q "| CP_1_002 | first - second$" "$PROJ/.workflow/checkpoints.log"
-    grep -q 'current_checkpoint: "CP_1_002"' "$PROJ/.workflow/state.yaml"
+    grep -Eq 'current_checkpoint: "?CP_1_002"?$' "$PROJ/.workflow/state.yaml"
 }
 
-@test "installer: generated commands contain no GNU-only sed -i or date -I" {
+@test "installer: generated commands contain no GNU-only sed -i.bak or date -I" {
     install_into_project --yes
     run grep -rE "sed -i [^.]|date -I" "$PROJ/.claude/commands" "$PROJ/.uws"
     [ "$status" -eq 1 ]

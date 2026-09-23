@@ -332,7 +332,7 @@ validate_workflow_scripts() {
     )
 
     local all_present=true
-    for script in "${required_scripts[@]}"; do
+    for script in ${required_scripts[@]+"${required_scripts[@]}"}; do
         if [[ ! -f "${SCRIPT_DIR}/${script}" ]]; then
             echo -e "${YELLOW}  ⚠ Warning: ${script} not found${NC}"
             all_present=false

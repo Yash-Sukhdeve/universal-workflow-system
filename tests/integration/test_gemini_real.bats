@@ -151,7 +151,7 @@ teardown() {
     sleep 1
 
     # Simulate Gemini updating state
-    sed -i "s/last_updated:.*/last_updated: \"$(date -Iseconds)\"/" .workflow/state.yaml
+    sed -i.bak "s/last_updated:.*/last_updated: \"$(date -Iseconds)\"/" .workflow/state.yaml
 
     local after_updated
     after_updated=$(grep "last_updated" .workflow/state.yaml | head -1)

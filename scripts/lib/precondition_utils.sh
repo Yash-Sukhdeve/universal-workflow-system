@@ -72,7 +72,7 @@ precondition_failure_count() {
 precondition_print_failures() {
     if precondition_has_failures; then
         echo -e "${RED}Precondition failures:${NC}" >&2
-        for failure in "${PRECONDITION_FAILURES[@]}"; do
+        for failure in ${PRECONDITION_FAILURES[@]+"${PRECONDITION_FAILURES[@]}"}; do
             echo -e "  ${RED}- ${failure}${NC}" >&2
         done
     fi
@@ -174,7 +174,7 @@ require_agent_valid() {
         fi
     else
         # Fallback validation
-        for valid in "${valid_agents[@]}"; do
+        for valid in ${valid_agents[@]+"${valid_agents[@]}"}; do
             if [[ "$agent_name" == "$valid" ]]; then
                 found=true
                 break

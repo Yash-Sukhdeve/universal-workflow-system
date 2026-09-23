@@ -115,7 +115,7 @@ teardown() {
     create_claude_session_state "${TEST_TMP_DIR}" "phase_3_validation" "CP_3_001" "experimenter"
 
     # Simulate regression to Phase 2
-    sed -i 's/phase_3_validation/phase_2_implementation/' .workflow/state.yaml
+    sed -i.bak 's/phase_3_validation/phase_2_implementation/' .workflow/state.yaml
 
     # Handoff should still work
     run create_handoff_checkpoint "${TEST_TMP_DIR}" "Regression handoff" "claude" "gemini"
@@ -157,19 +157,19 @@ teardown() {
     "${SCRIPTS_DIR}/checkpoint.sh" create "Phase 1" 2>/dev/null || true
     create_handoff_checkpoint "${TEST_TMP_DIR}" "H1" "claude" "gemini"
 
-    sed -i 's/phase_1_planning/phase_2_implementation/' .workflow/state.yaml
+    sed -i.bak 's/phase_1_planning/phase_2_implementation/' .workflow/state.yaml
     "${SCRIPTS_DIR}/checkpoint.sh" create "Phase 2" 2>/dev/null || true
     create_handoff_checkpoint "${TEST_TMP_DIR}" "H2" "gemini" "claude"
 
-    sed -i 's/phase_2_implementation/phase_3_validation/' .workflow/state.yaml
+    sed -i.bak 's/phase_2_implementation/phase_3_validation/' .workflow/state.yaml
     "${SCRIPTS_DIR}/checkpoint.sh" create "Phase 3" 2>/dev/null || true
     create_handoff_checkpoint "${TEST_TMP_DIR}" "H3" "claude" "gemini"
 
-    sed -i 's/phase_3_validation/phase_4_delivery/' .workflow/state.yaml
+    sed -i.bak 's/phase_3_validation/phase_4_delivery/' .workflow/state.yaml
     "${SCRIPTS_DIR}/checkpoint.sh" create "Phase 4" 2>/dev/null || true
     create_handoff_checkpoint "${TEST_TMP_DIR}" "H4" "gemini" "claude"
 
-    sed -i 's/phase_4_delivery/phase_5_maintenance/' .workflow/state.yaml
+    sed -i.bak 's/phase_4_delivery/phase_5_maintenance/' .workflow/state.yaml
     "${SCRIPTS_DIR}/checkpoint.sh" create "Phase 5" 2>/dev/null || true
 
     end_time=$(date +%s)

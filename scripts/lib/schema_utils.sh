@@ -78,14 +78,14 @@ schema_print_results() {
 
     if (( error_count > 0 )); then
         echo -e "${RED}Validation errors (${error_count}):${NC}" >&2
-        for error in "${SCHEMA_ERRORS[@]}"; do
+        for error in ${SCHEMA_ERRORS[@]+"${SCHEMA_ERRORS[@]}"}; do
             echo -e "  ${RED}- ${error}${NC}" >&2
         done
     fi
 
     if (( warning_count > 0 )); then
         echo -e "${YELLOW}Validation warnings (${warning_count}):${NC}" >&2
-        for warning in "${SCHEMA_WARNINGS[@]}"; do
+        for warning in ${SCHEMA_WARNINGS[@]+"${SCHEMA_WARNINGS[@]}"}; do
             echo -e "  ${YELLOW}- ${warning}${NC}" >&2
         done
     fi
@@ -243,7 +243,7 @@ validate_state_schema() {
         "metadata.last_updated"
     )
 
-    for field in "${required_fields[@]}"; do
+    for field in ${required_fields[@]+"${required_fields[@]}"}; do
         validate_required_field "$state_file" "$field" || true
     done
 
@@ -337,7 +337,7 @@ validate_checkpoint_schema() {
         "phase"
     )
 
-    for field in "${required_fields[@]}"; do
+    for field in ${required_fields[@]+"${required_fields[@]}"}; do
         validate_required_field "$metadata_file" "$field" || true
     done
 
@@ -397,7 +397,7 @@ validate_agent_schema() {
         "documenter"
     )
 
-    for valid in "${valid_agents[@]}"; do
+    for valid in ${valid_agents[@]+"${valid_agents[@]}"}; do
         if [[ "$agent_name" == "$valid" ]]; then
             return 0
         fi
@@ -467,7 +467,7 @@ schema_get_errors_json() {
     local json="["
     local first=true
 
-    for error in "${SCHEMA_ERRORS[@]}"; do
+    for error in ${SCHEMA_ERRORS[@]+"${SCHEMA_ERRORS[@]}"}; do
         if [[ "$first" == "true" ]]; then
             first=false
         else

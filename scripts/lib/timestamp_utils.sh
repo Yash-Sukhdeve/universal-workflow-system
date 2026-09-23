@@ -279,7 +279,7 @@ ensure_all_timestamps() {
         atomic_begin "ensure_timestamps" && use_transaction=true
     fi
 
-    for field in "${timestamp_fields[@]}"; do
+    for field in ${timestamp_fields[@]+"${timestamp_fields[@]}"}; do
         local value
         value=$(yaml_get "$state_file" "$field" 2>/dev/null || echo "null")
 
@@ -321,7 +321,7 @@ check_stale_timestamps() {
         "health.last_check"
     )
 
-    for field in "${timestamp_fields[@]}"; do
+    for field in ${timestamp_fields[@]+"${timestamp_fields[@]}"}; do
         local value
         value=$(yaml_get "$state_file" "$field" 2>/dev/null || echo "null")
 

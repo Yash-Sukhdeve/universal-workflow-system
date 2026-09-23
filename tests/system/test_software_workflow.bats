@@ -315,9 +315,9 @@ EOF
 
 @test "E2E: Software workflow - Sprint tracking" {
     # Update sprint progress
-    sed -i 's/tasks_completed: 0/tasks_completed: 3/' \
+    sed -i.bak 's/tasks_completed: 0/tasks_completed: 3/' \
         "${TEST_TMP_DIR}/.workflow/state.yaml"
-    sed -i 's/tasks_remaining: 5/tasks_remaining: 2/' \
+    sed -i.bak 's/tasks_remaining: 5/tasks_remaining: 2/' \
         "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     assert_file_contains "${TEST_TMP_DIR}/.workflow/state.yaml" "tasks_completed: 3"
@@ -421,7 +421,7 @@ EOF
     echo "Maintenance ongoing" > "${TEST_TMP_DIR}/phases/phase_5_maintenance/STATUS"
 
     # Update state to reflect completion
-    sed -i 's/current_phase: "phase_1_planning"/current_phase: "phase_5_maintenance"/' \
+    sed -i.bak 's/current_phase: "phase_1_planning"/current_phase: "phase_5_maintenance"/' \
         "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     # Verify all phases have markers

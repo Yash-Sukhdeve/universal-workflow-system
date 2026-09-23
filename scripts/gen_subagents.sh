@@ -53,7 +53,7 @@ mkdir -p "$AGENT_DIR"
 protocol_file="${PERSONA_DIR}/_universal_protocol.md"
 
 count=0
-for role in "${ROLES[@]}"; do
+for role in ${ROLES[@]+"${ROLES[@]}"}; do
     persona_file="${PERSONA_DIR}/${role}.md"
     if [[ ! -f "$persona_file" ]]; then
         echo -e "${RED}skip ${role}: persona file missing${NC}" >&2

@@ -135,7 +135,7 @@ teardown() {
 
 @test "E2E: ML workflow state persistence" {
     # Modify state
-    sed -i 's/current_phase: "phase_1_planning"/current_phase: "phase_2_implementation"/' \
+    sed -i.bak 's/current_phase: "phase_1_planning"/current_phase: "phase_2_implementation"/' \
         "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     # Verify persistence

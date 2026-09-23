@@ -68,13 +68,13 @@ IMPORTANT_STATE_FIELDS=(
 check_required_files() {
     local missing=()
 
-    for file in "${REQUIRED_FILES[@]}"; do
+    for file in ${REQUIRED_FILES[@]+"${REQUIRED_FILES[@]}"}; do
         if [[ ! -f "$file" ]]; then
             missing+=("$file")
         fi
     done
 
-    echo "${missing[@]}"
+    echo ${missing[@]+"${missing[@]}"}
 }
 
 #######################################
@@ -85,7 +85,7 @@ check_required_files() {
 check_optional_files() {
     local count=0
 
-    for file in "${OPTIONAL_FILES[@]}"; do
+    for file in ${OPTIONAL_FILES[@]+"${OPTIONAL_FILES[@]}"}; do
         if [[ -f "$file" ]]; then
             ((count++))
         fi
@@ -106,11 +106,11 @@ check_required_fields() {
     local missing=()
 
     if [[ ! -f "$state_file" ]]; then
-        echo "${REQUIRED_STATE_FIELDS[@]}"
+        echo ${REQUIRED_STATE_FIELDS[@]+"${REQUIRED_STATE_FIELDS[@]}"}
         return
     fi
 
-    for field in "${REQUIRED_STATE_FIELDS[@]}"; do
+    for field in ${REQUIRED_STATE_FIELDS[@]+"${REQUIRED_STATE_FIELDS[@]}"}; do
         local value
         value=$(yaml_get "$state_file" "$field" 2>/dev/null || echo "null")
 
@@ -119,7 +119,7 @@ check_required_fields() {
         fi
     done
 
-    echo "${missing[@]}"
+    echo ${missing[@]+"${missing[@]}"}
 }
 
 #######################################
@@ -132,12 +132,12 @@ calculate_file_score() {
     local optional_count=${#OPTIONAL_FILES[@]}
 
     local required_present=0
-    for file in "${REQUIRED_FILES[@]}"; do
+    for file in ${REQUIRED_FILES[@]+"${REQUIRED_FILES[@]}"}; do
         [[ -f "$file" ]] && ((required_present++))
     done
 
     local optional_present=0
-    for file in "${OPTIONAL_FILES[@]}"; do
+    for file in ${OPTIONAL_FILES[@]+"${OPTIONAL_FILES[@]}"}; do
         [[ -f "$file" ]] && ((optional_present++))
     done
 
@@ -167,14 +167,14 @@ calculate_state_score() {
     local important_count=${#IMPORTANT_STATE_FIELDS[@]}
 
     local required_present=0
-    for field in "${REQUIRED_STATE_FIELDS[@]}"; do
+    for field in ${REQUIRED_STATE_FIELDS[@]+"${REQUIRED_STATE_FIELDS[@]}"}; do
         local value
         value=$(yaml_get "$state_file" "$field" 2>/dev/null || echo "null")
         [[ "$value" != "null" && -n "$value" ]] && ((required_present++))
     done
 
     local important_present=0
-    for field in "${IMPORTANT_STATE_FIELDS[@]}"; do
+    for field in ${IMPORTANT_STATE_FIELDS[@]+"${IMPORTANT_STATE_FIELDS[@]}"}; do
         local value
         value=$(yaml_get "$state_file" "$field" 2>/dev/null || echo "null")
         [[ "$value" != "null" && -n "$value" ]] && ((important_present++))

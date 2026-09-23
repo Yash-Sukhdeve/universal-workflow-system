@@ -15,6 +15,7 @@
 # RWF Compliance: R3 (State Safety), R4 (Error-Free)
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
@@ -95,7 +96,7 @@ set_phase() {
 
     # Validate phase
     local valid=false
-    for p in "${SDLC_PHASES[@]}"; do
+    for p in ${SDLC_PHASES[@]+"${SDLC_PHASES[@]}"}; do
         if [[ "$p" == "$new_phase" ]]; then
             valid=true
             break
@@ -161,7 +162,7 @@ set_phase_fallback() {
             # Manual escaping as last resort
             local escaped_phase
             escaped_phase=$(printf '%s\n' "$new_phase" | sed 's/[&/\]/\\&/g')
-            sed -i "s|^sdlc_phase:.*|sdlc_phase: \"${escaped_phase}\"|" "$STATE_FILE"
+            sed_inplace "s|^sdlc_phase:.*|sdlc_phase: \"${escaped_phase}\"|" "$STATE_FILE"
         fi
     fi
 }
@@ -175,7 +176,7 @@ get_next_phase() {
     local current="$1"
     local found=false
 
-    for phase in "${SDLC_PHASES[@]}"; do
+    for phase in ${SDLC_PHASES[@]+"${SDLC_PHASES[@]}"}; do
         if [[ "$found" == "true" ]]; then
             echo "$phase"
             return 0
@@ -338,7 +339,7 @@ show_status() {
         # Show phase progression
         echo -e "  ${BOLD}Progress:${NC}"
         local found_current=false
-        for phase in "${SDLC_PHASES[@]}"; do
+        for phase in ${SDLC_PHASES[@]+"${SDLC_PHASES[@]}"}; do
             if [[ "$phase" == "$current_phase" ]]; then
                 echo -e "    ${GREEN}► ${phase}${NC} (current)"
                 found_current=true
@@ -569,7 +570,7 @@ main() {
 
             # G1 fix: Remove sdlc_phase AND clear sdlc-related state consistently
             if grep -q "^sdlc_phase:" "$STATE_FILE" 2>/dev/null; then
-                sed -i '/^sdlc_phase:/d' "$STATE_FILE"
+                sed_inplace '/^sdlc_phase:/d' "$STATE_FILE"
             fi
 
             # Also reset current_phase back to phase_1_planning to prevent
@@ -577,7 +578,7 @@ main() {
             if declare -f yaml_set > /dev/null 2>&1; then
                 yaml_set "$STATE_FILE" "current_phase" "phase_1_planning" 2>/dev/null || true
             else
-                sed -i 's/^current_phase:.*/current_phase: "phase_1_planning"/' "$STATE_FILE" 2>/dev/null || true
+                sed_inplace 's/^current_phase:.*/current_phase: "phase_1_planning"/' "$STATE_FILE" 2>/dev/null || true
             fi
 
             echo -e "${GREEN}SDLC state reset.${NC}"

@@ -115,7 +115,7 @@ validate_phase() {
         "phase_5_maintenance"
     )
 
-    for valid_phase in "${valid_phases[@]}"; do
+    for valid_phase in ${valid_phases[@]+"${valid_phases[@]}"}; do
         if [[ "$phase_name" == "$valid_phase" ]]; then
             return $VALID
         fi
@@ -123,7 +123,7 @@ validate_phase() {
 
     echo -e "${RED}Error: Invalid phase '${phase_name}'${NC}" >&2
     echo -e "${YELLOW}Valid phases:${NC}" >&2
-    printf '  - %s\n' "${valid_phases[@]}" >&2
+    printf '  - %s\n' ${valid_phases[@]+"${valid_phases[@]}"} >&2
     return $INVALID
 }
 
@@ -178,7 +178,7 @@ validate_project_type() {
         "hybrid"
     )
 
-    for valid_type in "${valid_types[@]}"; do
+    for valid_type in ${valid_types[@]+"${valid_types[@]}"}; do
         if [[ "$project_type" == "$valid_type" ]]; then
             return $VALID
         fi
@@ -186,7 +186,7 @@ validate_project_type() {
 
     echo -e "${RED}Error: Invalid project type '${project_type}'${NC}" >&2
     echo -e "${YELLOW}Valid types:${NC}" >&2
-    printf '  - %s\n' "${valid_types[@]}" >&2
+    printf '  - %s\n' ${valid_types[@]+"${valid_types[@]}"} >&2
     return $INVALID
 }
 

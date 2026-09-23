@@ -41,6 +41,15 @@ jobs:
           # Fail on critical errors only
           find scripts -name "*.sh" -type f -exec shellcheck -x -e SC1091 -S error {} \;
 
+      - name: Reject GNU-only constructs (macOS/BSD portability)
+        run: |
+          # `sed -i 's/..' f` fails on BSD sed: use sed_inplace (scripts/lib/portable.sh)
+          # `head -c -N` is GNU-only. Both broke every state write on macOS.
+          if grep -rnE "sed -i( |$)|head -c -[0-9]" scripts bin | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; then
+            echo "::error::GNU-only sed -i / head -c -N found; use sed_inplace from scripts/lib/portable.sh"
+            exit 1
+          fi
+
       - name: Lint user-facing entry points (warnings fail)
         run: |
           # These run on users' machines, so they get the stricter warning level
@@ -70,11 +79,14 @@ jobs:
         run: |
           # No credentials needed: validation is offline
           claude plugin validate .
-          claude plugin validate plugins/uws
-          # Symlinked component dirs are skipped by the validator; check their targets too
-          claude plugin validate .claude/agents
-          test -x plugins/uws/bin/uws
-          test -x plugins/uws/scripts/init_workflow.sh
+          # The validator skips symlinked component dirs (agents/, scripts/, bin/),
+          # so validate a dereferenced copy: that is what the plugin cache holds.
+          materialized="$(mktemp -d)/uws"
+          cp -RL plugins/uws "$materialized"
+          claude plugin validate "$materialized"
+          test -x "$materialized/bin/uws"
+          test -x "$materialized/scripts/init_workflow.sh"
+          ls "$materialized"/agents/uws-*.md
 
   # ============================================================================
   # UNIT TESTS - Ubuntu

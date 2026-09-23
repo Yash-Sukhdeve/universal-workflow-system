@@ -42,7 +42,7 @@ teardown() { teardown_test_environment; }
 
 @test "migration reconciles current_phase to match sdlc_phase (maintenance)" {
     "${SCRIPTS_DIR}/migrate_state.sh"
-    grep -q 'current_phase: "phase_5_maintenance"' .workflow/state.yaml
+    grep -Eq 'current_phase: "?phase_5_maintenance"?$' .workflow/state.yaml
     # earlier phases marked completed, phase_5 active
     source "${SCRIPTS_DIR}/lib/yaml_utils.sh"
     source "${SCRIPTS_DIR}/lib/workflow_routing.sh"
@@ -53,7 +53,7 @@ teardown() { teardown_test_environment; }
 @test "migration is idempotent (single goal + single phases block after 2 runs)" {
     "${SCRIPTS_DIR}/migrate_state.sh"
     "${SCRIPTS_DIR}/migrate_state.sh"
-    grep -q 'current_phase: "phase_5_maintenance"' .workflow/state.yaml
+    grep -Eq 'current_phase: "?phase_5_maintenance"?$' .workflow/state.yaml
     [ "$(grep -c '^goal:' .workflow/state.yaml)" -eq 1 ]
     [ "$(grep -c '^phases:' .workflow/state.yaml)" -eq 1 ]
     [ "$(grep -c '^methodology_progress:' .workflow/state.yaml)" -eq 1 ]

@@ -72,7 +72,7 @@ push_error() {
 get_error_stack() {
     local output=""
 
-    for entry in "${ERROR_STACK[@]}"; do
+    for entry in ${ERROR_STACK[@]+"${ERROR_STACK[@]}"}; do
         IFS='|' read -r source code message <<< "$entry"
         output+="  at ${source}: [${code}] ${message}"$'\n'
     done

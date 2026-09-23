@@ -79,7 +79,7 @@ teardown() { teardown_test_environment; }
 
 @test "set_uws_phase advances current_phase and marks earlier phases completed" {
     set_uws_phase phase_3_validation "$STATE_FILE"
-    grep -q 'current_phase: "phase_3_validation"' "$STATE_FILE"
+    grep -Eq 'current_phase: "?phase_3_validation"?$' "$STATE_FILE"
     [ "$(get_phase_status phase_1_planning "$STATE_FILE")" = "completed" ]
     [ "$(get_phase_status phase_2_implementation "$STATE_FILE")" = "completed" ]
     [ "$(get_phase_status phase_3_validation "$STATE_FILE")" = "active" ]

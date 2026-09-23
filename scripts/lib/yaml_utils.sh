@@ -4,6 +4,7 @@
 # Supports both yq (preferred) and fallback sed/grep methods
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/portable.sh"
 
 # Color codes for output (only set if not already defined)
 if [[ -z "${RED:-}" ]]; then
@@ -30,7 +31,11 @@ fi
 escape_sed_replacement() {
     local input="$1"
     # Escape: backslash, ampersand, forward slash, and delimiter
-    printf '%s\n' "$input" | sed 's/[&/\]/\\&/g; s/$/\\/'  | head -c -2
+    # Every line gets a trailing backslash (sed continuation); drop the last one.
+    # (Was `| head -c -2`, which BSD/macOS head does not support.)
+    local escaped
+    escaped="$(printf '%s\n' "$input" | sed 's/[&/\]/\\&/g; s/$/\\/')"
+    printf '%s' "${escaped%\\}"
 }
 
 #######################################
@@ -58,7 +63,7 @@ safe_sed_replace() {
     escaped_value=$(printf '%s\n' "$value" | sed 's/[&/\]/\\&/g')
 
     # Use | as delimiter to avoid issues with / in values
-    sed -i "s|^${key}:.*|${key}: \"${escaped_value}\"|" "$file" || {
+    sed_inplace "s|^${key}:.*|${key}: \"${escaped_value}\"|" "$file" || {
         echo "Error: Failed to update ${key} in $file" >&2
         return 1
     }

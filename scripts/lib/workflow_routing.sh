@@ -7,6 +7,7 @@
 # Usage: source this via source_lib "workflow_routing.sh"
 
 # Guard against double-sourcing
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/portable.sh"
 if [[ "${_WORKFLOW_ROUTING_LOADED:-}" == "true" ]]; then
     return 0 2>/dev/null || true
 fi
@@ -243,7 +244,7 @@ set_phase_status() {
     local status="$2"
     local file="${3:-$(_wr_state_file)}"
     [[ -f "$file" ]] || return 0
-    sed -i "/^  ${phase}:/,/^  [^ ]/ s|^    status:.*|    status: \"${status}\"|" "$file" 2>/dev/null || true
+    sed_inplace "/^  ${phase}:/,/^  [^ ]/ s|^    status:.*|    status: \"${status}\"|" "$file" 2>/dev/null || true
 }
 
 #######################################
@@ -260,7 +261,7 @@ set_uws_phase() {
     if declare -f yaml_set >/dev/null 2>&1 && yaml_set "$file" "current_phase" "$target" >/dev/null 2>&1; then
         :
     else
-        sed -i "s|^current_phase:.*|current_phase: \"${target}\"|" "$file" 2>/dev/null || true
+        sed_inplace "s|^current_phase:.*|current_phase: \"${target}\"|" "$file" 2>/dev/null || true
     fi
 
     # Update the board only if a phases: block exists.
@@ -270,7 +271,7 @@ set_uws_phase() {
     [[ "$target_num" =~ ^[1-5]$ ]] || return 0
 
     local i=1 name st
-    for name in "${_UWS_PHASES[@]}"; do
+    for name in ${_UWS_PHASES[@]+"${_UWS_PHASES[@]}"}; do
         if   (( i <  target_num )); then st="completed"
         elif (( i == target_num )); then st="active"
         else                             st="pending"
@@ -296,7 +297,7 @@ mp_ensure() {
     [[ -f "$file" ]] || return 0
     grep -q "^  ${key}:" "$file" 2>/dev/null && return 0
     grep -q "^methodology_progress:" "$file" 2>/dev/null || printf 'methodology_progress:\n' >> "$file"
-    sed -i "/^methodology_progress:/a\\  ${key}: {total: ${total}, done: []}" "$file" 2>/dev/null || \
+    append_after_match "$file" '^methodology_progress:' "  ${key}: {total: ${total}, done: []}" 2>/dev/null || \
         printf '  %s: {total: %s, done: []}\n' "$key" "$total" >> "$file"
 }
 
@@ -343,7 +344,7 @@ mark_deliverable() {
     [[ ",${inner}," == *",${n},"* ]] && return 0
     local newinner
     if [[ -z "$inner" ]]; then newinner="$n"; else newinner="${inner}, ${n}"; fi
-    sed -i "s|^  ${key}:.*|  ${key}: {total: ${total}, done: [${newinner}]}|" "$file" 2>/dev/null || true
+    sed_inplace "s|^  ${key}:.*|  ${key}: {total: ${total}, done: [${newinner}]}|" "$file" 2>/dev/null || true
 }
 
 # Remaining unmet count. Args: m, phase, [file]  -> echoes an integer
