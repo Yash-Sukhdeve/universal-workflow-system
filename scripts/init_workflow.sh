@@ -41,9 +41,16 @@ check_existing_workflow() {
         echo -e "${YELLOW}⚠ Workflow system appears to be already initialized${NC}"
         echo ""
 
-        # Non-interactive mode - backup and continue
+        # Non-interactive mode: never move existing state aside unless explicitly asked,
+        # so re-running init from an agent, CI or a hook is a safe no-op.
         if [[ ! -t 0 ]]; then
-            local backup_dir=".workflow.backup.$(date +%Y%m%d_%H%M%S)"
+            if [[ "${UWS_FORCE_REINIT:-false}" != "true" ]]; then
+                echo "UWS is already initialized here; leaving .workflow/ unchanged."
+                echo "To back it up and start over: UWS_FORCE_REINIT=true $0"
+                exit 0
+            fi
+            local backup_dir
+            backup_dir=".workflow.backup.$(date +%Y%m%d_%H%M%S)"
             echo -e "${YELLOW}Backing up existing workflow to ${backup_dir}${NC}"
             mv ".workflow" "$backup_dir"
             return 0
@@ -277,10 +284,17 @@ workspace/*
 EOF
     fi
 
-    # Create git hooks
-    mkdir -p .git/hooks
-    
-    cat > .git/hooks/pre-commit << 'EOF'
+    # Create git hooks — never clobber a project's existing pre-commit hook
+    # (husky, pre-commit framework, custom scripts).
+    local hooks_dir
+    hooks_dir="$(git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)"
+    if [[ -e "${hooks_dir}/pre-commit" ]] && ! grep -q "Update workflow state before commit" "${hooks_dir}/pre-commit" 2>/dev/null; then
+        echo -e "${YELLOW}  ⚠ Existing pre-commit hook found; leaving it untouched (UWS hook skipped)${NC}"
+        return 0
+    fi
+    mkdir -p "${hooks_dir}"
+
+    cat > "${hooks_dir}/pre-commit" << 'EOF'
 #!/bin/bash
 # Update workflow state before commit
 
@@ -300,7 +314,7 @@ if git diff --cached --name-only | grep -q ".workflow/"; then
 fi
 EOF
     
-    chmod +x .git/hooks/pre-commit
+    chmod +x "${hooks_dir}/pre-commit"
     echo "  ✓ Git hooks configured"
 }
 
@@ -666,8 +680,11 @@ main() {
     initialize_agent_registry
     initialize_skill_catalog
 
-    # Create uws CLI wrapper
-    create_uws_wrapper
+    # Create uws CLI wrapper (the Claude Code plugin sets UWS_NO_WRAPPER: its
+    # scripts live in a versioned cache dir that a baked-in path would outlive)
+    if [[ "${UWS_NO_WRAPPER:-false}" != "true" ]]; then
+        create_uws_wrapper
+    fi
 
     # Vector memory setup (optional, graceful failure)
     if declare -f setup_vector_memory > /dev/null 2>&1; then
@@ -680,18 +697,20 @@ main() {
     echo "═══════════════════════════════════════════════════════════════"
     echo -e "${GREEN}Workflow system initialized successfully!${NC}"
     echo ""
+    local u="./uws"
+    [[ "${UWS_NO_WRAPPER:-false}" == "true" ]] && u="uws"
     echo "Next steps:"
     echo "  1. Review .workflow/config.yaml for customization"
-    echo -e "  2. Run: ${GREEN}./uws status${NC}    to see current state"
-    echo -e "  3. Run: ${GREEN}./uws sdlc start${NC} to begin SDLC"
+    echo -e "  2. Run: ${GREEN}${u} status${NC}    to see current state"
+    echo -e "  3. Run: ${GREEN}${u} sdlc start${NC} to begin SDLC"
     echo ""
     echo "Commands (run from this project directory):"
-    echo "  ./uws status              - Show workflow status"
-    echo "  ./uws sdlc [action]       - SDLC workflow"
-    echo "  ./uws research [action]   - Research workflow"
-    echo "  ./uws checkpoint [msg]    - Create checkpoint"
-    echo "  ./uws agent [name]        - Activate agent"
-    echo "  ./uws recover             - Recover context"
+    echo "  ${u} status              - Show workflow status"
+    echo "  ${u} sdlc [action]       - SDLC workflow"
+    echo "  ${u} research [action]   - Research workflow"
+    echo "  ${u} checkpoint create [msg] - Create checkpoint"
+    echo "  ${u} agent [name]        - Activate agent"
+    echo "  ${u} recover             - Recover context"
     echo "═══════════════════════════════════════════════════════════════"
 }
 

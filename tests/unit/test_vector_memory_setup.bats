@@ -257,9 +257,11 @@ EOF
 
 @test "non-interactive mode skips prompt" {
     # Run with stdin from /dev/null — should not hang waiting for input
-    run bash -c "unset _VECTOR_MEMORY_SETUP_LOADED; source '${SCRIPTS_DIR}/lib/vector_memory_setup.sh'; setup_vector_memory '${TEST_TMP_DIR}'" < /dev/null
-    # Status 0 or 1 (depending on python/disk/network) but must not hang
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    run bash -c "unset _VECTOR_MEMORY_SETUP_LOADED UWS_VECTOR_MEMORY; source '${SCRIPTS_DIR}/lib/vector_memory_setup.sh'; uws_vm_is_installed() { return 1; }; setup_vector_memory '${TEST_TMP_DIR}'" < /dev/null
+    # Must not hang, and must NOT start the ~1.5GB install without explicit opt-in
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"non-interactive"* ]]
+    [ ! -f "${TEST_TMP_DIR}/.mcp.json" ]
 }
 
 @test "setup_vector_memory returns 0 even when Python is missing (graceful degradation)" {

@@ -1,23 +1,57 @@
 #!/bin/bash
 #
 # UWS (Universal Workflow System) - Claude Code Integration Installer
-# Version 1.2.0
+# Version 1.3.0
 #
 # One-liner installation:
 #   curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
+#   curl -fsSL .../install.sh | bash -s -- --yes     # accept all defaults, no prompts
 #
 # Or clone and run:
-#   ./install.sh
+#   ./install.sh [--yes]
 #
-# Fixes in 1.2.0:
-#   - Git precondition check with auto-init
-#   - Self-contained workflow scripts (no external dependencies)
-#   - /uws umbrella help command
-#   - settings.json merge instead of overwrite
-#   - Git-guarded code paths in all hooks/commands
+# Fixes in 1.3.0:
+#   - Slash commands written as .md files (Claude Code ignores files without .md)
+#   - Hooks written in the nested settings.json format Claude Code loads
+#   - Prompts read from /dev/tty so `curl | bash` works; --yes for unattended installs
+#   - Portable sed/date (macOS/BSD); .claude/ and .uws/ are no longer gitignored
 #
 
 set -euo pipefail
+
+ASSUME_YES="${UWS_YES:-false}"
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) ASSUME_YES=true ;;
+        -h|--help)
+            echo "Usage: install.sh [--yes]"
+            echo "  --yes, -y   Accept all defaults without prompting (also: UWS_YES=true)"
+            exit 0
+            ;;
+        *) echo "Unknown option: $arg (see --help)" >&2; exit 2 ;;
+    esac
+done
+
+# ask <prompt> <default Y|N> -> returns 0 for yes, 1 for no.
+# Reads from /dev/tty so it works under `curl | bash`; falls back to the default
+# (and says so) when there is no terminal or --yes was given.
+ask() {
+    local prompt="$1" default="$2" reply=""
+    if [[ "$ASSUME_YES" == true ]]; then
+        reply="$default"
+    elif { exec 3</dev/tty; } 2>/dev/null; then
+        read -r -p "$prompt" reply <&3 || reply=""
+        exec 3<&-
+        [[ -z "$reply" ]] && reply="$default"
+    else
+        reply="$default"
+        echo "${prompt}${default} (no terminal; using default)"
+    fi
+    [[ "$reply" =~ ^[Yy] ]]
+}
+
+# Portable ISO-8601 timestamp (BSD date has no -I on older macOS)
+iso_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 # Colors
 RED='\033[0;31m'
@@ -29,7 +63,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Configuration
-UWS_VERSION="1.2.0"
+UWS_VERSION="1.3.0"
 PROJECT_DIR="${PWD}"
 UWS_DIR="${PROJECT_DIR}/.uws"
 WORKFLOW_DIR="${PROJECT_DIR}/.workflow"
@@ -47,8 +81,8 @@ echo -e "${NC}"
 if [[ -d "${UWS_DIR}" ]] && [[ -f "${UWS_DIR}/version" ]]; then
     EXISTING_VERSION=$(cat "${UWS_DIR}/version" 2>/dev/null || echo "unknown")
     echo -e "${YELLOW}UWS already installed (version: ${EXISTING_VERSION})${NC}"
-    read -p "Reinstall/upgrade? [y/N]: " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    # Upgrading is the expected action for an existing install, so --yes / no-tty proceeds.
+    if ! ask "Reinstall/upgrade? [Y/n]: " Y; then
         echo "Installation cancelled."
         exit 0
     fi
@@ -75,8 +109,7 @@ if git rev-parse --git-dir &>/dev/null; then
     echo -e "  ${GREEN}✓${NC} Git repository detected"
 else
     echo -e "  ${YELLOW}!${NC} Not a git repository"
-    read -p "  Initialize git repo here? [Y/n]: " init_git
-    if [[ ! "$init_git" =~ ^[Nn]$ ]]; then
+    if ask "  Initialize git repo here? [Y/n]: " Y; then
         git init "${PROJECT_DIR}"
         HAS_GIT=true
         echo -e "  ${GREEN}✓${NC} Git repository initialized"
@@ -146,16 +179,18 @@ fi
 # Git status (only if git is available and this is a repo)
 if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
     BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-    MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || echo "0")
+    # grep -c prints 0 and exits 1 on no match; `|| true` keeps it a single number
+    MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || true)
     if [[ -n "$BRANCH" ]]; then
-        CONTEXT+="## Git\n- Branch: ${BRANCH}\n- Modified files: ${MODIFIED}\n\n"
+        CONTEXT+="## Git\n- Branch: ${BRANCH}\n- Modified files: ${MODIFIED:-0}\n\n"
     fi
 fi
 
-# Output as JSON for Claude to consume
+# Emit the SessionStart hook JSON contract so Claude receives the context
 if [[ -n "$CONTEXT" ]]; then
-    CONTEXT_ESCAPED=$(echo -e "$CONTEXT" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
-    echo "{\"additionalContext\": \"${CONTEXT_ESCAPED}\"}"
+    # Escape for JSON: backslashes, quotes, tabs, then join lines with \n (portable awk, no GNU sed)
+    CONTEXT_ESCAPED=$(printf '%b' "$CONTEXT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/	/\\t/g' | awk 'NR>1{printf "\\n"} {printf "%s", $0}')
+    printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$CONTEXT_ESCAPED"
 fi
 
 exit 0
@@ -185,25 +220,28 @@ else
 fi
 
 # Create auto-checkpoint
-TIMESTAMP=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "${TIMESTAMP} | ${NEW_CP} | Auto-checkpoint before context compaction" >> "$CHECKPOINT_LOG"
 
-# Update state.yaml checkpoint
+# Update state.yaml checkpoint (-i.bak is the form both GNU and BSD sed accept)
 if [[ -f "$WORKFLOW_DIR/state.yaml" ]]; then
     sed -i.bak "s/current_checkpoint:.*/current_checkpoint: \"${NEW_CP}\"/" "$WORKFLOW_DIR/state.yaml" 2>/dev/null || true
     sed -i.bak "s/last_updated:.*/last_updated: \"${TIMESTAMP}\"/" "$WORKFLOW_DIR/state.yaml" 2>/dev/null || true
     rm -f "$WORKFLOW_DIR/state.yaml.bak"
 fi
 
-echo "{\"status\": \"checkpoint_created\", \"checkpoint\": \"${NEW_CP}\"}"
+# PreCompact stdout is not model context; report on stderr for the debug log only
+echo "UWS: created ${NEW_CP} before compaction" >&2
 exit 0
 HOOK_EOF
 chmod +x "${UWS_DIR}/hooks/pre_compact.sh"
 
 echo -e "  ${GREEN}✓${NC} Hooks created (git-guarded)"
 
-# Clean up stale files from v1.1.0
-STALE_COMMANDS=("uws-pm" "uws-spiral" "uws-submit" "uws-review")
+# Clean up stale files from earlier versions: v1.1.0 commands that no longer exist,
+# and the extensionless command files v1.2.0 wrote (Claude Code never loaded them).
+STALE_COMMANDS=("uws-pm" "uws-spiral" "uws-submit" "uws-review"
+                "uws" "uws-status" "uws-checkpoint" "uws-recover" "uws-handoff" "uws-sdlc" "uws-research")
 for cmd in "${STALE_COMMANDS[@]}"; do
     if [[ -f "${CLAUDE_DIR}/commands/${cmd}" ]]; then
         rm -f "${CLAUDE_DIR}/commands/${cmd}"
@@ -270,7 +308,7 @@ _uws_yaml_write() {
 
 # Get current timestamp
 _uws_timestamp() {
-    date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S
+    date -u +%Y-%m-%dT%H:%M:%SZ
 }
 
 # Find array index (-1 if not found)
@@ -697,7 +735,43 @@ esac
 SCRIPT_EOF
 chmod +x "${UWS_DIR}/scripts/research.sh"
 
-echo -e "  ${GREEN}✓${NC} Workflow scripts created (sdlc.sh, research.sh, common.sh)"
+# --- Checkpoint Script (self-contained, portable GNU/BSD) ---
+cat > "${UWS_DIR}/scripts/checkpoint.sh" << 'SCRIPT_EOF'
+#!/bin/bash
+# UWS Checkpoint - append a checkpoint and advance current_checkpoint
+#
+# Usage: .uws/scripts/checkpoint.sh "<message>"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/common.sh"
+_uws_resolve_workflow_dir || exit 1
+
+MESSAGE="${*:-Manual checkpoint}"
+# Keep the log's " | " field separator unambiguous
+MESSAGE="${MESSAGE//|/-}"
+CHECKPOINT_LOG="${WORKFLOW_DIR}/checkpoints.log"
+STATE_FILE="${WORKFLOW_DIR}/state.yaml"
+
+LAST_CP=$(grep -oE "CP_[0-9]+_[0-9]+" "$CHECKPOINT_LOG" 2>/dev/null | tail -1 || true)
+LAST_CP="${LAST_CP:-CP_1_000}"
+PHASE=$(echo "$LAST_CP" | cut -d_ -f2)
+SEQ=$(echo "$LAST_CP" | cut -d_ -f3 | sed 's/^0*//')
+NEW_CP="CP_${PHASE}_$(printf "%03d" $(( ${SEQ:-0} + 1 )))"
+TIMESTAMP=$(_uws_timestamp)
+
+echo "${TIMESTAMP} | ${NEW_CP} | ${MESSAGE}" >> "$CHECKPOINT_LOG"
+if [[ -f "$STATE_FILE" ]]; then
+    _uws_yaml_write "$STATE_FILE" "current_checkpoint" "$NEW_CP"
+    sed -i.bak "s/^  last_updated:.*/  last_updated: \"${TIMESTAMP}\"/" "$STATE_FILE" && rm -f "${STATE_FILE}.bak"
+fi
+
+echo "Checkpoint ${NEW_CP} created: ${MESSAGE}"
+SCRIPT_EOF
+chmod +x "${UWS_DIR}/scripts/checkpoint.sh"
+
+echo -e "  ${GREEN}✓${NC} Workflow scripts created (sdlc.sh, research.sh, checkpoint.sh, common.sh)"
 
 # ============================================================================
 # Step 5: Create slash commands
@@ -707,7 +781,7 @@ echo -e "${BLUE}[5/8]${NC} Creating slash commands..."
 mkdir -p "${CLAUDE_DIR}/commands"
 
 # /uws - umbrella help command
-cat > "${CLAUDE_DIR}/commands/uws" << 'CMD_EOF'
+cat > "${CLAUDE_DIR}/commands/uws.md" << 'CMD_EOF'
 ---
 description: "UWS help - list all available commands"
 ---
@@ -746,7 +820,7 @@ Present this information clearly to the user.
 CMD_EOF
 
 # /uws-status command
-cat > "${CLAUDE_DIR}/commands/uws-status" << 'CMD_EOF'
+cat > "${CLAUDE_DIR}/commands/uws-status.md" << 'CMD_EOF'
 ---
 description: "Show UWS workflow status"
 allowed-tools:
@@ -762,59 +836,42 @@ allowed-tools:
 Show the current workflow state including phase, checkpoint, and recent activity.
 
 ## Current State
-! cat .workflow/state.yaml 2>/dev/null || echo "No state.yaml found"
+!`cat .workflow/state.yaml 2>/dev/null || echo "No state.yaml found"`
 
 ## Recent Checkpoints
-! tail -5 .workflow/checkpoints.log 2>/dev/null | grep -v "^#" || echo "No checkpoints"
+!`tail -5 .workflow/checkpoints.log 2>/dev/null | grep -v "^#" || echo "No checkpoints"`
 
 ## Handoff Summary
-! head -30 .workflow/handoff.md 2>/dev/null || echo "No handoff.md found"
+!`head -30 .workflow/handoff.md 2>/dev/null || echo "No handoff.md found"`
 
 Summarize the workflow status concisely.
 CMD_EOF
 
 # /uws-checkpoint command
-cat > "${CLAUDE_DIR}/commands/uws-checkpoint" << 'CMD_EOF'
+cat > "${CLAUDE_DIR}/commands/uws-checkpoint.md" << 'CMD_EOF'
 ---
 description: "Create a UWS checkpoint with message"
 argument-hint: "<message>"
 allowed-tools:
-  - "Bash(date:*)"
-  - "Bash(grep:*)"
-  - "Bash(sed:*)"
-  - "Bash(echo:*)"
+  - "Bash(./.uws/scripts/checkpoint.sh:*)"
 ---
 
 # Create UWS Checkpoint
 
 Create a checkpoint with the message: $ARGUMENTS
 
-Execute this to create the checkpoint:
+Run this single command (quote the message; if $ARGUMENTS is empty, summarise the
+current work in one short sentence and use that as the message):
 
 ```bash
-# Get current checkpoint info
-LAST_CP=$(grep -oE "CP_[0-9]+_[0-9]+" .workflow/checkpoints.log 2>/dev/null | tail -1 || echo "CP_1_000")
-PHASE=$(echo "$LAST_CP" | cut -d_ -f2)
-SEQ=$(echo "$LAST_CP" | cut -d_ -f3 | sed 's/^0*//')
-NEW_SEQ=$(printf "%03d" $((SEQ + 1)))
-NEW_CP="CP_${PHASE}_${NEW_SEQ}"
-TIMESTAMP=$(date -Iseconds)
-
-# Create checkpoint entry
-echo "${TIMESTAMP} | ${NEW_CP} | $ARGUMENTS" >> .workflow/checkpoints.log
-
-# Update state.yaml
-sed -i "s/current_checkpoint:.*/current_checkpoint: \"${NEW_CP}\"/" .workflow/state.yaml
-sed -i "s/last_updated:.*/last_updated: \"${TIMESTAMP}\"/" .workflow/state.yaml
-
-echo "Checkpoint ${NEW_CP} created: $ARGUMENTS"
+./.uws/scripts/checkpoint.sh "<message>"
 ```
 
-After creating the checkpoint, confirm it was created successfully.
+After it runs, report the checkpoint ID it printed.
 CMD_EOF
 
 # /uws-recover command (git-guarded)
-cat > "${CLAUDE_DIR}/commands/uws-recover" << 'CMD_EOF'
+cat > "${CLAUDE_DIR}/commands/uws-recover.md" << 'CMD_EOF'
 ---
 description: "Recover full UWS context after session break"
 allowed-tools:
@@ -831,16 +888,16 @@ allowed-tools:
 Recover full workflow context after a session break.
 
 ## State File
-! cat .workflow/state.yaml 2>/dev/null || echo "ERROR: No state.yaml"
+!`cat .workflow/state.yaml 2>/dev/null || echo "ERROR: No state.yaml"`
 
 ## Full Handoff Document
-! cat .workflow/handoff.md 2>/dev/null || echo "ERROR: No handoff.md"
+!`cat .workflow/handoff.md 2>/dev/null || echo "ERROR: No handoff.md"`
 
 ## Checkpoint History
-! cat .workflow/checkpoints.log 2>/dev/null | grep -v "^#" || echo "No checkpoints"
+!`cat .workflow/checkpoints.log 2>/dev/null | grep -v "^#" || echo "No checkpoints"`
 
 ## Version Control
-! if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then echo "Branch: $(git branch --show-current 2>/dev/null)"; git status --short 2>/dev/null | head -20; else echo "Git not available or not a git repository"; fi
+!`git status --short --branch 2>/dev/null | head -20`
 
 Based on this context:
 1. Summarize where we left off
@@ -850,7 +907,7 @@ Based on this context:
 CMD_EOF
 
 # /uws-handoff command
-cat > "${CLAUDE_DIR}/commands/uws-handoff" << 'CMD_EOF'
+cat > "${CLAUDE_DIR}/commands/uws-handoff.md" << 'CMD_EOF'
 ---
 description: "Prepare handoff document for session end"
 allowed-tools:
@@ -871,7 +928,7 @@ Update the handoff document (.workflow/handoff.md) with:
 5. **Critical Context**: Important decisions or information
 
 Read the current handoff:
-! cat .workflow/handoff.md 2>/dev/null || echo "No existing handoff"
+!`cat .workflow/handoff.md 2>/dev/null || echo "No existing handoff"`
 
 Then update it with fresh information from this session. Make sure to:
 - Update the timestamp
@@ -880,7 +937,7 @@ Then update it with fresh information from this session. Make sure to:
 CMD_EOF
 
 # /uws-sdlc command (references bundled script)
-cat > "${CLAUDE_DIR}/commands/uws-sdlc" << 'CMD_EOF'
+cat > "${CLAUDE_DIR}/commands/uws-sdlc.md" << 'CMD_EOF'
 ---
 description: "Manage SDLC workflow phases"
 argument-hint: "<status|start|next|goto|fail|reset> [details]"
@@ -906,7 +963,7 @@ If $ARGUMENTS is empty, run `./.uws/scripts/sdlc.sh status`.
 CMD_EOF
 
 # /uws-research command (references bundled script)
-cat > "${CLAUDE_DIR}/commands/uws-research" << 'CMD_EOF'
+cat > "${CLAUDE_DIR}/commands/uws-research.md" << 'CMD_EOF'
 ---
 description: "Manage Research workflow phases"
 argument-hint: "<status|start|next|goto|reject|reset> [details]"
@@ -931,7 +988,7 @@ Arguments provided: $ARGUMENTS
 If $ARGUMENTS is empty, run `./.uws/scripts/research.sh status`.
 CMD_EOF
 
-echo -e "  ${GREEN}✓${NC} Slash commands created (8 commands including /uws help)"
+echo -e "  ${GREEN}✓${NC} Slash commands created (7 commands including /uws help)"
 
 # ============================================================================
 # Step 6: Initialize workflow state
@@ -953,7 +1010,7 @@ elif [[ -d "paper" ]] || [[ -d "experiments" ]]; then
 fi
 
 PROJECT_NAME=$(basename "${PROJECT_DIR}")
-TIMESTAMP=$(date -Iseconds)
+TIMESTAMP=$(iso_now)
 
 # Create state.yaml if not exists (Full v2.0 Schema)
 if [[ ! -f "${WORKFLOW_DIR}/state.yaml" ]]; then
@@ -1021,7 +1078,7 @@ if [[ ! -f "${WORKFLOW_DIR}/checkpoints.log" ]]; then
     cat > "${WORKFLOW_DIR}/checkpoints.log" << EOF
 # UWS Checkpoint Log
 # Format: TIMESTAMP | CHECKPOINT_ID | DESCRIPTION
-$(date -Iseconds) | CP_1_001 | UWS initialized with Claude Code integration
+$(iso_now) | CP_1_001 | UWS initialized with Claude Code integration
 EOF
     echo -e "  ${GREEN}✓${NC} Created checkpoints.log"
 else
@@ -1033,7 +1090,7 @@ if [[ ! -f "${WORKFLOW_DIR}/handoff.md" ]]; then
     cat > "${WORKFLOW_DIR}/handoff.md" << EOF
 # Workflow Handoff
 
-**Last Updated**: $(date -Iseconds)
+**Last Updated**: $(iso_now)
 **Phase**: phase_1_planning
 **Checkpoint**: CP_1_001
 
@@ -1076,32 +1133,35 @@ echo -e "${BLUE}[7/8]${NC} Configuring Claude Code hooks..."
 
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 
-# UWS permissions (only reference scripts that actually exist)
+# UWS permissions: the bundled scripts plus read-only commands used by the slash commands.
+# (Earlier versions granted Bash(git:*) and Bash(sed:*); read-only git is enough.)
 UWS_PERMISSIONS=(
-    'Bash(./.uws/hooks/*:*)'
     'Bash(./.uws/scripts/*:*)'
     'Bash(cat .workflow/*:*)'
     'Bash(grep:*)'
     'Bash(tail:*)'
     'Bash(head:*)'
-    'Bash(date:*)'
-    'Bash(sed:*)'
-    'Bash(git:*)'
+    'Bash(git status:*)'
+    'Bash(git branch:*)'
+    'Bash(git rev-parse:*)'
 )
+PERM_JSON="["
+for i in "${!UWS_PERMISSIONS[@]}"; do
+    [[ $i -gt 0 ]] && PERM_JSON+=","
+    PERM_JSON+="\"${UWS_PERMISSIONS[$i]}\""
+done
+PERM_JSON+="]"
 
-# UWS hooks
-UWS_HOOKS_JSON='[
-    {
-      "event": "SessionStart",
-      "type": "command",
-      "command": "./.uws/hooks/session_start.sh"
-    },
-    {
-      "event": "PreCompact",
-      "type": "command",
-      "command": "./.uws/hooks/pre_compact.sh"
-    }
-  ]'
+# UWS hooks in Claude Code's nested format: event -> [matcher group] -> hooks[].
+# $CLAUDE_PROJECT_DIR keeps them working when Claude is started from a subdirectory.
+UWS_HOOKS_JSON='{
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.uws/hooks/session_start.sh", "timeout": 10 } ] }
+    ],
+    "PreCompact": [
+      { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.uws/hooks/pre_compact.sh", "timeout": 10 } ] }
+    ]
+  }'
 
 if [[ -f "$SETTINGS_FILE" ]]; then
     # Backup existing
@@ -1112,35 +1172,37 @@ if [[ -f "$SETTINGS_FILE" ]]; then
         # Smart merge with jq
         TEMP_SETTINGS=$(mktemp)
 
-        # Build permissions array for jq
-        PERM_JSON="["
-        for i in "${!UWS_PERMISSIONS[@]}"; do
-            [[ $i -gt 0 ]] && PERM_JSON+=","
-            PERM_JSON+="\"${UWS_PERMISSIONS[$i]}\""
-        done
-        PERM_JSON+="]"
-
-        # Merge: add UWS permissions (deduplicated), remove stale v1.1.0 perms, refresh hooks
-        jq --argjson uws_perms "$PERM_JSON" \
-           --argjson uws_hooks "$UWS_HOOKS_JSON" '
-          # Remove stale v1.1.0 permissions that reference non-existent ./scripts/*.sh
+        # Merge: add UWS permissions (deduplicated), drop stale UWS permissions, refresh hooks.
+        # v1.2.0 wrote .hooks as a flat array, which Claude Code ignores; an array is
+        # replaced by an object. Other tools' hook groups in the object form are preserved.
+        # Broad permissions that v1.2.0 itself added; only dropped when upgrading a UWS install.
+        LEGACY_PERMS='[]'
+        if [[ -n "${EXISTING_VERSION:-}" ]]; then
+            LEGACY_PERMS='["Bash(git:*)","Bash(sed:*)","Bash(date:*)"]'
+        fi
+        if jq --argjson uws_perms "$PERM_JSON" \
+              --argjson legacy "$LEGACY_PERMS" \
+              --argjson uws_hooks "$UWS_HOOKS_JSON" '
+          def is_uws_group: ((.hooks // []) | map(.command // "") | any(test("\\.uws/hooks/")));
           .permissions.allow = ([(.permissions.allow // [])[] |
-            select(test("^Bash\\(\\./scripts/") | not)] + $uws_perms | unique) |
-          # Remove any old hooks pointing to .uws/ then add fresh ones
-          .hooks = ([(.hooks // [])[] | select(.command | test("^\\./.uws/") | not)] + $uws_hooks)
-        ' "$SETTINGS_FILE" > "$TEMP_SETTINGS"
-
-        if jq empty "$TEMP_SETTINGS" 2>/dev/null; then
+            select(test("^Bash\\(\\./scripts/|^Bash\\(\\./\\.uws/hooks/") | not) |
+            select(. as $p | $legacy | index($p) | not)] + $uws_perms | unique) |
+          .hooks = ((.hooks // {}) | if type == "object" then . else {} end) |
+          reduce ($uws_hooks | keys[]) as $ev (.;
+            .hooks[$ev] = ([(.hooks[$ev] // [])[] | select(is_uws_group | not)] + $uws_hooks[$ev]))
+        ' "$SETTINGS_FILE" > "$TEMP_SETTINGS" && jq empty "$TEMP_SETTINGS" 2>/dev/null; then
             mv "$TEMP_SETTINGS" "$SETTINGS_FILE"
             echo -e "  ${GREEN}✓${NC} Merged UWS config into existing settings.json (jq)"
         else
-            echo -e "  ${RED}ERROR: Merge produced invalid JSON. Restoring backup.${NC}"
-            cp "${SETTINGS_FILE}.backup."* "$SETTINGS_FILE" 2>/dev/null
             rm -f "$TEMP_SETTINGS"
+            echo -e "  ${RED}ERROR: could not merge settings.json (is it valid JSON?). Left it unchanged.${NC}" >&2
+            echo -e "  Merge the hooks shown in claude-code-integration/README.md by hand." >&2
+            exit 1
         fi
     else
         # No jq available - check if file has UWS hooks already
-        if grep -q ".uws/hooks" "$SETTINGS_FILE" 2>/dev/null; then
+        # A v1.2.0 flat-array hook entry ("event": ...) does not load, so it needs the merge too
+        if grep -q ".uws/hooks" "$SETTINGS_FILE" 2>/dev/null && ! grep -q '"event"' "$SETTINGS_FILE" 2>/dev/null; then
             echo -e "  ${YELLOW}→${NC} UWS hooks already present in settings.json, keeping"
         else
             # Simple fallback: warn user to merge manually
@@ -1151,19 +1213,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
             cat > "${SETTINGS_FILE}.uws" << SETTINGS_EOF
 {
   "_comment": "Merge these into your existing .claude/settings.json",
-  "permissions": {
-    "allow": [
-      "Bash(./.uws/hooks/*:*)",
-      "Bash(./.uws/scripts/*:*)",
-      "Bash(cat .workflow/*:*)",
-      "Bash(grep:*)",
-      "Bash(tail:*)",
-      "Bash(head:*)",
-      "Bash(date:*)",
-      "Bash(sed:*)",
-      "Bash(git:*)"
-    ]
-  },
+  "permissions": { "allow": ${PERM_JSON} },
   "hooks": ${UWS_HOOKS_JSON}
 }
 SETTINGS_EOF
@@ -1173,31 +1223,8 @@ else
     # No existing settings - create fresh
     cat > "$SETTINGS_FILE" << SETTINGS_EOF
 {
-  "permissions": {
-    "allow": [
-      "Bash(./.uws/hooks/*:*)",
-      "Bash(./.uws/scripts/*:*)",
-      "Bash(cat .workflow/*:*)",
-      "Bash(grep:*)",
-      "Bash(tail:*)",
-      "Bash(head:*)",
-      "Bash(date:*)",
-      "Bash(sed:*)",
-      "Bash(git:*)"
-    ]
-  },
-  "hooks": [
-    {
-      "event": "SessionStart",
-      "type": "command",
-      "command": "./.uws/hooks/session_start.sh"
-    },
-    {
-      "event": "PreCompact",
-      "type": "command",
-      "command": "./.uws/hooks/pre_compact.sh"
-    }
-  ]
+  "permissions": { "allow": ${PERM_JSON} },
+  "hooks": ${UWS_HOOKS_JSON}
 }
 SETTINGS_EOF
     echo -e "  ${GREEN}✓${NC} Created settings.json with UWS hooks"
@@ -1240,7 +1267,7 @@ UWS automatically creates checkpoints before context compaction to prevent state
 
 if [[ -f "CLAUDE.md" ]]; then
     if grep -q "<!-- UWS-BEGIN -->" "CLAUDE.md"; then
-        sed -i '/<!-- UWS-BEGIN -->/,/<!-- UWS-END -->/d' "CLAUDE.md"
+        sed -i.bak '/<!-- UWS-BEGIN -->/,/<!-- UWS-END -->/d' "CLAUDE.md" && rm -f CLAUDE.md.bak
     fi
     echo "$UWS_SECTION" >> "CLAUDE.md"
     echo -e "  ${GREEN}✓${NC} Updated existing CLAUDE.md"
@@ -1258,25 +1285,30 @@ fi
 echo "$UWS_VERSION" > "${UWS_DIR}/version"
 
 # ============================================================================
-# Auto-add .uws/ to .gitignore if git is initialized
+# .gitignore: only machine-local files. .uws/ and .claude/ must be committed,
+# because .claude/settings.json points its hooks at .uws/hooks/ — ignoring either
+# leaves clones with hooks that silently do nothing.
 # ============================================================================
 if [[ "$HAS_GIT" == true ]]; then
-    if [[ -f ".gitignore" ]]; then
-        if ! grep -qF ".uws/" ".gitignore" 2>/dev/null; then
-            echo "" >> ".gitignore"
-            echo "# UWS internal hooks (session-specific)" >> ".gitignore"
-            echo ".uws/" >> ".gitignore"
-            echo -e "  ${GREEN}✓${NC} Added .uws/ to existing .gitignore"
+    touch ".gitignore"
+    for pattern in ".claude/settings.local.json" ".claude/settings.json.backup.*"; do
+        if ! grep -qxF "$pattern" ".gitignore" 2>/dev/null; then
+            echo "$pattern" >> ".gitignore"
         fi
-    else
-        cat > ".gitignore" << 'EOF'
-# UWS internal hooks (session-specific)
-.uws/
-
-# Claude Code project config
-.claude/
-EOF
-        echo -e "  ${GREEN}✓${NC} Created .gitignore with .uws/ and .claude/ excluded"
+    done
+    # Remove the exact block older UWS installers wrote (comment line + pattern)
+    if grep -qxF "# UWS internal hooks (session-specific)" ".gitignore" || grep -qxF "# Claude Code project config" ".gitignore"; then
+        awk '
+          $0 == "# UWS internal hooks (session-specific)" { skip = ".uws/"; next }
+          $0 == "# Claude Code project config"            { skip = ".claude/"; next }
+          skip != "" && $0 == skip { skip = ""; next }
+          { skip = ""; print }
+        ' ".gitignore" > ".gitignore.uws-tmp" && mv ".gitignore.uws-tmp" ".gitignore"
+        echo -e "  ${GREEN}✓${NC} Removed old UWS .gitignore entries (.uws/, .claude/ must be committed)"
+    fi
+    if grep -qxF ".uws/" ".gitignore" || grep -qxF ".claude/" ".gitignore"; then
+        echo -e "  ${YELLOW}!${NC} .gitignore excludes .uws/ or .claude/ (from an older UWS install)."
+        echo -e "    Remove those lines so collaborators get the UWS commands and hooks."
     fi
 fi
 
@@ -1294,13 +1326,14 @@ echo "  .uws/hooks/pre_compact.sh      - Auto-checkpoint hook"
 echo "  .uws/scripts/common.sh         - Shared utilities"
 echo "  .uws/scripts/sdlc.sh           - SDLC workflow manager"
 echo "  .uws/scripts/research.sh       - Research workflow manager"
-echo "  .claude/commands/uws*           - Slash commands (8 total)"
+echo "  .uws/scripts/checkpoint.sh     - Checkpoint helper"
+echo "  .claude/commands/uws*.md        - Slash commands (7 total)"
 echo "  .claude/settings.json           - Hook configuration"
 echo "  .workflow/state.yaml            - Workflow state"
 echo "  .workflow/handoff.md            - Context handoff"
 echo "  .workflow/checkpoints.log       - Checkpoint history"
 if [[ "$HAS_GIT" == true ]]; then
-echo "  .gitignore                      - Updated with .uws/ exclusion"
+echo "  .gitignore                      - Ignores machine-local Claude settings"
 fi
 echo ""
 echo -e "${CYAN}Quick start:${NC}"
@@ -1311,7 +1344,7 @@ echo -e "  4. Use ${BOLD}/uws-status${NC} to see current state"
 echo -e "  5. Use ${BOLD}/uws-checkpoint \"message\"${NC} to save progress"
 echo ""
 if [[ "$HAS_GIT" == true ]]; then
-echo -e "${YELLOW}Tip:${NC} Commit .workflow/ to preserve state across clones"
-echo -e "     ${CYAN}git add .workflow/ CLAUDE.md && git commit -m 'Add UWS workflow'${NC}"
+echo -e "${YELLOW}Tip:${NC} Commit UWS so state, commands and hooks travel with the repo"
+echo -e "     ${CYAN}git add .uws/ .claude/ .workflow/ CLAUDE.md .gitignore && git commit -m 'Add UWS workflow'${NC}"
 fi
 echo ""

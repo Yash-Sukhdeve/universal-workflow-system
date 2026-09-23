@@ -222,21 +222,40 @@ teardown() {
 @test "UWS_ROOT env var overrides discovery" {
     local alt_root
     alt_root="$(mktemp -d)"
-    mkdir -p "$alt_root/.workflow" "$alt_root/scripts"
-    cat > "$alt_root/.workflow/state.yaml" <<'EOF'
+    mkdir -p "$alt_root/.workflow"
+    cat > "$alt_root/.workflow/state.yaml" <<'EOF2'
 current_phase: "phase_1_planning"
-EOF
-    cat > "$alt_root/scripts/status.sh" <<'STUB'
+EOF2
+    cat > "$TEST_TMP_DIR/scripts/status.sh" <<'STUB'
 #!/bin/bash
-echo "CALLED: alt-root status.sh"
+echo "CALLED: status.sh in $(pwd) with WORKFLOW_DIR=$WORKFLOW_DIR"
 STUB
-    chmod +x "$alt_root/scripts/status.sh"
 
     UWS_ROOT="$alt_root" run "$TEST_TMP_DIR/bin/uws" status
     [ "$status" -eq 0 ]
-    assert_output "CALLED: alt-root status.sh"
+    assert_output "WORKFLOW_DIR=$alt_root/.workflow"
 
     rm -rf "$alt_root"
+}
+
+@test "uws runs installed scripts against a project that has no scripts/ dir" {
+    # Regression: bin/uws used to look for scripts in the *project*, so every
+    # command failed with 'No such file' in a real user project.
+    local project
+    project="$(mktemp -d)"
+    mkdir -p "$project/.workflow"
+    echo 'current_phase: "phase_1_planning"' > "$project/.workflow/state.yaml"
+    cat > "$TEST_TMP_DIR/scripts/status.sh" <<'STUB'
+#!/bin/bash
+echo "CALLED: status.sh in $(pwd) with WORKFLOW_DIR=$WORKFLOW_DIR"
+STUB
+
+    cd "$project"
+    run "$TEST_TMP_DIR/bin/uws" status
+    [ "$status" -eq 0 ]
+    assert_output "CALLED: status.sh in $project with WORKFLOW_DIR=$project/.workflow"
+
+    rm -rf "$project"
 }
 
 @test "uws exits with error when no .workflow/ found" {

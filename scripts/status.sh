@@ -132,8 +132,9 @@ if [ "$COMPACT" = true ]; then
     exit 0
 fi
 
-# Full status display
-clear
+# Full status display (only clear an interactive terminal: `clear` fails without TERM,
+# which made `uws status` exit 1 under agents, hooks and CI)
+if [[ -t 1 ]]; then clear 2>/dev/null || true; fi
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║                       UNIVERSAL WORKFLOW SYSTEM STATUS                        ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
