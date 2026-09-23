@@ -558,15 +558,25 @@ get_yaml_value() {
     grep "^${key}:" "${file}" 2>/dev/null | cut -d':' -f2- | sed 's/^ *//;s/"//g' | xargs
 }
 
+# Nanoseconds since the epoch; BSD date has no %N (it prints a literal "N")
+_uws_now_ns() {
+    local t
+    t="$(date +%s%N 2>/dev/null || true)"
+    case "$t" in
+        ''|*[!0-9]*) perl -MTime::HiRes=time -e 'printf "%d\n", time() * 1e9' ;;
+        *) echo "$t" ;;
+    esac
+}
+
 # Measure execution time in milliseconds
 measure_time() {
     local cmd="$1"
     local start_time end_time elapsed
 
-    start_time=$(date +%s%N)
+    start_time=$(_uws_now_ns)
     eval "${cmd}" > /dev/null 2>&1
     local status=$?
-    end_time=$(date +%s%N)
+    end_time=$(_uws_now_ns)
 
     elapsed=$(( (end_time - start_time) / 1000000 ))
     echo "${elapsed}"

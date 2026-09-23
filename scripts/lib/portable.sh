@@ -23,6 +23,17 @@ sed_inplace() {
     return "$rc"
 }
 
+# now_ms: milliseconds since the epoch. GNU date supports %3N; BSD date prints a
+# literal "3N" (exit 0), so validate the result and fall back to seconds * 1000.
+now_ms() {
+    local t
+    t="$(date +%s%3N 2>/dev/null || true)"
+    case "$t" in
+        ''|*[!0-9]*) t=$(( $(date +%s) * 1000 )) ;;
+    esac
+    printf '%s\n' "$t"
+}
+
 # append_after_match <file> <extended-regex> <line>
 # Insert <line> (verbatim, leading spaces kept) after every line matching the
 # regex. Replaces GNU-only `sed -i '/re/a text'`, whose one-line form BSD rejects.

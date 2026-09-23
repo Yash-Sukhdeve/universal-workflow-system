@@ -258,7 +258,8 @@ echo -e "${BLUE}│ ${BOLD}ENABLED SKILLS${NC}                                  
 echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
 
 if [ -f ${WORKFLOW_DIR}/skills/enabled.yaml ]; then
-    SKILL_COUNT=$(grep -c "^  - " ${WORKFLOW_DIR}/skills/enabled.yaml 2>/dev/null || echo 0)
+    SKILL_COUNT=$(grep -c "^  - " ${WORKFLOW_DIR}/skills/enabled.yaml 2>/dev/null || true)
+    SKILL_COUNT=${SKILL_COUNT:-0}
     SKILL_COUNT=$(echo "$SKILL_COUNT" | tr -d '[:space:]')
 
     if [ "$SKILL_COUNT" -gt 0 ] 2>/dev/null; then
@@ -286,9 +287,9 @@ echo -e "${BLUE}└────────────────────�
 
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "not initialized")
 LAST_COMMIT=$(git log -1 --format="%h - %s (%cr)" 2>/dev/null || echo "No commits yet")
-MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || echo 0)
-UNTRACKED=$(git status --porcelain 2>/dev/null | grep -c "^??" || echo 0)
-STAGED=$(git status --porcelain 2>/dev/null | grep -c "^[AM]" || echo 0)
+MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || true)
+UNTRACKED=$(git status --porcelain 2>/dev/null | grep -c "^??" || true)
+STAGED=$(git status --porcelain 2>/dev/null | grep -c "^[AM]" || true)
 MODIFIED=$(echo "$MODIFIED" | tr -d '[:space:]')
 UNTRACKED=$(echo "$UNTRACKED" | tr -d '[:space:]')
 STAGED=$(echo "$STAGED" | tr -d '[:space:]')
@@ -334,8 +335,8 @@ if [ "$VERBOSE" = true ]; then
     echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
     
     if [ -d ${WORKFLOW_DIR}/knowledge ]; then
-        PATTERN_COUNT=$(grep -c "pattern:" ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null || echo 0)
-        SOLUTION_COUNT=$(grep -c "solution:" ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null || echo 0)
+        PATTERN_COUNT=$(cat ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null | grep -c "pattern:" || true)
+        SOLUTION_COUNT=$(cat ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null | grep -c "solution:" || true)
         
         echo -e "  ${CYAN}Patterns Learned:${NC}  ${GREEN}${PATTERN_COUNT}${NC}"
         echo -e "  ${CYAN}Solutions Stored:${NC}  ${GREEN}${SOLUTION_COUNT}${NC}"

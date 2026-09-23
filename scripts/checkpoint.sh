@@ -704,7 +704,7 @@ show_checkpoint_status() {
     echo -e "${CYAN}Phase Progress:${NC}"
     for phase in $(seq 1 5); do
         local count
-        count=$(grep -c "CP_${phase}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null || echo 0)
+        count=$(grep -c "CP_${phase}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null || true)
         count=$(echo "$count" | tr -d '[:space:]')
         [[ -z "$count" || ! "$count" =~ ^[0-9]+$ ]] && count=0
         local phase_name=""

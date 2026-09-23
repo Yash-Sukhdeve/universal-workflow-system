@@ -45,8 +45,9 @@ jobs:
         run: |
           # `sed -i 's/..' f` fails on BSD sed: use sed_inplace (scripts/lib/portable.sh)
           # `head -c -N` is GNU-only. Both broke every state write on macOS.
-          if grep -rnE "sed -i( |$)|head -c -[0-9]" scripts bin | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; then
-            echo "::error::GNU-only sed -i / head -c -N found; use sed_inplace from scripts/lib/portable.sh"
+          # `date +%N` prints a literal "N" on BSD (exit 0): use now_ms.
+          if grep -rnE "sed -i( |$)|head -c -[0-9]|date [^|;]*%[0-9]*N" scripts bin | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#|portable\.sh:'; then
+            echo "::error::GNU-only sed -i / head -c -N / date %N found; use scripts/lib/portable.sh"
             exit 1
           fi
           # macOS /bin/bash is 3.2: no case modification, associative arrays, mapfile, namerefs

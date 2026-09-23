@@ -332,7 +332,9 @@ get_session_count() {
     if command -v yq &> /dev/null; then
         yq '.sessions | length' "$SESSIONS_FILE"
     else
-        grep -c "^  - id:" "$SESSIONS_FILE" 2>/dev/null || echo "0"
+        local n
+        n=$(grep -c "^  - id:" "$SESSIONS_FILE" 2>/dev/null || true)
+        echo "${n:-0}"
     fi
 }
 
