@@ -43,6 +43,15 @@ checks the artifacts a user's project receives rather than only this repository.
   is in use
 - The ~1.5GB vector-memory install is opt-in: prompts default to No, and
   non-interactive runs skip it unless `UWS_VECTOR_MEMORY=true`
+- macOS: CI had failed there since February. BSD `sed` rejects `sed -i 's/..' file`,
+  so every in-place state write failed; bash 3.2 (macOS `/bin/bash`) treats an empty
+  `"${arr[@]}"` as unbound and has no `${var,,}`; BSD `date +%s%3N` prints a literal
+  `3N`, which crashed `recover_context.sh`. Added `scripts/lib/portable.sh`
+  (`sed_inplace`, `append_after_match`, `now_ms`) and a CI step rejecting these
+  constructs. First fully green CI run: Ubuntu 741/741, macOS 671/671
+- `grep -c … || echo 0` printed `0` twice when nothing matched (e.g. "Modified: 0
+  0 files" in recovery and status output)
+- CI summary treated skipped jobs as passing; it now requires success
 - `.claude-plugin/marketplace.json` and the plugin manifest failed
   `claude plugin validate` (spaces in the name, no `owner`/`plugins`, hooks declared as
   prose)
