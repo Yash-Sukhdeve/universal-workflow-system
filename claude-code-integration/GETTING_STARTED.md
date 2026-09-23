@@ -64,10 +64,10 @@ your-project/
 ├── .claude/
 │   ├── settings.json          # Hook configuration + permissions
 │   └── commands/
-│       ├── uws-status         # /uws:status command
-│       ├── uws-checkpoint     # /uws:checkpoint command
-│       ├── uws-recover        # /uws:recover command
-│       └── uws-handoff        # /uws:handoff command
+│       ├── uws-status.md      # /uws-status command
+│       ├── uws-checkpoint.md  # /uws-checkpoint command
+│       ├── uws-recover.md     # /uws-recover command
+│       └── uws-handoff.md     # /uws-handoff command
 │
 └── CLAUDE.md                  # Updated with UWS instructions
 ```
@@ -92,20 +92,20 @@ your-project/
 
 3. **To see your full context explicitly:**
    ```
-   /uws:recover
+   /uws-recover
    ```
 
 ### During Work
 
 #### Check Status
 ```
-/uws:status
+/uws-status
 ```
 Shows current phase, checkpoint, and recent activity.
 
 #### Create Checkpoints
 ```
-/uws:checkpoint "Completed user authentication feature"
+/uws-checkpoint "Completed user authentication feature"
 ```
 Creates a timestamped checkpoint. Use this at milestones:
 - After completing a feature
@@ -120,7 +120,7 @@ UWS automatically creates checkpoints before context compaction (when Claude's c
 Before closing Claude Code:
 
 ```
-/uws:handoff
+/uws-handoff
 ```
 
 This updates `.workflow/handoff.md` with:
@@ -138,7 +138,7 @@ claude
 
 Your context is automatically restored. If you need a detailed recap:
 ```
-/uws:recover
+/uws-recover
 ```
 
 ## Workflow Phases
@@ -287,10 +287,10 @@ echo "${TIMESTAMP} | ${NEW_CP} | Auto-checkpoint (${GIT_HASH})" >> "$CHECKPOINT_
 
 | Command | Purpose |
 |---------|---------|
-| `/uws:status` | Show current state |
-| `/uws:checkpoint "msg"` | Create checkpoint |
-| `/uws:recover` | Full context recovery |
-| `/uws:handoff` | Prepare for session end |
+| `/uws-status` | Show current state |
+| `/uws-checkpoint "msg"` | Create checkpoint |
+| `/uws-recover` | Full context recovery |
+| `/uws-handoff` | Prepare for session end |
 
 | File | Purpose |
 |------|---------|

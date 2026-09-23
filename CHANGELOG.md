@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Installability: every documented install path now produces a working setup, and CI
+checks the artifacts a user's project receives rather than only this repository.
+
+### Added
+- Claude Code plugin at `plugins/uws/`, installable with
+  `/plugin marketplace add Yash-Sukhdeve/universal-workflow-system` and
+  `/plugin install uws@uws`: seven `/uws:*` commands, SessionStart/PreCompact hooks,
+  the seven `uws-*` subagents, and a bundled `uws` CLI
+- `claude-code-integration/install.sh --yes` (or `UWS_YES=true`) for unattended installs
+- `tests/integration/test_installability.bats` (20 tests) covering the installer, the
+  global CLI and the plugin; CI now lints user-facing entry points at warning level
+  and runs `claude plugin validate`
+
+### Fixed
+- Installer wrote slash commands without the `.md` extension, so Claude Code never
+  loaded them; it now writes `uws*.md` and removes the extensionless files on upgrade
+- Installer wrote hooks as a flat `[{"event": ...}]` list, which Claude Code ignores;
+  hooks now use the nested format with `$CLAUDE_PROJECT_DIR` paths, and upgrades
+  migrate the old list while keeping unrelated settings
+- Installer prompts read from `/dev/tty`, so `curl | bash` no longer consumes the
+  script as input; with no terminal the default answer is used and printed
+- Installer no longer adds `.uws/` and `.claude/` to `.gitignore` (clones got hooks
+  pointing at missing scripts) and drops the broad `Bash(git:*)`/`Bash(sed:*)`
+  permissions it used to grant; generated commands and hooks use portable
+  `sed -i.bak` and `date -u`
+- Installer's `/uws-status`, `/uws-recover` and `/uws-handoff` used `! cmd` lines,
+  which Claude Code does not execute; they now use `` !`cmd` ``
+- `bin/uws` ran scripts from the user's project instead of the UWS installation, so
+  every command after `uws init` failed with "No such file or directory"
+- `uws status` exited 1 without a terminal (`clear` with no `TERM`)
+- `init_workflow.sh` no longer moves an existing `.workflow/` aside when run without
+  a terminal (set `UWS_FORCE_REINIT=true` to do so), no longer overwrites an existing
+  git `pre-commit` hook, and skips the per-project `./uws` wrapper when a global `uws`
+  is in use
+- The ~1.5GB vector-memory install is opt-in: prompts default to No, and
+  non-interactive runs skip it unless `UWS_VECTOR_MEMORY=true`
+- `.claude-plugin/marketplace.json` and the plugin manifest failed
+  `claude plugin validate` (spaces in the name, no `owner`/`plugins`, hooks declared as
+  prose)
+
 ## [1.1.0] - 2026-02-17
 
 ### Added

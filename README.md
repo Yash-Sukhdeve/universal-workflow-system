@@ -2,7 +2,6 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-662%20passing-green.svg)](#testing)
 [![CI](https://github.com/Yash-Sukhdeve/universal-workflow-system/actions/workflows/ci.yml/badge.svg)](https://github.com/Yash-Sukhdeve/universal-workflow-system/actions)
 
 **Context-preserving workflow system for AI-assisted development.** Maintains state across sessions, survives context resets, and works with any project type.
@@ -27,42 +26,64 @@
 
 ## Quick Start
 
-### Option 1: Claude Code Integration (Recommended)
+Pick one. All three keep state in your project's `.workflow/` directory; none needs
+anything beyond Bash, git and (for the Claude Code paths) Claude Code.
+
+### Option 1: Claude Code plugin (recommended)
+
+Inside Claude Code:
+
+```
+/plugin marketplace add Yash-Sukhdeve/universal-workflow-system
+/plugin install uws@uws
+```
+
+Then, in any project:
+
+```
+/uws:init                # set up .workflow/ (auto-detects the project type)
+/uws:status              # phase, checkpoint, recent activity
+/uws:checkpoint "msg"    # save progress
+/uws:recover             # full context recovery after a break
+/uws:handoff             # update handoff notes before ending a session
+/uws:sdlc start          # or /uws:research start
+```
+
+Workflow context is injected automatically at session start, and a checkpoint is taken
+before every context compaction. The plugin also adds seven role subagents
+(`uws:uws-researcher`, `uws:uws-architect`, `uws:uws-implementer`, …).
+
+### Option 2: Per-project installer (commit UWS into the repo)
+
+Use this when collaborators should get the commands and hooks from the repository
+itself, without installing a plugin:
 
 ```bash
-# In your project directory:
+# In your project directory (add "-s -- --yes" after bash for unattended installs):
 curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
-
-# Start Claude Code
-claude
-
-# Your context loads automatically. Use these commands:
-/uws-status              # Check current state
-/uws-checkpoint "msg"    # Save progress
-/uws-recover             # Full context recovery
-/uws-handoff             # Prepare for session end
+git add .uws/ .claude/ .workflow/ CLAUDE.md .gitignore && git commit -m "Add UWS workflow"
 ```
 
-### Option 2: CLI Installation
+This adds `/uws`, `/uws-status`, `/uws-checkpoint`, `/uws-recover`, `/uws-handoff`,
+`/uws-sdlc` and `/uws-research`. See [claude-code-integration/](claude-code-integration/README.md).
+
+### Option 3: Command-line only
 
 ```bash
-git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git
-cd universal-workflow-system
-./install.sh    # Symlinks 'uws' to ~/.local/bin
+git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git ~/uws
+~/uws/install.sh        # links `uws` into ~/.local/bin
 
-# In your project directory:
-uws init        # Initialize workflow
-uws status      # Check status
+cd your-project
+uws init                # initialize workflow
+uws status              # check status
+uws sdlc start          # begin the SDLC workflow
 ```
 
-### Option 3: Manual (no install)
+Without installing, run the scripts from your project directory instead:
+`~/uws/scripts/init_workflow.sh`, then `~/uws/scripts/status.sh`.
 
-```bash
-git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git
-cd universal-workflow-system
-./scripts/init_workflow.sh
-./scripts/status.sh
-```
+The optional vector-memory server (~1.5GB) is never installed unless you ask for it:
+answer `y` at the prompt, or set `UWS_VECTOR_MEMORY=true` for non-interactive runs.
 
 ---
 
@@ -76,10 +97,10 @@ cd universal-workflow-system
 | **Multi-Agent System** | 7 specialized AI agents | `.workflow/agents/` |
 | **SDLC Workflow** | Software development lifecycle | `scripts/sdlc.sh` |
 | **Research Workflow** | Scientific method workflow | `scripts/research.sh` |
-| **Claude Code Plugin** | Slash commands & hooks | `.claude/` |
+| **Claude Code Plugin** | Slash commands, hooks & subagents | `plugins/uws/` |
 | **Gemini Integration** | Antigravity workflows | `antigravity-integration/` |
 | **Vector Memory** | Semantic search across sessions | `scripts/lib/vector_memory_setup.sh` |
-| **Test Suite** | 662+ BATS tests | `tests/` |
+| **Test Suite** | BATS unit, integration and system tests | `tests/` |
 
 ---
 
@@ -99,13 +120,16 @@ git clone https://github.com/Yash-Sukhdeve/universal-workflow-system.git
 cd universal-workflow-system
 ```
 
-### Step 2: Initialize Workflow
+### Step 2: Initialize Workflow in Your Project
+
+Run the initializer from **your project's** directory (not from the UWS clone):
 
 ```bash
-./scripts/init_workflow.sh
+cd /path/to/your-project
+/path/to/universal-workflow-system/scripts/init_workflow.sh
 ```
 
-During initialization, UWS will offer to install the vector memory server for semantic search across sessions. This requires Python 3.9+ and ~1.5GB of disk space. You can skip it with `UWS_SKIP_VECTOR_MEMORY=true` or install it later by running `./scripts/lib/vector_memory_setup.sh`.
+During initialization, UWS asks whether to install the optional vector memory server for semantic search across sessions (default: no). It requires Python 3.9+ and ~1.5GB of disk space. Non-interactive runs skip it unless `UWS_VECTOR_MEMORY=true` is set; `UWS_SKIP_VECTOR_MEMORY=true` always skips it.
 
 ### Step 3: (Optional) Start Company OS
 
@@ -451,7 +475,7 @@ pytest tests/integration/company_os/ -v
 
 | Component | Tests | Framework |
 |-----------|-------|-----------|
-| Core Scripts | 662+ | BATS |
+| Core Scripts | 741 | BATS |
 | Dashboard Unit | 123 | Vitest |
 | Dashboard E2E | 64 | Playwright |
 | Backend Unit | 50+ | Pytest |

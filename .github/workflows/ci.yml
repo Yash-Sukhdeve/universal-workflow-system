@@ -41,6 +41,41 @@ jobs:
           # Fail on critical errors only
           find scripts -name "*.sh" -type f -exec shellcheck -x -e SC1091 -S error {} \;
 
+      - name: Lint user-facing entry points (warnings fail)
+        run: |
+          # These run on users' machines, so they get the stricter warning level
+          shellcheck -x -e SC1091 -S warning bin/uws install.sh \
+            claude-code-integration/install.sh plugins/uws/hooks/*.sh
+
+  # ============================================================================
+  # CLAUDE CODE PLUGIN / MARKETPLACE VALIDATION
+  # ============================================================================
+  plugin-validate:
+    name: Plugin Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Validate marketplace and plugin
+        run: |
+          # No credentials needed: validation is offline
+          claude plugin validate .
+          claude plugin validate plugins/uws
+          # Symlinked component dirs are skipped by the validator; check their targets too
+          claude plugin validate .claude/agents
+          test -x plugins/uws/bin/uws
+          test -x plugins/uws/scripts/init_workflow.sh
+
   # ============================================================================
   # UNIT TESTS - Ubuntu
   # ============================================================================
@@ -197,7 +232,7 @@ jobs:
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [test-ubuntu, test-macos]
+    needs: [test-ubuntu, test-macos, plugin-validate]
     if: always()
 
     steps:
@@ -205,9 +240,11 @@ jobs:
         run: |
           echo "Ubuntu tests: ${{ needs.test-ubuntu.result }}"
           echo "macOS tests: ${{ needs.test-macos.result }}"
+          echo "Plugin manifests: ${{ needs.plugin-validate.result }}"
 
           if [[ "${{ needs.test-ubuntu.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-macos.result }}" == "failure" ]]; then
+             [[ "${{ needs.test-macos.result }}" == "failure" ]] || \
+             [[ "${{ needs.plugin-validate.result }}" == "failure" ]]; then
             echo "::error::Some tests failed"
             exit 1
           fi
