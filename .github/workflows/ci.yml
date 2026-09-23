@@ -49,6 +49,11 @@ jobs:
             echo "::error::GNU-only sed -i / head -c -N found; use sed_inplace from scripts/lib/portable.sh"
             exit 1
           fi
+          # macOS /bin/bash is 3.2: no case modification, associative arrays, mapfile, namerefs
+          if grep -rnE '\$\{[A-Za-z_0-9]+(,,|\^\^)\}|declare -A|local -A|mapfile|readarray|declare -n|local -n' scripts bin | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; then
+            echo "::error::bash 4-only construct found; macOS ships bash 3.2"
+            exit 1
+          fi
 
       - name: Lint user-facing entry points (warnings fail)
         run: |

@@ -400,7 +400,7 @@ format_blocker() {
         *)        color="$NC" ;;
     esac
 
-    echo -e "${color}[${sev^^}]${NC} ${id}: ${desc}"
+    echo -e "${color}[$(printf '%s' "$sev" | tr '[:lower:]' '[:upper:]')]${NC} ${id}: ${desc}"
 }
 
 #######################################

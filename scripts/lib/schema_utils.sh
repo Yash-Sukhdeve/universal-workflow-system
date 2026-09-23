@@ -176,7 +176,7 @@ validate_type() {
             fi
             ;;
         boolean)
-            case "${value,,}" in
+            case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in  # not ${value,,}: bash 3.2
                 true|false|yes|no|1|0)
                     return 0
                     ;;
