@@ -413,6 +413,9 @@ assert_success() {
         # BATS style - check last run result
         if [[ "${status:-1}" -ne 0 ]]; then
             echo "FAIL: Command failed with status ${status:-unknown}" >&2
+            # Show the tail of the command's output so CI logs explain the failure
+            echo "--- last output lines ---" >&2
+            printf '%s\n' "${output:-}" | tail -25 >&2
             return 1
         fi
     else
