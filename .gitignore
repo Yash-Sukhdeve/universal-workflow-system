@@ -192,3 +192,6 @@ graphify-out/
 # the pm.sh project board, and the review.sh notification inbox.
 test-results/
 BOARD.md
+
+# research/ moved to github.com/Yash-Sukhdeve/uws-promise-2026; local leftovers stay untracked
+research/

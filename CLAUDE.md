@@ -11,8 +11,8 @@ project's `.workflow/` directory. Users install it as a Claude Code plugin
 (`plugins/uws/`), with the per-project installer (`claude-code-integration/`), or as
 the `uws` CLI (`bin/uws`).
 
-The PROMISE 2026 paper and its replication package live under `research/promise-2026/`
-and are separate from the product.
+The PROMISE 2026 paper, benchmarks and replication package live in their own repository,
+https://github.com/Yash-Sukhdeve/uws-promise-2026 (split out with history).
 
 ## Common Commands
 
@@ -39,13 +39,6 @@ SDLC phases: `requirements → design → implementation → verification → de
 Research phases: `hypothesis → literature_review → experiment_design → data_collection →
 analysis → peer_review → publication`. Once a goal is declared (`sdlc.sh goal "..."`),
 `next` is blocked until the phase's deliverables are checked off (`--force` overrides).
-
-### Research paper
-```bash
-cd research/promise-2026/paper && pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
-```
-Benchmarks and model training scripts: `research/promise-2026/benchmarks/`; replication
-package: `research/promise-2026/replication/` (see its README).
 
 ## Architecture
 
