@@ -23,9 +23,19 @@ correct, plain text and current.
   `state.yaml` and refreshed on every checkpoint, phase change and goal change;
   everything outside the block is never rewritten. Older handoffs are migrated on the
   first refresh (their "Last Session Summary" section becomes the block)
-- `tests/integration/test_context_hygiene.bats` (23 tests)
+- The managed block now also shows the active agent (linked to its
+  `docs/personas/<agent>.md`) and the current phase's remaining deliverables
+  (`- **Deliverables (sdlc: design)** - 1/4 done, 3 remaining:` plus the not-yet-checked
+  items), sourced from `state.yaml`'s `active_agent` and `methodology_progress` ledger
+- `tests/integration/test_context_hygiene.bats` (26 tests)
 
 #### Changed
+- Agent activation (`activate_agent.sh`) and SDLC phase transitions (`sdlc.sh next`/
+  `goto`) no longer append a "## Agent Activated" / "## Phase Transition" section to
+  `handoff.md` on every call — that appending is what made the file grow without bound.
+  Both now log a one-line event to `checkpoints.log` instead (`AGENT_ACTIVATED`,
+  `PHASE_TRANSITION`), already excluded from recovered context by the `| CP_` filter
+  above; the managed block picks up the new agent/phase/deliverables immediately
 - Subagents are generated with a per-role `model:` (architect and researcher: `opus`;
   implementer, experimenter, optimizer, deployer, documenter: `sonnet`); override with
   `UWS_AGENT_MODEL_<ROLE>` or `UWS_AGENT_MODEL=inherit` when running
@@ -57,6 +67,17 @@ correct, plain text and current.
 - "Recent Checkpoints" listed the `# Format:` comment, `INIT`/`AUTO` markers and
   `AGENT_*`/`SKILL_*` events; only `| CP_` entries are shown (also in the installer's
   SessionStart hook, which additionally read the project type from the flat key)
+- A pre-existing handoff containing old "## Agent Activated" / "## Phase Transition"
+  sections is cleaned up the next time its managed block refreshes: those sections are
+  removed (everything else, including any human-written section, is kept byte-for-byte)
+  and a `handoff.md.bak-<timestamp>` backup of the file is written first; a no-op, no
+  backup, once nothing is left to remove
+- `activate_agent.sh` set `active_agent.name`/`status`/`activated_at` in `state.yaml`
+  via `yaml_set`, but without `yq` that function's nested-key fallback only replaces a
+  `parent:\n  child:` pair that already exists — it never creates the `active_agent:`
+  section, so a freshly initialized project silently never got these fields on its
+  first agent activation. The first activation now seeds the section directly; every
+  activation after that uses the existing `yaml_set` path as before
 
 ### Installability
 
