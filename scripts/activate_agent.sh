@@ -289,8 +289,23 @@ capabilities:"
     # Load universal protocol + agent-specific skills
     load_agent_skills "$agent"
 
-    # Update state file with active agent info
-    if declare -f yaml_set > /dev/null 2>&1; then
+    # Update state file with active agent info. Without yq, yaml_set's
+    # nested-key fallback only replaces a "parent:\n  child:" pair that
+    # ALREADY exists (scripts/lib/yaml_utils.sh) — it never creates the
+    # parent section, and freshly initialized projects have no
+    # "active_agent:" section in state.yaml. So on the first activation ever
+    # (no yq, no existing section), seed a complete block directly; every
+    # activation after that finds the section and the yaml_set fallback's
+    # in-place replace works as designed. With yq, yaml_set already creates
+    # missing paths, so this only takes the append branch once, harmlessly.
+    if ! grep -q "^active_agent:" .workflow/state.yaml 2>/dev/null; then
+        {
+            echo "active_agent:"
+            echo "  name: \"${agent}\""
+            echo "  status: \"active\""
+            echo "  activated_at: \"${timestamp}\""
+        } >> .workflow/state.yaml
+    elif declare -f yaml_set > /dev/null 2>&1; then
         yaml_set .workflow/state.yaml "active_agent.name" "$agent" 2>/dev/null || true
         yaml_set .workflow/state.yaml "active_agent.status" "active" 2>/dev/null || true
         yaml_set .workflow/state.yaml "active_agent.activated_at" "$timestamp" 2>/dev/null || true
@@ -331,72 +346,15 @@ capabilities:"
         echo -e "${BLUE}📊 Dashboard session: ${session_id}${NC}"
     fi
 
-    # G5: Append agent responsibilities to handoff.md
-    local handoff_file="${WORKFLOW_DIR}/handoff.md"
-    if [[ -f "$handoff_file" ]]; then
-        {
-            echo ""
-            echo "## Agent Activated: ${agent}"
-            echo "- **When**: ${timestamp}"
-            echo "- **Phase**: ${current_phase}"
-            echo "- **Responsibilities**:"
-            case $agent in
-                researcher)
-                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
-                    echo "  - Deep-dive requirements: assign REQ IDs, ask 5+ probing questions"
-                    echo "  - Produce gap analysis table (no unresolved rows)"
-                    echo "  - Enumerate failure modes per subsystem (min 3 each)"
-                    echo "  - Review prior art and cite sources"
-                    echo "  - Full protocol: docs/personas/researcher.md"
-                    ;;
-                architect)
-                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
-                    echo "  - Verify researcher requirements (complete REQ IDs, acceptance criteria)"
-                    echo "  - Design all subsystems: components, APIs, data models, integrations"
-                    echo "  - Produce failure mode analysis table per component (min 3 modes each)"
-                    echo "  - Trace end-to-end flows for every user feature"
-                    echo "  - Document cross-cutting concerns: security, observability, deployment"
-                    echo "  - Full protocol: docs/personas/architect.md"
-                    ;;
-                implementer)
-                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
-                    echo "  - Verify architect design completeness before coding"
-                    echo "  - Implement ALL components: zero stubs, zero TODOs, zero placeholders"
-                    echo "  - Follow implementation order: data -> logic -> API -> workers -> integration"
-                    echo "  - Test count >= 2x endpoint count"
-                    echo "  - Full protocol: docs/personas/implementer.md"
-                    ;;
-                experimenter)
-                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
-                    echo "  - Audit implementation against design (coverage matrix)"
-                    echo "  - End-to-end verification per user feature (not just HTTP status)"
-                    echo "  - Failure injection testing per integration point"
-                    echo "  - Establish performance baselines"
-                    echo "  - Full protocol: docs/personas/experimenter.md"
-                    ;;
-                optimizer)
-                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
-                    echo "  - Establish baselines BEFORE any optimization"
-                    echo "  - Hypothesis-driven optimization with before/after evidence"
-                    echo "  - Verify zero regressions after each change"
-                    echo "  - Full protocol: docs/personas/optimizer.md"
-                    ;;
-                deployer)
-                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
-                    echo "  - Verify health checks, graceful shutdown, non-root container"
-                    echo "  - Configure CI/CD pipeline with automated rollback"
-                    echo "  - Set up monitoring, alerting, and runbooks"
-                    echo "  - Full protocol: docs/personas/deployer.md"
-                    ;;
-                documenter)
-                    echo "  - Execute Phase 0 Context Intake (Universal Protocol)"
-                    echo "  - Audit documentation coverage (every component, API, feature)"
-                    echo "  - Test all code examples (must actually run)"
-                    echo "  - Document all error responses and troubleshooting (min 5 entries)"
-                    echo "  - Full protocol: docs/personas/documenter.md"
-                    ;;
-            esac
-        } >> "$handoff_file"
+    # Refresh handoff.md's managed block so the newly active agent shows up
+    # immediately (was: appending a per-agent responsibilities dump on every
+    # activation, which made handoff.md grow without bound; the full
+    # responsibilities list already lives once in docs/personas/<agent>.md,
+    # and the managed block links to it). The activation itself is already
+    # recorded as an event: the AGENT_ACTIVATED line in checkpoints.log
+    # above, and structured logging via log_agent.
+    if declare -f refresh_handoff_header > /dev/null 2>&1; then
+        refresh_handoff_header "" "" "" "${WORKFLOW_DIR}/handoff.md"
     fi
 
     echo -e "${GREEN}✓ ${agent} agent activated${NC}"

@@ -200,13 +200,14 @@ EOF
 
 # ── Checkpoint list hygiene ──────────────────────────────────────────────────
 
-@test "checkpoints: comment, INIT/AUTO and AGENT_/SKILL_ event lines are excluded" {
+@test "checkpoints: comment, INIT/AUTO and AGENT_/SKILL_/PHASE_ event lines are excluded" {
     init_project
     cat >> "$PROJ/.workflow/checkpoints.log" <<'EOF'
 2026-01-01T10:00:00Z | AGENT_ACTIVATED | researcher
 2026-01-01T10:01:00Z | SKILL_ENABLED | literature_review
 2026-01-01T10:02:00Z | AUTO | Pre-commit checkpoint
-2026-01-01T10:03:00Z | CP_1_002 | Real work saved
+2026-01-01T10:03:00Z | PHASE_TRANSITION | sdlc: requirements -> design
+2026-01-01T10:04:00Z | CP_1_002 | Real work saved
 EOF
     run hook_context
     [ "$status" -eq 0 ]
@@ -215,6 +216,7 @@ EOF
     [[ "$output" != *"AGENT_ACTIVATED"* ]]
     [[ "$output" != *"SKILL_ENABLED"* ]]
     [[ "$output" != *"AUTO"* ]]
+    [[ "$output" != *"PHASE_TRANSITION"* ]]
     [[ "$output" != *"| INIT |"* ]]
 
     run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/recover_context.sh' </dev/null"
@@ -225,6 +227,7 @@ EOF
     [[ "$section" != *"Format"* ]]
     [[ "$section" != *"AGENT_ACTIVATED"* ]]
     [[ "$section" != *"SKILL_ENABLED"* ]]
+    [[ "$section" != *"PHASE_TRANSITION"* ]]
     [[ "$section" != *"INIT"* ]]
 }
 
@@ -343,6 +346,11 @@ EOF
 ## Next Actions
 - [ ] Human-written action
 
+## Agent Activated: researcher
+- **When**: 2020-01-02T00:00:00Z
+- **Responsibilities**:
+  - Some stale, machine-written text
+
 ## Phase Transition: requirements -> design
 - **When**: 2020-01-02T00:00:00Z
 EOF
@@ -353,16 +361,29 @@ EOF
     [ "$(grep -c '^## Last Session Summary' "$h")" -eq 1 ]
     run grep -cE "Working on|2020-01-01T00:00:00Z|CP_1_023" "$h"
     [ "$output" = "0" ]
+    # Human-written sections and content survive byte-for-byte
     grep -q "1. Uses Postgres 15, not SQLite" "$h"
     grep -q -- "- \[ \] Human-written action" "$h"
-    grep -q "## Phase Transition: requirements -> design" "$h"
     grep -q -- "- \*\*Checkpoint\*\*: CP_1_002 - after migration" "$h"
+    # Machine-generated sections are removed, not kept
+    run grep -cE "## (Agent Activated|Phase Transition):" "$h"
+    [ "$output" = "0" ]
+    run grep -c "Some stale, machine-written text" "$h"
+    [ "$output" = "0" ]
+    # A timestamped backup of the pre-migration file was written
+    local backups
+    backups=$(find "$PROJ/.workflow" -maxdepth 1 -name 'handoff.md.bak-*' | wc -l | tr -d ' ')
+    [ "$backups" = "1" ]
+    grep -q "## Agent Activated: researcher" "$PROJ/.workflow"/handoff.md.bak-*
+    grep -q "## Phase Transition: requirements -> design" "$PROJ/.workflow"/handoff.md.bak-*
 
-    # Idempotent: a second refresh keeps exactly one block
+    # Idempotent: a second refresh keeps exactly one block, no new backup
     run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/checkpoint.sh' create 'again' </dev/null"
     [ "$status" -eq 0 ]
     [ "$(grep -c '<!-- uws:managed:start -->' "$h")" -eq 1 ]
     [ "$(grep -c '^## Last Session Summary' "$h")" -eq 1 ]
+    backups=$(find "$PROJ/.workflow" -maxdepth 1 -name 'handoff.md.bak-*' | wc -l | tr -d ' ')
+    [ "$backups" = "1" ]
 }
 
 @test "handoff: phase change refreshes the managed block (goal and methodology phase)" {
@@ -375,4 +396,72 @@ EOF
     [ "$status" -eq 0 ]
     grep -q -- "- \*\*Goal\*\*: Ship the parser" "$h"
     [ "$(grep -c '<!-- uws:managed:start -->' "$h")" -eq 1 ]
+}
+
+# ── Bounded growth (the defect this file exists to pin) ─────────────────────
+
+@test "handoff: line count stays bounded across repeated phase transitions" {
+    init_project
+    local h="$PROJ/.workflow/handoff.md"
+    run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/sdlc.sh' start </dev/null"
+    [ "$status" -eq 0 ]
+    run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/sdlc.sh' goal 'Ship the parser' </dev/null"
+    [ "$status" -eq 0 ]
+
+    local lines_after_2 lines_after_10 target i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        target="design"; [ $(( i % 2 )) -eq 0 ] && target="requirements"
+        run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/sdlc.sh' goto ${target} --force </dev/null"
+        [ "$status" -eq 0 ]
+        [ "$i" -eq 2 ]  && lines_after_2=$(wc -l < "$h")
+        [ "$i" -eq 10 ] && lines_after_10=$(wc -l < "$h")
+    done
+
+    [ "$lines_after_10" -eq "$lines_after_2" ]
+    # Every transition is still recorded, just not in handoff.md
+    [ "$(grep -c 'PHASE_TRANSITION' "$PROJ/.workflow/checkpoints.log")" -eq 10 ]
+    # Never appended: exactly one managed block, no stray "## Phase Transition" section
+    [ "$(grep -c '<!-- uws:managed:start -->' "$h")" -eq 1 ]
+    run grep -c '^## Phase Transition:' "$h"
+    [ "$output" = "0" ]
+}
+
+@test "handoff: line count stays bounded across repeated agent activations" {
+    init_project
+    local h="$PROJ/.workflow/handoff.md"
+    local agents=(researcher architect implementer experimenter optimizer deployer documenter researcher architect implementer)
+    local lines_after_2 lines_after_10 i=0 a
+    for a in "${agents[@]}"; do
+        i=$(( i + 1 ))
+        run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/activate_agent.sh' '${a}' </dev/null"
+        [ "$status" -eq 0 ]
+        [ "$i" -eq 2 ]  && lines_after_2=$(wc -l < "$h")
+        [ "$i" -eq 10 ] && lines_after_10=$(wc -l < "$h")
+    done
+
+    [ "$lines_after_10" -eq "$lines_after_2" ]
+    [ "$(grep -c 'AGENT_ACTIVATED' "$PROJ/.workflow/checkpoints.log")" -eq 10 ]
+    [ "$(grep -c '<!-- uws:managed:start -->' "$h")" -eq 1 ]
+    run grep -c '^## Agent Activated:' "$h"
+    [ "$output" = "0" ]
+    grep -q -- "- \*\*Active agent\*\*: implementer (docs/personas/implementer.md)" "$h"
+}
+
+@test "handoff: managed block shows the current phase's deliverables and remaining count" {
+    init_project
+    local h="$PROJ/.workflow/handoff.md"
+    run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/sdlc.sh' start </dev/null && '${PROJECT_ROOT}/scripts/sdlc.sh' goal 'Ship the parser' </dev/null"
+    [ "$status" -eq 0 ]
+    grep -q -- "- \*\*Deliverables (sdlc: requirements)\*\* - 0/3 done, 3 remaining:" "$h"
+    grep -q -- "  - Requirements document with user stories and acceptance criteria" "$h"
+
+    run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/sdlc.sh' check 1 </dev/null"
+    [ "$status" -eq 0 ]
+    run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/checkpoint.sh' create 'partial' </dev/null"
+    [ "$status" -eq 0 ]
+    grep -q -- "- \*\*Deliverables (sdlc: requirements)\*\* - 1/3 done, 2 remaining:" "$h"
+    # The checked-off item no longer appears in the remaining list
+    run grep -c -- "- Requirements document with user stories and acceptance criteria" "$h"
+    [ "$output" = "0" ]
+    grep -q -- "  - Non-functional requirements defined" "$h"
 }

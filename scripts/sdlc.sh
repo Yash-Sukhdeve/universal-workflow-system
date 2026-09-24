@@ -295,27 +295,33 @@ _deliverable_gate() {
 }
 
 #######################################
-# Append phase transition to handoff.md (G6 fix)
+# Log a phase transition (G6 fix). Was: appending a "## Phase Transition"
+# section + the next phase's deliverables to handoff.md on every transition,
+# which made the file grow without bound. The event now goes to
+# checkpoints.log instead, next to the pre-existing AGENT_ACTIVATED
+# convention (see scripts/activate_agent.sh): recover_context.sh and the
+# SessionStart hook already filter that log to "| CP_..." lines
+# (uws_real_checkpoints in scripts/lib/hook_context.sh), so this does not
+# pollute recovered context. set_phase() already refreshes handoff.md's
+# managed block (current phase + its deliverables) via sync_meta_phase, so
+# the deliverables list does not need to be duplicated here.
 #######################################
-append_to_handoff() {
+log_phase_transition() {
     local from_phase="$1"
     local to_phase="$2"
-    local handoff_file="${WORKFLOW_DIR}/handoff.md"
+    local log_file="${WORKFLOW_DIR}/checkpoints.log"
 
-    if [[ ! -f "$handoff_file" ]]; then
-        return
-    fi
+    [[ -f "$log_file" ]] || return 0
 
     local timestamp
     timestamp=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
+    local line="${timestamp} | PHASE_TRANSITION | sdlc: ${from_phase} -> ${to_phase}"
 
-    {
-        echo ""
-        echo "## Phase Transition: ${from_phase} -> ${to_phase}"
-        echo "- **When**: ${timestamp}"
-        echo "- **Deliverables for ${to_phase}**:"
-        get_phase_deliverables "$to_phase" | sed 's/^/  /'
-    } >> "$handoff_file"
+    if declare -f atomic_append > /dev/null 2>&1; then
+        atomic_append "$log_file" "$line"
+    else
+        echo "$line" >> "$log_file"
+    fi
 }
 
 #######################################
@@ -432,8 +438,9 @@ main() {
                 set_phase "$next_phase"
                 echo -e "${GREEN}✅ Advancing to: ${next_phase}${NC}"
 
-                # G6: Auto-append transition to handoff.md
-                append_to_handoff "$current_phase" "$next_phase"
+                # G6: log the transition event (checkpoints.log; see
+                # log_phase_transition for why not handoff.md)
+                log_phase_transition "$current_phase" "$next_phase"
 
                 # Auto-switch agent if routing library and config allow
                 if declare -f get_agent_for_phase > /dev/null 2>&1; then
@@ -527,8 +534,9 @@ main() {
             set_phase "$target_phase"
             echo -e "${GREEN}✅ Jumped to: ${target_phase}${NC} (from ${current_phase})"
 
-            # G6: Auto-append transition to handoff
-            append_to_handoff "$current_phase" "$target_phase"
+            # G6: log the transition event (checkpoints.log; see
+            # log_phase_transition for why not handoff.md)
+            log_phase_transition "$current_phase" "$target_phase"
 
             echo ""
             echo -e "${CYAN}Deliverables for ${target_phase}:${NC}"
