@@ -145,7 +145,7 @@ GLOBAL DB (quarterly, manual review):
    prefixes (e.g., "PHASE 4") rank low when searching for current
    phase (e.g., "PHASE 2"). The content prefix convention handles this.
 4. Option B (nuclear): If contamination is severe, delete the DB file:
-     rm <project_root>/memory/memories.db
+     rm <project_root>/memory/vector_memory.db
    Then re-seed from .workflow/handoff.md.
    NOTE: clear_old_memories() cannot wipe all entries (min days_old=1,
    min max_to_keep=100). Direct file deletion is the only full reset.
@@ -156,7 +156,7 @@ If categories need to change in the future:
 1. get_memory_stats() to get total count.
 2. list_recent_memories(limit=<total>) to export all entries.
 3. Record all memory content and categories externally.
-4. Delete the DB file: rm <working_dir>/memory/memories.db
+4. Delete the DB file: rm <working_dir>/memory/vector_memory.db
    (clear_old_memories cannot wipe all: min days_old=1, min max_to_keep=100)
 5. Re-store each memory with updated categories.
 Keep category taxonomy stable. Prefer adding new categories over renaming.
