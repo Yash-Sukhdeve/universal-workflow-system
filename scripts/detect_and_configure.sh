@@ -588,51 +588,42 @@ recommend_setup() {
     case "$DETECTED_TYPE" in
         research)
             echo "  📚 Suggested first agent: ${BOLD}researcher${NC}"
-            echo "  🛠️  Useful skills: literature_review, experimental_design, statistical_validation"
             echo "  📖 Next steps:"
-            echo "     1. ./scripts/activate_agent.sh researcher"
-            echo "     2. ./scripts/enable_skill.sh literature_review"
-            echo "     3. Define research questions and methodology"
+            echo "     1. uws research start"
+            echo "     2. uws orchestrate dispatch \"Define research questions and methodology\""
             ;;
         ml|llm)
             echo "  🤖 Suggested first agent: ${BOLD}researcher${NC} → ${BOLD}implementer${NC}"
-            echo "  🛠️  Useful skills: model_development, training_pipeline, evaluation"
             echo "  📖 Next steps:"
-            echo "     1. ./scripts/activate_agent.sh researcher"
-            echo "     2. Define ML problem and success metrics"
-            echo "     3. Transition to implementer for model development"
+            echo "     1. uws research start"
+            echo "     2. uws orchestrate dispatch \"Define the ML problem and success metrics\""
+            echo "     3. Advance phases (uws research next); each phase dispatches its own subagent"
             ;;
         software)
             echo "  🏗️  Suggested first agent: ${BOLD}architect${NC}"
-            echo "  🛠️  Useful skills: api_design, code_review, testing"
             echo "  📖 Next steps:"
-            echo "     1. ./scripts/activate_agent.sh architect"
-            echo "     2. Design system architecture"
-            echo "     3. Transition to implementer for development"
+            echo "     1. uws sdlc start"
+            echo "     2. uws orchestrate dispatch \"Write the requirements\""
+            echo "     3. Advance phases (uws sdlc next); design and implementation go to their subagents"
             ;;
         deployment)
             echo "  🚀 Suggested first agent: ${BOLD}deployer${NC}"
-            echo "  🛠️  Useful skills: containerization, ci_cd, monitoring"
             echo "  📖 Next steps:"
-            echo "     1. ./scripts/activate_agent.sh deployer"
-            echo "     2. ./scripts/enable_skill.sh containerization ci_cd"
-            echo "     3. Set up deployment pipeline"
+            echo "     1. uws sdlc start, then uws sdlc goto deployment"
+            echo "     2. uws orchestrate dispatch \"Set up the deployment pipeline\""
             ;;
         optimization)
             echo "  ⚡ Suggested first agent: ${BOLD}optimizer${NC}"
-            echo "  🛠️  Useful skills: profiling, quantization, pruning"
             echo "  📖 Next steps:"
-            echo "     1. ./scripts/activate_agent.sh optimizer"
-            echo "     2. Profile baseline performance"
-            echo "     3. Apply optimization techniques"
+            echo "     1. Profile baseline performance"
+            echo "     2. Apply optimization techniques (the uws-optimizer subagent: /agents)"
             ;;
         hybrid|*)
             echo "  🔄 Suggested first agent: ${BOLD}architect${NC}"
-            echo "  🛠️  Useful skills: Depends on your specific needs"
             echo "  📖 Next steps:"
             echo "     1. Review project requirements"
-            echo "     2. Choose appropriate workflow template"
-            echo "     3. Activate relevant agent"
+            echo "     2. uws sdlc start (or uws research start)"
+            echo "     3. uws orchestrate dispatch \"<task>\""
             ;;
     esac
 

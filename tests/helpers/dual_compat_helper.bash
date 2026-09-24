@@ -233,8 +233,7 @@ simulate_claude_session() {
             status) script="./scripts/status.sh" ;;
             checkpoint) script="./scripts/checkpoint.sh" ;;
             recover) script="./scripts/recover_context.sh" ;;
-            agent) script="./scripts/activate_agent.sh" ;;
-            skill) script="./scripts/enable_skill.sh" ;;
+            orchestrate) script="./scripts/orchestrate.sh" ;;
             handoff) script="./scripts/handoff.sh" ;;
             *) script="./scripts/status.sh" ;;
         esac
@@ -273,8 +272,6 @@ simulate_gemini_session() {
             status) script="./scripts/status.sh" ;;
             checkpoint) script="./scripts/checkpoint.sh" ;;
             recover) script="./scripts/recover_context.sh" ;;
-            agent) script="./scripts/activate_agent.sh" ;;
-            skill) script="./scripts/enable_skill.sh" ;;
             handoff) script="./scripts/handoff.sh" ;;
             *) script="./scripts/status.sh" ;;
         esac
@@ -534,9 +531,9 @@ calculate_recovery_completeness() {
         grep -q "## " "${dir}/.workflow/handoff.md" && score=$((score + 10))
     fi
 
-    # checkpoints.log exists (10 points)
+    # checkpoints.log exists and is non-empty (20 points)
     if [[ -f "${dir}/.workflow/checkpoints.log" && -s "${dir}/.workflow/checkpoints.log" ]]; then
-        score=$((score + 10))
+        score=$((score + 20))
     fi
 
     # config.yaml exists (10 points)
@@ -546,11 +543,6 @@ calculate_recovery_completeness() {
 
     # agents/registry.yaml exists (10 points)
     if [[ -f "${dir}/.workflow/agents/registry.yaml" ]]; then
-        score=$((score + 10))
-    fi
-
-    # skills/catalog.yaml exists (10 points)
-    if [[ -f "${dir}/.workflow/skills/catalog.yaml" ]]; then
         score=$((score + 10))
     fi
 
@@ -576,7 +568,7 @@ assert_completeness_ok() {
 # Check if Claude commands are installed
 verify_claude_commands_installed() {
     local dir="${1:-${TEST_TMP_DIR}}"
-    local required_commands=("status" "checkpoint" "recover" "agent" "skill" "handoff")
+    local required_commands=("status" "checkpoint" "recover" "orchestrate" "handoff")
     local missing=()
 
     for cmd in "${required_commands[@]}"; do
@@ -595,7 +587,7 @@ verify_claude_commands_installed() {
 # Check if Antigravity workflows are installed
 verify_antigravity_workflows_installed() {
     local dir="${1:-${TEST_TMP_DIR}}"
-    local required_workflows=("status" "checkpoint" "recover" "agent" "skill" "handoff")
+    local required_workflows=("status" "checkpoint" "recover" "handoff")
     local missing=()
 
     for wf in "${required_workflows[@]}"; do

@@ -78,9 +78,8 @@ teardown() {
 
 @test "check_optional_files counts all optional files" {
     create_full_test_environment
-    mkdir -p .workflow/agents .workflow/skills
+    mkdir -p .workflow/agents
     touch .workflow/agents/registry.yaml
-    touch .workflow/skills/catalog.yaml
     touch .workflow/checksums.yaml
 
     run check_optional_files
@@ -274,9 +273,9 @@ EOF
 }
 
 @test "calculate_file_score is 100 with the files init creates (no checksums.yaml)" {
-    mkdir -p .workflow/agents .workflow/skills
+    mkdir -p .workflow/agents
     touch .workflow/state.yaml .workflow/checkpoints.log .workflow/handoff.md \
-          .workflow/config.yaml .workflow/agents/registry.yaml .workflow/skills/catalog.yaml
+          .workflow/config.yaml .workflow/agents/registry.yaml
     rm -f .workflow/checksums.yaml
 
     run calculate_file_score

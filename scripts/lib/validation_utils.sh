@@ -59,39 +59,6 @@ validate_agent() {
 }
 
 #######################################
-# Validate skill name against catalog
-# Arguments:
-#   $1 - Skill name to validate
-#   $2 - (Optional) Path to catalog file
-# Returns:
-#   0 if valid, 1 if invalid
-#######################################
-validate_skill() {
-    local skill_name="$1"
-    local catalog_file="${2:-.workflow/skills/catalog.yaml}"
-
-    if [[ -z "$skill_name" ]]; then
-        echo -e "${RED}Error: Skill name cannot be empty${NC}" >&2
-        return $INVALID
-    fi
-
-    if [[ ! -f "$catalog_file" ]]; then
-        echo -e "${YELLOW}Warning: Catalog file not found: ${catalog_file}${NC}" >&2
-        echo -e "${YELLOW}Skipping skill validation${NC}" >&2
-        return $VALID
-    fi
-
-    # Check if skill exists in catalog
-    if grep -q "^  ${skill_name}:" "$catalog_file" 2>/dev/null; then
-        return $VALID
-    else
-        echo -e "${RED}Error: Unknown skill '${skill_name}'${NC}" >&2
-        echo -e "${YELLOW}Run './scripts/enable_skill.sh --list' to see available skills${NC}" >&2
-        return $INVALID
-    fi
-}
-
-#######################################
 # Validate phase name
 # Arguments:
 #   $1 - Phase name to validate
@@ -545,7 +512,6 @@ Validation Utility Library
 
 Functions:
   validate_agent <name> [registry_file]              Validate agent name
-  validate_skill <name> [catalog_file]               Validate skill name
   validate_phase <name>                              Validate phase name
   validate_checkpoint_id <id>                        Validate checkpoint ID format
   validate_project_type <type>                       Validate project type
@@ -579,7 +545,6 @@ EOF
 # Export functions if sourced
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     export -f validate_agent
-    export -f validate_skill
     export -f validate_phase
     export -f validate_checkpoint_id
     export -f validate_project_type

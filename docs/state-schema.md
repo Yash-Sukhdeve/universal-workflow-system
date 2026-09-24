@@ -39,7 +39,7 @@ metadata:
 | `recover_context.sh` | `current_phase`, `current_checkpoint`, `project_type` |
 | `sdlc.sh` | `current_phase`, reads from `sdlc` section if present |
 | `research.sh` | `current_phase`, reads from `research` section if present |
-| `activate_agent.sh` | `current_phase` (for validation) |
+| `orchestrate.sh` | `sdlc_phase`/`research_phase`, `goal`; writes `active_agent` on dispatch |
 
 ## Schema v2.0 (claude-code-integration/install.sh)
 
@@ -62,9 +62,6 @@ active_agent:
   name: null
   activated_at: null
   status: "inactive"
-
-# Enabled skills
-enabled_skills: []
 
 # Phase progress tracking
 phases:
@@ -95,11 +92,34 @@ metadata:
 |-------|---------|
 | `project.name` | Human-readable project name |
 | `project.initialized` | Boolean flag |
-| `active_agent.*` | Tracks currently active agent |
-| `enabled_skills` | List of enabled skill names |
+| `active_agent.*` | Last agent dispatched by `orchestrate.sh` (see below) |
 | `phases.*` | Per-phase status, progress percentage, timestamps |
 | `health.*` | System health monitoring |
 | `metadata.schema_version` | Schema version identifier |
+
+## Active agent (`active_agent`)
+
+Both schemas share this block. `orchestrate.sh dispatch` writes it through
+`record_active_agent` (`scripts/lib/workflow_routing.sh`), replacing any earlier
+block, and logs `<timestamp> | AGENT_DISPATCHED | <agent>` to `checkpoints.log`:
+
+```yaml
+active_agent:
+  name: "researcher"
+  status: "active"
+  activated_at: "2026-09-24T10:00:00-0400"
+```
+
+Readers: the managed block of `handoff.md` ("Active agent"), `status.sh`,
+`recover_context.sh`, `submit.sh` (which `workspace/<agent>/` to stage) and the
+dashboard. Agents run as Claude Code subagents; nothing asks the main session to
+adopt a persona.
+
+Retired: `.workflow/agents/active.yaml` (persona blocks for the main session),
+`.workflow/skills/enabled.yaml`, `.workflow/skills/catalog.yaml` and the
+`enabled_skills` key belonged to the removed `activate_agent.sh` / `enable_skill.sh`.
+Nothing reads them; `scripts/migrate_state.sh --clean` removes the files (after
+backing them up), and a leftover `enabled_skills` key is harmless.
 
 ## Compatibility
 

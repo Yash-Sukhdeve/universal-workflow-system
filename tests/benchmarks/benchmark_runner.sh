@@ -200,16 +200,22 @@ project:
 current_phase: "phase_1_planning"
 EOF
 
+    # activate_agent.sh was retired (agents are Claude Code subagents); what
+    # remains of "activation" is recording the dispatched agent, done by
+    # record_active_agent (called from orchestrate.sh dispatch).
+    # shellcheck disable=SC2016  # $1 is expanded by the inner bash, not here
+    local record='source ./scripts/lib/workflow_routing.sh && record_active_agent "$1" .workflow/state.yaml'
+
     # Warmup
     for agent in "${agents[@]:0:2}"; do
-        ./scripts/activate_agent.sh "$agent" >/dev/null 2>&1 || true
+        bash -c "$record" _ "$agent" >/dev/null 2>&1 || true
     done
 
     # Benchmark each agent
     for agent in "${agents[@]}"; do
         for ((i=0; i<TRIALS; i++)); do
             local start=$(get_time_ns)
-            ./scripts/activate_agent.sh "$agent" >/dev/null 2>&1 || true
+            bash -c "$record" _ "$agent" >/dev/null 2>&1 || true
             local end=$(get_time_ns)
             local elapsed=$(calc_elapsed_ms "$start" "$end")
             results+=("$elapsed")
@@ -229,6 +235,7 @@ EOF
     cat > "${RESULTS_DIR}/raw/agent_activation_${TIMESTAMP}.json" << EOF
 {
     "benchmark": "agent_activation",
+    "operation": "record_active_agent (successor of the retired activate_agent.sh)",
     "timestamp": "$(date -Iseconds)",
     "trials": $((TRIALS * ${#agents[@]})),
     "agents_tested": [$(printf '"%s",' "${agents[@]}" | sed 's/,$//')],
@@ -261,7 +268,7 @@ benchmark_context_recovery() {
     git init --quiet
     git config user.email "bench@test.com"
     git config user.name "Benchmark"
-    mkdir -p .workflow/agents .workflow/skills .workflow/knowledge workspace phases artifacts
+    mkdir -p .workflow/agents .workflow/knowledge workspace phases artifacts
     cp -r "${PROJECT_ROOT}/.workflow/"* .workflow/ 2>/dev/null || true
     cp -r "${PROJECT_ROOT}/scripts" . 2>/dev/null || true
 

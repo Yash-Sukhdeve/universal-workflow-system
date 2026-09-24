@@ -65,10 +65,25 @@ teardown() { teardown_test_environment; }
     [ "$output" -ge 1 ]
 }
 
-@test "migration --clean prunes non-catalog enabled skills" {
-    printf '  - foo\n' >> .workflow/skills/enabled.yaml
-    "${SCRIPTS_DIR}/migrate_state.sh" --clean
-    ! grep -qE '^  - foo$' .workflow/skills/enabled.yaml
-    # a real catalog skill is kept
-    grep -qE '^  - (code_development|testing)$' .workflow/skills/enabled.yaml
+@test "migration --clean removes retired agent/skill artifacts, backing each up" {
+    # Files the retired activate_agent.sh / enable_skill.sh used to write
+    mkdir -p .workflow/skills .workflow/agents
+    printf 'current_agent: "implementer"\npersona: |\n  role-play\n' > .workflow/agents/active.yaml
+    printf 'enabled_skills:\n  - testing\n' > .workflow/skills/enabled.yaml
+    printf 'skills:\n  testing:\n    description: "x"\n' > .workflow/skills/catalog.yaml
+    run "${SCRIPTS_DIR}/migrate_state.sh" --clean
+    assert_success
+    [[ "$output" == *"removed retired agents/active.yaml"* ]]
+    [ ! -e .workflow/agents/active.yaml ]
+    [ ! -e .workflow/skills/enabled.yaml ]
+    [ ! -e .workflow/skills/catalog.yaml ]
+    grep -q 'role-play' .workflow/agents/active.yaml.bak-*
+    grep -q 'testing' .workflow/skills/enabled.yaml.bak-*
+    # the agent registry (read by validate_agent_transition) is kept
+    [ -f .workflow/agents/registry.yaml ]
+    # without --clean nothing is removed
+    printf 'enabled_skills: []\n' > .workflow/skills/enabled.yaml
+    run "${SCRIPTS_DIR}/migrate_state.sh"
+    assert_success
+    [ -f .workflow/skills/enabled.yaml ]
 }

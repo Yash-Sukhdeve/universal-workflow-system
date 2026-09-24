@@ -49,7 +49,7 @@ setup_test_environment() {
     export WORKFLOW_DIR
 
     # Create a minimal project structure
-    mkdir -p "${TEST_TMP_DIR}/.workflow"/{agents,skills,knowledge,templates}
+    mkdir -p "${TEST_TMP_DIR}/.workflow"/{agents,knowledge,templates}
     mkdir -p "${TEST_TMP_DIR}/workspace"
     mkdir -p "${TEST_TMP_DIR}/phases"
     mkdir -p "${TEST_TMP_DIR}/artifacts"
@@ -188,81 +188,6 @@ documenter:
 EOF
 }
 
-# Create skill catalog
-create_skill_catalog() {
-    local dir="${1:-${TEST_TMP_DIR}}"
-    cat > "${dir}/.workflow/skills/catalog.yaml" << 'EOF'
-skills:
-  literature_review:
-    category: research
-    description: "Systematic literature review"
-
-  code_development:
-    category: development
-    description: "Software development"
-
-  testing:
-    category: development
-    description: "Testing and validation"
-
-  benchmarking:
-    category: ml_ai
-    description: "Performance benchmarking"
-
-  profiling:
-    category: optimization
-    description: "Code profiling"
-
-  containerization:
-    category: deployment
-    description: "Docker containerization"
-
-  technical_writing:
-    category: documentation
-    description: "Technical documentation"
-
-  debugging:
-    category: development
-    description: "Debug and fix issues"
-
-  code_generation:
-    category: development
-    description: "Generate code from specifications"
-
-  quantization:
-    category: optimization
-    description: "Model quantization"
-
-skill_chains:
-  full_research_pipeline:
-    - literature_review
-    - experimental_design
-    - statistical_validation
-EOF
-}
-
-# Create enabled skills file
-create_enabled_skills() {
-    local dir="${1:-${TEST_TMP_DIR}}"
-    cat > "${dir}/.workflow/skills/enabled.yaml" << 'EOF'
-enabled_skills:
-  - code_development
-  - testing
-EOF
-}
-
-# Create active agent file
-create_active_agent() {
-    local agent="${1:-implementer}"
-    local dir="${2:-${TEST_TMP_DIR}}"
-    cat > "${dir}/.workflow/agents/active.yaml" << EOF
-current_agent: "${agent}"
-task: "Development task"
-progress: 0
-activated_at: "$(date -Iseconds)"
-EOF
-}
-
 # Create checkpoints log
 create_checkpoints_log() {
     local dir="${1:-${TEST_TMP_DIR}}"
@@ -303,8 +228,6 @@ create_full_test_environment() {
     create_minimal_state "${dir}"
     create_minimal_config "${dir}"
     create_agent_registry "${dir}"
-    create_skill_catalog "${dir}"
-    create_enabled_skills "${dir}"
     create_checkpoints_log "${dir}"
     create_handoff_md "${dir}"
 

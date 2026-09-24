@@ -130,16 +130,18 @@ teardown() {
     # Start with researcher
     create_claude_session_state "${TEST_TMP_DIR}" "phase_1_planning" "CP_1_001" "researcher"
 
-    # Activate architect
-    run "${SCRIPTS_DIR}/activate_agent.sh" architect
+    # Dispatch architect (what orchestrate.sh records on dispatch)
+    source "${SCRIPTS_DIR}/lib/workflow_routing.sh"
+    run record_active_agent architect .workflow/state.yaml
     assert_success
 
     # Handoff
     create_handoff_checkpoint "${TEST_TMP_DIR}" "Agent transition" "claude" "gemini"
 
-    # Activate implementer from Gemini side
-    run "${SCRIPTS_DIR}/activate_agent.sh" implementer
+    # Dispatch implementer from the Gemini side
+    run record_active_agent implementer .workflow/state.yaml
     assert_success
+    [ "$(get_active_agent .workflow/state.yaml)" = "implementer" ]
 }
 
 # =============================================================================

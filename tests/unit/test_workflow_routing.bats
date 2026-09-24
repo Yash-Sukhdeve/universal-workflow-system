@@ -118,3 +118,77 @@ teardown() { teardown_test_environment; }
     run gate_enabled "$STATE_FILE"
     [ "$status" -eq 0 ]
 }
+
+# --- record_active_agent / get_active_agent (replaces activate_agent.sh) ---
+
+@test "record_active_agent writes the active_agent block and get_active_agent reads it" {
+    record_active_agent architect "$STATE_FILE"
+    grep -q '^active_agent:$' "$STATE_FILE"
+    grep -q '^  name: "architect"$' "$STATE_FILE"
+    grep -q '^  status: "active"$' "$STATE_FILE"
+    grep -Eq '^  activated_at: "[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$STATE_FILE"
+    [ "$(get_active_agent "$STATE_FILE")" = "architect" ]
+}
+
+@test "record_active_agent replaces an existing block (legacy extra keys) without touching other keys" {
+    cat >> "$STATE_FILE" << 'YAML'
+active_agent:
+  name: "researcher"
+  status: "active"
+  tool_origin: "gemini"
+
+metadata:
+  created: "2026-01-01T00:00:00"
+YAML
+    record_active_agent implementer "$STATE_FILE"
+    [ "$(grep -c '^active_agent:' "$STATE_FILE")" -eq 1 ]
+    run grep -c 'tool_origin' "$STATE_FILE"
+    [ "$output" = "0" ]
+    grep -q '^  created: "2026-01-01T00:00:00"$' "$STATE_FILE"
+    [ "$(get_phase_status phase_1_planning "$STATE_FILE")" = "active" ]
+    [ "$(get_active_agent "$STATE_FILE")" = "implementer" ]
+}
+
+@test "record_active_agent replaces a flat active_agent scalar" {
+    printf 'active_agent: "architect"\nsdlc_note: "kept"\n' >> "$STATE_FILE"
+    record_active_agent deployer "$STATE_FILE"
+    [ "$(grep -c '^active_agent' "$STATE_FILE")" -eq 1 ]
+    grep -q '^sdlc_note: "kept"$' "$STATE_FILE"
+    [ "$(get_active_agent "$STATE_FILE")" = "deployer" ]
+}
+
+@test "record_active_agent logs AGENT_DISPATCHED, which recovery does not list as a checkpoint" {
+    printf '2026-01-01T00:00:00Z | CP_1_001 | Real work\n' > "${WORKFLOW_DIR}/checkpoints.log"
+    record_active_agent researcher "$STATE_FILE"
+    record_active_agent architect "$STATE_FILE"
+    [ "$(grep -c '| AGENT_DISPATCHED | ' "${WORKFLOW_DIR}/checkpoints.log")" -eq 2 ]
+    tail -1 "${WORKFLOW_DIR}/checkpoints.log" | grep -q '| AGENT_DISPATCHED | architect$'
+    source "${SCRIPTS_DIR}/lib/hook_context.sh"
+    run uws_real_checkpoints "${WORKFLOW_DIR}/checkpoints.log" 5
+    [ "$output" = "2026-01-01T00:00:00Z | CP_1_001 | Real work" ]
+}
+
+@test "record_active_agent rejects an invalid name and leaves state untouched" {
+    cp "$STATE_FILE" "${TEST_TMP_DIR}/before.yaml"
+    run record_active_agent 'bad name"; echo pwned' "$STATE_FILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"invalid agent name"* ]]
+    run record_active_agent "" "$STATE_FILE"
+    [ "$status" -ne 0 ]
+    cmp "$STATE_FILE" "${TEST_TMP_DIR}/before.yaml"
+}
+
+@test "record_active_agent fails cleanly when the state file is missing" {
+    run record_active_agent researcher "${TEST_TMP_DIR}/nope/state.yaml"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"state file not found"* ]]
+    [ ! -e "${TEST_TMP_DIR}/nope" ]
+}
+
+@test "get_active_agent accepts unquoted (yq-written) names and is empty without a block" {
+    [ -z "$(get_active_agent "$STATE_FILE")" ]
+    printf 'active_agent:\n  name: optimizer\n  status: active\n' >> "$STATE_FILE"
+    [ "$(get_active_agent "$STATE_FILE")" = "optimizer" ]
+    printf 'active_agent:\n  name: null\n' > "${TEST_TMP_DIR}/null.yaml"
+    [ -z "$(get_active_agent "${TEST_TMP_DIR}/null.yaml")" ]
+}

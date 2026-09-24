@@ -26,11 +26,16 @@ except ImportError:
     print("Note: websockets not installed. Running in polling-only mode.")
     print("Install with: pip install websockets")
 
-PORT = 8080
-WS_PORT = 8081
-DIRECTORY = "dashboard"
-SCRIPTS_DIR = "scripts"
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The UWS installation (this file lives in <install>/scripts/) supplies the
+# static page and the scripts; the project whose .workflow/ and .uws/ are
+# shown comes from UWS_PROJECT_ROOT (set by start_dashboard.sh / `uws
+# dashboard`), falling back to the installation itself.
+UWS_HOME = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PORT = int(os.environ.get("UWS_DASHBOARD_PORT", "8080"))
+WS_PORT = int(os.environ.get("UWS_DASHBOARD_WS_PORT", str(PORT + 1)))
+DIRECTORY = os.path.join(UWS_HOME, "dashboard")
+SCRIPTS_DIR = os.path.join(UWS_HOME, "scripts")
+PROJECT_ROOT = os.path.abspath(os.environ.get("UWS_PROJECT_ROOT") or UWS_HOME)
 
 # WebSocket clients
 ws_clients = set()
@@ -46,6 +51,28 @@ AGENT_CONFIG = {
     "deployer": {"icon": "🚀", "color": "#1abc9c"},
     "documenter": {"icon": "📝", "color": "#f1c40f"},
 }
+
+
+def get_active_agent():
+    """Name from state.yaml's active_agent block, or "None"."""
+    state_file = os.path.join(PROJECT_ROOT, ".workflow", "state.yaml")
+    if not os.path.exists(state_file):
+        return "None"
+    in_block = False
+    try:
+        with open(state_file, 'r') as f:
+            for line in f:
+                if line.startswith("active_agent:"):
+                    in_block = True
+                    continue
+                if in_block and line[:1] not in (" ", "\t", "\n", ""):
+                    break
+                if in_block and line.startswith("  name:"):
+                    name = line.split(":", 1)[1].strip().strip('"\'')
+                    return name if name and name != "null" else "None"
+    except OSError:
+        pass
+    return "None"
 
 
 def get_sessions():
@@ -175,20 +202,20 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path == '/api/approve':
             cl_id = payload.get('id')
-            response = self.run_script(f"./{SCRIPTS_DIR}/review.sh", "approve", cl_id)
+            response = self.run_script(os.path.join(SCRIPTS_DIR, "review.sh"), "approve", cl_id)
         elif self.path == '/api/reject':
             cl_id = payload.get('id')
-            response = self.run_script(f"./{SCRIPTS_DIR}/review.sh", "reject", cl_id)
+            response = self.run_script(os.path.join(SCRIPTS_DIR, "review.sh"), "reject", cl_id)
         elif self.path == '/api/move':
             ticket_id = payload.get('id')
             status = payload.get('status')
-            response = self.run_script(f"./{SCRIPTS_DIR}/pm.sh", "move", ticket_id, status)
+            response = self.run_script(os.path.join(SCRIPTS_DIR, "pm.sh"), "move", ticket_id, status)
         elif self.path == '/api/sessions':
             # Create new session
             agent = payload.get('agent', 'unknown')
             task = payload.get('task', 'No task')
             response = self.run_script(
-                f"./{SCRIPTS_DIR}/lib/session_manager.sh", "create", agent, task
+                os.path.join(SCRIPTS_DIR, "lib", "session_manager.sh"), "create", agent, task
             )
         elif self.path.startswith('/api/sessions/') and '/progress' in self.path:
             # Update session progress
@@ -196,7 +223,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             progress = payload.get('progress', 0)
             status = payload.get('status', 'active')
             response = self.run_script(
-                f"./{SCRIPTS_DIR}/lib/session_manager.sh", "update",
+                os.path.join(SCRIPTS_DIR, "lib", "session_manager.sh"), "update",
                 session_id, str(progress), status
             )
         elif self.path.startswith('/api/sessions/') and '/end' in self.path:
@@ -204,7 +231,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             session_id = self.path.split('/')[3]
             result = payload.get('result', 'success')
             response = self.run_script(
-                f"./{SCRIPTS_DIR}/lib/session_manager.sh", "end", session_id, result
+                os.path.join(SCRIPTS_DIR, "lib", "session_manager.sh"), "end", session_id, result
             )
 
         self.send_json_response(response)
@@ -230,7 +257,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 capture_output=True,
                 text=True,
                 check=False,
-                cwd=PROJECT_ROOT
+                cwd=PROJECT_ROOT,
+                env=dict(os.environ,
+                         WORKFLOW_DIR=os.path.join(PROJECT_ROOT, ".workflow"))
             )
             return {
                 "success": result.returncode == 0,
@@ -294,15 +323,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     continue
 
-        # 3. Get Active Agent (legacy single-agent support)
-        agent = "None"
-        agent_file = os.path.join(PROJECT_ROOT, ".workflow/agents/active.yaml")
-        if os.path.exists(agent_file):
-            with open(agent_file, 'r') as f:
-                for line in f:
-                    if "current_agent:" in line:
-                        agent = line.split(':')[1].strip().strip('"')
-                        break
+        # 3. Active agent: the subagent orchestrate.sh last dispatched
+        #    (state.yaml "active_agent:" block, written by record_active_agent)
+        agent = get_active_agent()
 
         # 4. Get All Active Sessions (new multi-agent support)
         sessions = get_sessions()
@@ -410,6 +433,7 @@ def main():
     print("  UWS Dashboard Server - Real-Time Agent Monitoring")
     print("=" * 60)
     print(f"  HTTP Server:     http://localhost:{PORT}")
+    print(f"  Project:         {PROJECT_ROOT}")
 
     if WEBSOCKET_AVAILABLE:
         print(f"  WebSocket:       ws://localhost:{WS_PORT}")
@@ -429,7 +453,10 @@ def main():
     print("=" * 60)
 
     # Start HTTP server
-    with socketserver.TCPServer(("", PORT), DashboardHandler) as httpd:
+    # Loopback only: the POST endpoints approve/reject change requests and
+    # there is no authentication, so never listen on other interfaces.
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.TCPServer(("127.0.0.1", PORT), DashboardHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

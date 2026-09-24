@@ -424,23 +424,14 @@ main() {
                 set_phase "$next_phase"
                 echo -e "${GREEN}✅ Advancing to: ${next_phase}${NC}"
 
-                # Auto-switch agent if routing library and config allow
+                # Point at the subagent that owns the new phase. Agents are real
+                # Claude Code subagents now, dispatched on demand by
+                # orchestrate.sh (which records active_agent); nothing to switch.
                 if declare -f get_agent_for_phase > /dev/null 2>&1; then
-                    local auto_select="false"
-                    if [[ -f "${WORKFLOW_DIR}/../.workflow/config.yaml" ]] || [[ -f "${WORKFLOW_DIR}/config.yaml" ]]; then
-                        local config_file="${WORKFLOW_DIR}/config.yaml"
-                        [[ ! -f "$config_file" ]] && config_file="${WORKFLOW_DIR}/../.workflow/config.yaml"
-                        auto_select=$(grep "auto_select:" "$config_file" 2>/dev/null | head -1 | awk '{print $2}' || echo "false")
-                    fi
-                    if [[ "$auto_select" == "true" ]]; then
-                        local suggested_agent
-                        suggested_agent=$(get_agent_for_phase "research" "$next_phase")
-                        local current_agent
-                        current_agent=$(grep "current_agent:" "${WORKFLOW_DIR}/agents/active.yaml" 2>/dev/null | cut -d'"' -f2 || echo "")
-                        if [[ -n "$suggested_agent" && "$suggested_agent" != "$current_agent" ]]; then
-                            echo -e "  ${CYAN}🤖 Auto-switching agent: ${current_agent:-none} → ${suggested_agent}${NC}"
-                            "${SCRIPT_DIR}/activate_agent.sh" "$suggested_agent" 2>/dev/null || true
-                        fi
+                    local phase_agent
+                    phase_agent=$(get_agent_for_phase "research" "$next_phase")
+                    if [[ -n "$phase_agent" ]]; then
+                        echo -e "  ${CYAN}🤖 Phase agent: uws-${phase_agent} (dispatch: uws orchestrate dispatch \"<task>\")${NC}"
                     fi
                 fi
 

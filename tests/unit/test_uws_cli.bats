@@ -21,7 +21,7 @@ EOF
     chmod +x "$TEST_TMP_DIR/bin/uws"
     # Create stub scripts that just echo their name and args
     for script in init_workflow.sh status.sh checkpoint.sh recover_context.sh \
-                  activate_agent.sh enable_skill.sh sdlc.sh research.sh \
+                  orchestrate.sh start_dashboard.sh sdlc.sh research.sh \
                   spiral.sh review.sh pm.sh submit.sh detect_and_configure.sh; do
         cat > "$TEST_TMP_DIR/scripts/$script" <<STUB
 #!/bin/bash
@@ -131,18 +131,37 @@ teardown() {
     assert_output "CALLED: recover_context.sh"
 }
 
-@test "uws agent dispatches to activate_agent.sh" {
+@test "uws orchestrate dispatches to orchestrate.sh" {
     cd "$TEST_TMP_DIR"
-    run "$TEST_TMP_DIR/bin/uws" agent researcher
+    run "$TEST_TMP_DIR/bin/uws" orchestrate dispatch "write the spec"
     [ "$status" -eq 0 ]
-    assert_output "CALLED: activate_agent.sh researcher"
+    assert_output "CALLED: orchestrate.sh dispatch write the spec"
 }
 
-@test "uws skill dispatches to enable_skill.sh" {
+@test "uws agent is retired: one-line pointer to subagents, non-zero exit" {
+    # activate_agent.sh made the main session role-play a persona; agents are
+    # Claude Code subagents now. Works even outside a UWS project.
+    local empty_dir
+    empty_dir="$(mktemp -d)"
+    cd "$empty_dir"
+    run "$TEST_TMP_DIR/bin/uws" agent researcher
+    [ "$status" -ne 0 ]
+    [ "${#lines[@]}" -eq 1 ]
+    assert_output "uws agent: retired"
+    assert_output "uws orchestrate dispatch"
+    assert_output "/agents"
+    [[ "$output" != *"CALLED:"* ]]
+    rm -rf "$empty_dir"
+}
+
+@test "uws skill is retired: points to native Claude Code skills, non-zero exit" {
     cd "$TEST_TMP_DIR"
-    run "$TEST_TMP_DIR/bin/uws" skill testing
-    [ "$status" -eq 0 ]
-    assert_output "CALLED: enable_skill.sh testing"
+    run "$TEST_TMP_DIR/bin/uws" skill testing enable
+    [ "$status" -ne 0 ]
+    [ "${#lines[@]}" -eq 1 ]
+    assert_output "uws skill: retired"
+    assert_output "Skills are native Claude Code skills"
+    [[ "$output" != *"CALLED:"* ]]
 }
 
 @test "uws sdlc dispatches to sdlc.sh" {
@@ -192,6 +211,27 @@ teardown() {
     run "$TEST_TMP_DIR/bin/uws" detect
     [ "$status" -eq 0 ]
     assert_output "CALLED: detect_and_configure.sh"
+}
+
+@test "uws dashboard dispatches to start_dashboard.sh from the project root" {
+    mkdir -p "$TEST_TMP_DIR/sub/dir"
+    cat > "$TEST_TMP_DIR/scripts/start_dashboard.sh" <<'STUB'
+#!/bin/bash
+echo "CALLED: start_dashboard.sh $* in $(pwd) with WORKFLOW_DIR=$WORKFLOW_DIR"
+STUB
+    cd "$TEST_TMP_DIR/sub/dir"
+    run "$TEST_TMP_DIR/bin/uws" dashboard
+    [ "$status" -eq 0 ]
+    assert_output "CALLED: start_dashboard.sh  in $TEST_TMP_DIR with WORKFLOW_DIR=$TEST_TMP_DIR/.workflow"
+}
+
+@test "uws help lists orchestrate and dashboard, not agent/skill" {
+    run "$TEST_TMP_DIR/bin/uws" help
+    [ "$status" -eq 0 ]
+    assert_output "orchestrate <cmd>"
+    assert_output "dashboard"
+    [[ "$output" != *"agent <name>"* ]]
+    [[ "$output" != *"skill <name>"* ]]
 }
 
 @test "uws company-os is no longer a recognized command" {

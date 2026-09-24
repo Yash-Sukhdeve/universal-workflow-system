@@ -43,47 +43,30 @@ teardown() {
     [ "$log_count" -ge 95 ]
 }
 
-@test "50 agent activations" {
+@test "50 agent dispatch records" {
     cd "${TEST_TMP_DIR}"
 
     create_claude_session_state "${TEST_TMP_DIR}"
+    source "${SCRIPTS_DIR}/lib/workflow_routing.sh"
 
     local agents=("researcher" "architect" "implementer" "experimenter" "optimizer" "deployer" "documenter")
-    local success_count=0
+    local success_count=0 agent=""
 
     for i in {1..50}; do
-        local agent="${agents[$((i % ${#agents[@]}))]}"
-        if "${SCRIPTS_DIR}/activate_agent.sh" "$agent" 2>/dev/null; then
+        agent="${agents[$((i % ${#agents[@]}))]}"
+        if record_active_agent "$agent" .workflow/state.yaml 2>/dev/null; then
             success_count=$((success_count + 1))
         fi
     done
 
-    # At least 90% should succeed
-    [ "$success_count" -ge 45 ]
-}
-
-@test "20 skill enable/disable cycles" {
-    cd "${TEST_TMP_DIR}"
-
-    create_claude_session_state "${TEST_TMP_DIR}"
-
-    local skills=("code_generation" "testing" "debugging" "literature_review" "profiling")
-    local success_count=0
-
-    for i in {1..20}; do
-        local skill="${skills[$((i % ${#skills[@]}))]}"
-
-        # Enable
-        "${SCRIPTS_DIR}/enable_skill.sh" "$skill" enable 2>/dev/null || true
-
-        # Disable
-        if "${SCRIPTS_DIR}/enable_skill.sh" "$skill" disable 2>/dev/null; then
-            success_count=$((success_count + 1))
-        fi
-    done
-
-    # At least 80% should succeed
-    [ "$success_count" -ge 16 ]
+    # Every record succeeds, the state keeps exactly one block naming the
+    # last agent, and the rest of the Claude session state is intact
+    [ "$success_count" -eq 50 ]
+    [ "$(grep -c '^active_agent:' .workflow/state.yaml)" -eq 1 ]
+    [ "$(get_active_agent .workflow/state.yaml)" = "$agent" ]
+    grep -q '^enabled_skills:' .workflow/state.yaml
+    grep -q 'phase_5_maintenance' .workflow/state.yaml
+    [ "$(grep -c 'AGENT_DISPATCHED' .workflow/checkpoints.log)" -eq 50 ]
 }
 
 # =============================================================================
