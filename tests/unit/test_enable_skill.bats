@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Unit tests for enable_skill.sh
-# Tests skill management: enable, disable, execute, list, status
+# Tests skill management: enable, disable, list, status (execute must refuse)
 
 load '../helpers/test_helper.bash'
 
@@ -136,51 +136,54 @@ teardown() {
 # EXECUTE SKILL TESTS
 # =============================================================================
 
-@test "execute_skill runs enabled skill" {
+# `execute` used to write hard-coded fake outcomes ("Found 25 relevant papers",
+# "Model size reduced by 75%", ...) and a SKILL_EXECUTED event for work that never
+# happened; the old tests asserted that fabrication. It must now refuse loudly
+# and record nothing.
+
+@test "execute refuses for an enabled skill and explains who executes skills" {
     cd "${TEST_TMP_DIR}"
 
-    # Enable skill first
     "${SCRIPTS_DIR}/enable_skill.sh" code_generation enable
 
     run "${SCRIPTS_DIR}/enable_skill.sh" code_generation execute "test params"
 
-    assert_success
-    [[ "$output" == *"Skill execution complete"* ]]
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"not supported"* ]]
+    [[ "$output" == *"Claude Code agents"* ]]
+    [[ "$output" != *"execution complete"* ]]
 }
 
-@test "execute_skill fails for non-enabled skill" {
+@test "execute refuses for a non-enabled skill" {
     cd "${TEST_TMP_DIR}"
 
     run "${SCRIPTS_DIR}/enable_skill.sh" literature_review execute "test query"
 
     assert_failure
-    [[ "$output" == *"not enabled"* ]] || [[ "$output" == *"Error"* ]]
+    [[ "$output" == *"not supported"* ]]
 }
 
-@test "execute_skill creates execution log" {
+@test "no command path records SKILL_EXECUTED or fabricated results" {
     cd "${TEST_TMP_DIR}"
+    touch .workflow/checkpoints.log
 
-    "${SCRIPTS_DIR}/enable_skill.sh" quantization enable
-
-    run "${SCRIPTS_DIR}/enable_skill.sh" quantization execute "model.pt"
-
+    local s
+    for s in literature_review code_generation quantization testing; do
+        run "${SCRIPTS_DIR}/enable_skill.sh" "$s" enable
+        assert_success
+        run "${SCRIPTS_DIR}/enable_skill.sh" "$s" execute "params"
+        [ "$status" -ne 0 ]
+        run "${SCRIPTS_DIR}/enable_skill.sh" "$s" status
+        run "${SCRIPTS_DIR}/enable_skill.sh" "$s" disable
+        assert_success
+    done
+    run "${SCRIPTS_DIR}/enable_skill.sh" list
     assert_success
 
-    # Check log file exists
-    local log_count
-    log_count=$(ls -1 .workflow/skills/execution_logs/quantization_*.log 2>/dev/null | wc -l)
-    [ "$log_count" -ge 1 ]
-}
-
-@test "execute_skill logs to checkpoints.log" {
-    cd "${TEST_TMP_DIR}"
-
-    "${SCRIPTS_DIR}/enable_skill.sh" testing enable
-
-    run "${SCRIPTS_DIR}/enable_skill.sh" testing execute ""
-
-    assert_success
-    assert_file_contains ".workflow/checkpoints.log" "SKILL_EXECUTED"
+    run grep -rE "SKILL_EXECUTED|Found 25 relevant papers|Generated 5 modules|Model size reduced|Inference speed improved|Executing custom skill" .workflow
+    [ "$status" -eq 1 ]
+    run find .workflow/skills/execution_logs -type f
+    [ -z "$output" ]
 }
 
 # =============================================================================
@@ -397,17 +400,6 @@ EOF
     [ -f ".workflow/skills/definitions/literature_review.yaml" ]
     # Check for description field (case insensitive)
     grep -qi "systematic\|literature" ".workflow/skills/definitions/literature_review.yaml"
-}
-
-@test "execution logs persist after skill execution" {
-    cd "${TEST_TMP_DIR}"
-
-    "${SCRIPTS_DIR}/enable_skill.sh" testing enable
-    "${SCRIPTS_DIR}/enable_skill.sh" testing execute "run all tests"
-
-    local log_files
-    log_files=$(ls -1 .workflow/skills/execution_logs/ 2>/dev/null | wc -l)
-    [ "$log_files" -ge 1 ]
 }
 
 # =============================================================================
