@@ -320,9 +320,12 @@ if [ "$VERBOSE" = true ]; then
     echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
     
     if [ -f ${WORKFLOW_DIR}/checkpoints.log ]; then
-        tail -3 ${WORKFLOW_DIR}/checkpoints.log | while IFS='|' read -r timestamp checkpoint description; do
-            echo -e "  ${YELLOW}$(echo $checkpoint | xargs)${NC} - $(echo $description | xargs)"
-            echo -e "    ${DIM}$(echo $timestamp | xargs)${NC}"
+        # Only real checkpoint lines: the log also holds AGENT_ACTIVATED/PHASE_TRANSITION
+        # events and comments. Trim with sed, not xargs (xargs rejects apostrophes).
+        { grep -E '\| CP_[0-9]+_[0-9]+ \|' ${WORKFLOW_DIR}/checkpoints.log || true; } | tail -3 | \
+            while IFS='|' read -r timestamp checkpoint description; do
+            echo -e "  ${YELLOW}$(printf '%s' "$checkpoint" | sed 's/^ *//; s/ *$//')${NC} - $(printf '%s' "$description" | sed 's/^ *//; s/ *$//')"
+            echo -e "    ${DIM}$(printf '%s' "$timestamp" | sed 's/^ *//; s/ *$//')${NC}"
         done
     else
         echo -e "  ${DIM}No checkpoints recorded${NC}"

@@ -708,12 +708,14 @@ show_checkpoint_status() {
     
     # Last checkpoint details
     if [ -f ${WORKFLOW_DIR}/checkpoints.log ]; then
-        local last_checkpoint=$(tail -1 ${WORKFLOW_DIR}/checkpoints.log)
+        # Last real checkpoint (skip AGENT_ACTIVATED/PHASE_TRANSITION events and comments)
+        local last_checkpoint
+        last_checkpoint=$({ grep -E '\| CP_[0-9]+_[0-9]+ \|' ${WORKFLOW_DIR}/checkpoints.log || true; } | tail -1)
         IFS='|' read -r timestamp checkpoint description <<< "$last_checkpoint"
         
         echo -e "${CYAN}Last Checkpoint:${NC}"
-        echo -e "  ID:        ${YELLOW}$(echo $checkpoint | xargs)${NC}"
-        echo -e "  Message:   $(echo $description | xargs)"
+        echo -e "  ID:        ${YELLOW}$(printf '%s' "$checkpoint" | sed 's/^ *//; s/ *$//')${NC}"
+        echo -e "  Message:   $(printf '%s' "$description" | sed 's/^ *//; s/ *$//')"
         echo -e "  Time:      $(echo $timestamp | xargs)"
         echo ""
     fi

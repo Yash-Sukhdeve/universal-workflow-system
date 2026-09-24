@@ -465,3 +465,23 @@ EOF
     [ "$output" = "0" ]
     grep -q -- "  - Non-functional requirements defined" "$h"
 }
+
+@test "status and checkpoint show the last real checkpoint, not event lines, and survive apostrophes" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" checkpoint create "fixed the user's login flow" </dev/null >/dev/null
+    # An event logged after the checkpoint must not be shown as the last checkpoint
+    echo "2026-01-01T00:00:00Z | AGENT_ACTIVATED | implementer" >> .workflow/checkpoints.log
+
+    # Recent checkpoints are listed in verbose mode
+    run "${PROJECT_ROOT}/bin/uws" status --verbose </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"fixed the user's login flow"* ]]
+    [[ "$output" != *"AGENT_ACTIVATED"* ]]
+    [[ "$output" != *"unmatched"* ]]
+
+    run "${PROJECT_ROOT}/bin/uws" checkpoint status </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"fixed the user's login flow"* ]]
+    [[ "$output" != *"unmatched"* ]]
+}
