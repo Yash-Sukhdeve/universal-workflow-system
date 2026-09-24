@@ -92,8 +92,6 @@ answer `y` at the prompt, or set `UWS_VECTOR_MEMORY=true` for non-interactive ru
 | Component | Description | Location |
 |-----------|-------------|----------|
 | **Workflow Scripts** | Core Bash scripts for state management | `scripts/` |
-| **Company OS Backend** | FastAPI with event sourcing | `company_os/api/` |
-| **React Dashboard** | Real-time monitoring UI | `company_os/dashboard/` |
 | **Multi-Agent System** | 7 specialized AI agents | `.workflow/agents/` |
 | **SDLC Workflow** | Software development lifecycle | `scripts/sdlc.sh` |
 | **Research Workflow** | Scientific method workflow | `scripts/research.sh` |
@@ -101,6 +99,9 @@ answer `y` at the prompt, or set `UWS_VECTOR_MEMORY=true` for non-interactive ru
 | **Gemini Integration** | Antigravity workflows | `antigravity-integration/` |
 | **Vector Memory** | Semantic search across sessions | `scripts/lib/vector_memory_setup.sh` |
 | **Test Suite** | BATS unit, integration and system tests | `tests/` |
+
+> Company OS (the FastAPI backend + React dashboard formerly built in this repo) has
+> moved to its own private repository, [Yash-Sukhdeve/uws-company-os](https://github.com/Yash-Sukhdeve/uws-company-os).
 
 ---
 
@@ -110,8 +111,7 @@ answer `y` at the prompt, or set `UWS_VECTOR_MEMORY=true` for non-interactive ru
 
 - **Bash 4.0+** (or 3.x for basic features)
 - **Git** for version control
-- **Node.js 18+** (optional — only for Company OS dashboard)
-- **Python 3.9+** (optional — for vector memory and Company OS backend)
+- **Python 3.9+** (optional — for vector memory)
 
 ### Step 1: Clone Repository
 
@@ -131,21 +131,6 @@ cd /path/to/your-project
 
 During initialization, UWS asks whether to install the optional vector memory server for semantic search across sessions (default: no). It requires Python 3.9+ and ~1.5GB of disk space. Non-interactive runs skip it unless `UWS_VECTOR_MEMORY=true` is set; `UWS_SKIP_VECTOR_MEMORY=true` always skips it.
 
-### Step 3: (Optional) Start Company OS
-
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Start backend
-./scripts/start_company_os.sh
-
-# In another terminal, start dashboard
-cd company_os/dashboard
-npm install
-npm run dev
-```
-
 ---
 
 ## CLI
@@ -161,8 +146,6 @@ uws agent <name>             # Activate agent (researcher|architect|implementer|
 uws skill <name>             # Enable/disable skills
 uws sdlc [cmd]               # SDLC workflow (status|start|next|fail|reset)
 uws research [cmd]           # Research workflow (status|start|next|reject|reset)
-uws company-os start         # Start Company OS backend
-uws company-os dashboard     # Start React dashboard
 uws help                     # Show all commands
 ```
 
@@ -217,79 +200,7 @@ Core scripts for managing workflow state.
 
 ---
 
-### 2. Company OS (Backend + Dashboard)
-
-Full-stack application for task management, agent monitoring, and memory storage.
-
-#### Backend (FastAPI)
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Start server
-uvicorn company_os.api.main:app --reload --port 8000
-
-# Or use the convenience script
-./scripts/start_company_os.sh
-```
-
-**API Endpoints:**
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/health` | GET | Health check |
-| `/api/v1/auth/login` | POST | User authentication |
-| `/api/v1/auth/register` | POST | User registration |
-| `/api/v1/tasks` | GET/POST | Task management |
-| `/api/v1/agents` | GET | List agents |
-| `/api/v1/agents/{name}/activate` | POST | Activate agent |
-| `/api/v1/memory` | GET/POST | Memory storage |
-| `/ws` | WebSocket | Real-time updates |
-
-**Environment Configuration (.env):**
-
-```bash
-# Copy example and configure
-cp .env.example .env
-
-# Key variables:
-JWT_SECRET_KEY=your-super-secret-key-change-in-production
-DATABASE_URL=postgresql://company_os:dev_password@localhost:5432/company_os
-ACCESS_TOKEN_EXPIRE_MINUTES=15
-```
-
-#### Dashboard (React + Vite)
-
-```bash
-cd company_os/dashboard
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Run tests
-npm run test
-```
-
-**Dashboard Features:**
-
-- **Dashboard Page** - Overview with statistics and quick actions
-- **Tasks Page** - Create, manage, complete tasks with filtering
-- **Agents Page** - Activate/deactivate agents, view status
-- **Memory Page** - Store and search organizational memory
-- **Settings Page** - Configure preferences
-
-**Access:** Open http://localhost:5173 (dev) or http://localhost:4173 (preview)
-
----
-
-### 3. Multi-Agent System
+### 2. Multi-Agent System
 
 Seven specialized agents for different development tasks.
 
@@ -321,7 +232,7 @@ cat .workflow/agents/registry.yaml
 
 ---
 
-### 4. SDLC & Research Workflows
+### 3. SDLC & Research Workflows
 
 #### Software Development Lifecycle (SDLC)
 
@@ -446,39 +357,11 @@ uws-research     # Research workflow
 ./tests/run_all_tests.sh -c system
 ```
 
-### Dashboard Tests
-
-```bash
-cd company_os/dashboard
-
-# Run unit tests (Vitest)
-npm run test
-
-# Run E2E tests (Playwright)
-npm run test:e2e
-
-# Run with coverage
-npm run test -- --coverage
-```
-
-### Backend Tests
-
-```bash
-# Run Python tests
-pytest tests/unit/company_os/ -v
-
-# Run integration tests
-pytest tests/integration/company_os/ -v
-```
-
 **Test Coverage:**
 
 | Component | Tests | Framework |
 |-----------|-------|-----------|
-| Core Scripts | 741 | BATS |
-| Dashboard Unit | 123 | Vitest |
-| Dashboard E2E | 64 | Playwright |
-| Backend Unit | 50+ | Pytest |
+| Core Scripts | 773 | BATS |
 
 ---
 
@@ -498,23 +381,6 @@ universal-workflow-system/
 │   ├── agents/                 # Agent registry & state
 │   ├── skills/                 # Skill definitions
 │   └── checkpoints/            # Checkpoint snapshots
-├── company_os/                 # Company OS application
-│   ├── api/                    # FastAPI backend
-│   │   ├── main.py             # Application entry
-│   │   ├── routes/             # API endpoints
-│   │   └── security.py         # Auth & security
-│   ├── core/                   # Business logic
-│   │   ├── auth/               # Authentication
-│   │   ├── events/             # Event sourcing
-│   │   └── memory/             # Memory service
-│   └── dashboard/              # React frontend
-│       ├── src/
-│       │   ├── components/     # React components
-│       │   ├── contexts/       # Auth & WebSocket contexts
-│       │   ├── hooks/          # Custom hooks
-│       │   ├── pages/          # Page components
-│       │   └── services/       # API services
-│       └── e2e/                # E2E tests
 ├── scripts/                    # Core workflow scripts
 │   ├── lib/                    # Utility libraries
 │   │   └── vector_memory_setup.sh  # Vector memory installer
@@ -528,8 +394,7 @@ universal-workflow-system/
 │   ├── unit/                   # Unit tests
 │   ├── integration/            # Integration tests
 │   └── system/                 # System tests
-├── docs/                       # Documentation
-└── migrations/                 # Database migrations
+└── docs/                       # Documentation
 ```
 
 ### State Management
@@ -547,48 +412,9 @@ metadata:
   last_updated: "2024-12-22T10:54:21Z"
 ```
 
-### Event Sourcing
-
-Company OS uses event sourcing for state management:
-
-```
-Event → Store → Projection → Read Model
-```
-
-All state changes are recorded as immutable events, enabling:
-- Full audit trail
-- Time-travel debugging
-- Event replay for recovery
-
 ---
 
 ## Environment Configuration
-
-### .env.example
-
-```bash
-# Application
-APP_NAME=Company OS
-DEBUG=true
-ENVIRONMENT=development
-
-# Database
-DATABASE_URL=postgresql://company_os:dev_password@localhost:5432/company_os
-DATABASE_POOL_SIZE=10
-
-# Authentication
-JWT_SECRET_KEY=your-super-secret-key-change-in-production
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=15
-REFRESH_TOKEN_EXPIRE_DAYS=7
-
-# Server
-HOST=0.0.0.0
-PORT=8000
-
-# CORS
-CORS_ORIGINS=["http://localhost:3000","http://localhost:8080"]
-```
 
 ### MCP Configuration (.mcp.json)
 

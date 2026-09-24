@@ -1,5 +1,0 @@
-export { DashboardPage } from './DashboardPage'
-export { TasksPage } from './TasksPage'
-export { AgentsPage } from './AgentsPage'
-export { MemoryPage } from './MemoryPage'
-export { SettingsPage } from './SettingsPage'

@@ -76,10 +76,6 @@ Project Management:
   detect                   Auto-detect and configure project type
   uninstall [opts]         Remove UWS (--project|--global|--all) [--dry-run]
 
-Company OS:
-  company-os start         Start Company OS backend
-  company-os dashboard     Start React dashboard
-
 General:
   help                     Show this help message
   version                  Print version
@@ -191,23 +187,6 @@ main() {
             ;;
         detect)
             "$scripts_dir/detect_and_configure.sh" "$@"
-            ;;
-        company-os)
-            local subcmd="${1:-start}"
-            shift 2>/dev/null || true
-            case "$subcmd" in
-                start)
-                    "$scripts_dir/start_company_os.sh" "$@"
-                    ;;
-                dashboard)
-                    "$scripts_dir/start_dashboard.sh" "$@"
-                    ;;
-                *)
-                    echo "Unknown company-os subcommand: $subcmd" >&2
-                    echo "Usage: uws company-os [start|dashboard]" >&2
-                    exit 1
-                    ;;
-            esac
             ;;
         *)
             echo "Unknown command: $cmd" >&2

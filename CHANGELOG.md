@@ -130,6 +130,36 @@ checks the artifacts a user's project receives rather than only this repository.
   `claude plugin validate` (spaces in the name, no `owner`/`plugins`, hooks declared as
   prose)
 
+### Cleanup
+
+Company OS (the FastAPI backend + React dashboard) was a separate product built
+inside this repository; it is now extracted to its own private repository so UWS
+and Company OS can be versioned and installed independently.
+
+#### Removed
+- `company_os/` (FastAPI backend, React dashboard), `code_review/` (its December
+  2025 code review), `migrations/`, `docs/implementation/`, and the Company-OS-only
+  files under `docs/brainstorm/`, `tests/unit/`, and `tests/integration/`, plus
+  `Dockerfile`, `docker-compose.yml`, `.env.example`, `pyproject.toml`, `setup.py`,
+  `requirements.txt`, `tests/conftest.py`, and `scripts/start_company_os.sh` — all
+  moved to `Yash-Sukhdeve/uws-company-os` with no UWS-side functionality lost (no
+  UWS script ever imported from `company_os/`)
+- The `uws company-os [start|dashboard]` subcommand and its help text
+
+#### Changed
+- README no longer documents Company OS installation/usage; it points to the new
+  repository in one line
+- `.gitignore` no longer carries the two `company_os/dashboard/` entries
+
+Note: `dashboard/`, `scripts/dashboard_server.py`, and `scripts/start_dashboard.sh`
+are UWS's own review/PM/agent-session monitor (it only reads `.workflow/`, `.uws/`
+and calls `scripts/review.sh`/`pm.sh`/`lib/session_manager.sh` — no dependency on
+`company_os/`) and were kept; only the naming ("Company OS Dashboard" in its
+`<title>`) and its old `uws company-os dashboard` entry point predate this split.
+It is still runnable directly (`./scripts/start_dashboard.sh`) but is no longer
+wired into the `uws` CLI — a follow-up should either add a plain `uws dashboard`
+command or rename the page.
+
 ## [1.1.0] - 2026-02-17
 
 ### Added

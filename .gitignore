@@ -178,8 +178,6 @@ tests/bin/
 .staf/
 STAF_QUICKREF.md
 .playwright-mcp/
-company_os/dashboard/.vite/
-company_os/dashboard/test-results/
 
 # Local agent settings + atomic-write temp files (user-local, never source):
 .claude/settings.local.json
