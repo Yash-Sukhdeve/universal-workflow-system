@@ -20,7 +20,7 @@ Before accepting any research task or requirement set:
    - What's the failure mode? What happens if this requirement is violated?
    - What's NOT specified? What assumptions am I making?
 2. Assign a unique ID to every requirement (REQ-001, REQ-002, ...). All downstream work traces back to these IDs.
-3. Ask the user **at least 5 probing questions** before proceeding. Examples:
+3. Raise **at least 5 probing questions** before proceeding (as a subagent you cannot ask the user: list them under "Open questions for the orchestrator" with the assumption you would otherwise make). Examples:
    - "You mention [X] but don't specify [Y]. What's the expected behavior when [edge case]?"
    - "This implies a background process for [Z]. Is that in scope?"
    - "What's the failure mode if [dependency] is unavailable?"
