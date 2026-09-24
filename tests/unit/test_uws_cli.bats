@@ -22,8 +22,7 @@ EOF
     # Create stub scripts that just echo their name and args
     for script in init_workflow.sh status.sh checkpoint.sh recover_context.sh \
                   activate_agent.sh enable_skill.sh sdlc.sh research.sh \
-                  spiral.sh review.sh pm.sh submit.sh detect_and_configure.sh \
-                  start_company_os.sh start_dashboard.sh; do
+                  spiral.sh review.sh pm.sh submit.sh detect_and_configure.sh; do
         cat > "$TEST_TMP_DIR/scripts/$script" <<STUB
 #!/bin/bash
 echo "CALLED: $script \$@"
@@ -195,18 +194,13 @@ teardown() {
     assert_output "CALLED: detect_and_configure.sh"
 }
 
-@test "uws company-os start dispatches to start_company_os.sh" {
+@test "uws company-os is no longer a recognized command" {
+    # Company OS was extracted to its own repository (uws-company-os); the
+    # `company-os` subcommand and its backing scripts were removed from UWS.
     cd "$TEST_TMP_DIR"
     run "$TEST_TMP_DIR/bin/uws" company-os start
-    [ "$status" -eq 0 ]
-    assert_output "CALLED: start_company_os.sh"
-}
-
-@test "uws company-os dashboard dispatches to start_dashboard.sh" {
-    cd "$TEST_TMP_DIR"
-    run "$TEST_TMP_DIR/bin/uws" company-os dashboard
-    [ "$status" -eq 0 ]
-    assert_output "CALLED: start_dashboard.sh"
+    [ "$status" -ne 0 ]
+    assert_output "Unknown command"
 }
 
 # ── Root discovery ─────────────────────────────────────────────────────────
