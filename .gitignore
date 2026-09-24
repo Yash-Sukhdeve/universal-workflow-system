@@ -184,3 +184,11 @@ company_os/dashboard/test-results/
 # Local agent settings + atomic-write temp files (user-local, never source):
 .claude/settings.local.json
 .claude/settings.local.json.tmp.*
+
+# graphify knowledge-graph build output (regenerable: `graphify update .`):
+graphify-out/
+
+# Generated at runtime, not source: test TAP output (rewritten by every test run),
+# the pm.sh project board, and the review.sh notification inbox.
+test-results/
+BOARD.md
