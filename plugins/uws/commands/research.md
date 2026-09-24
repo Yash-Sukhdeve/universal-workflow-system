@@ -1,6 +1,6 @@
 ---
 description: Drive the research workflow (hypothesis → literature review → experiment design → data collection → analysis → peer review → publication)
-argument-hint: "<status|start|next|goto <phase>|reject <reason>|goal <text>|check|deliverables|reset>"
+argument-hint: "<status|start|next|reject <reason>|goal <text>|check|deliverables|reset>"
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/uws research:*)
 ---
 

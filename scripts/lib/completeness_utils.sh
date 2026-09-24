@@ -36,29 +36,52 @@ REQUIRED_FILES=(
     ".workflow/checkpoints.log"
 )
 
+# Files init_workflow.sh creates. (checksums.yaml is produced only on demand
+# by checksum_utils.sh, so it is not part of the score: counting it capped a
+# freshly initialized project below 100%.)
 OPTIONAL_FILES=(
     ".workflow/handoff.md"
     ".workflow/config.yaml"
     ".workflow/agents/registry.yaml"
     ".workflow/skills/catalog.yaml"
-    ".workflow/checksums.yaml"
 )
+
+# State fields follow the schema init_workflow.sh writes: flat top-level keys.
+# An entry may list alternatives separated by "|": the first is the current
+# key (and the name reported when missing), later ones are legacy nested
+# locations still accepted for older state files.
 
 # Required state fields
 REQUIRED_STATE_FIELDS=(
     "current_phase"
     "current_checkpoint"
-    "metadata.last_updated"
+    "last_updated|metadata.last_updated"
 )
 
 # Important state fields (contribute to score)
 IMPORTANT_STATE_FIELDS=(
-    "project.type"
-    "project.name"
-    "active_agent.status"
-    "session.context_recovered"
-    "health.status"
+    "project_type|project.type"
+    "metadata.created"
+    "metadata.version"
 )
+
+#######################################
+# Whether a state field (with "|"-separated alternatives) has a value.
+# Arguments: $1 - state file, $2 - field spec
+# Returns: 0 if any alternative is non-empty and not null
+#######################################
+state_field_present() {
+    local state_file="$1" rest="$2" key value
+    while [[ -n "$rest" ]]; do
+        key="${rest%%|*}"
+        if [[ "$rest" == *"|"* ]]; then rest="${rest#*|}"; else rest=""; fi
+        value=$(yaml_get "$state_file" "$key" 2>/dev/null || echo "null")
+        if [[ "$value" != "null" && -n "$value" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 #######################################
 # Check if required files exist
@@ -87,7 +110,7 @@ check_optional_files() {
 
     for file in ${OPTIONAL_FILES[@]+"${OPTIONAL_FILES[@]}"}; do
         if [[ -f "$file" ]]; then
-            ((count++))
+            count=$((count + 1))
         fi
     done
 
@@ -105,17 +128,10 @@ check_required_fields() {
     local state_file="${1:-.workflow/state.yaml}"
     local missing=()
 
-    if [[ ! -f "$state_file" ]]; then
-        echo ${REQUIRED_STATE_FIELDS[@]+"${REQUIRED_STATE_FIELDS[@]}"}
-        return
-    fi
-
     for field in ${REQUIRED_STATE_FIELDS[@]+"${REQUIRED_STATE_FIELDS[@]}"}; do
-        local value
-        value=$(yaml_get "$state_file" "$field" 2>/dev/null || echo "null")
-
-        if [[ "$value" == "null" || -z "$value" ]]; then
-            missing+=("$field")
+        if [[ ! -f "$state_file" ]] || ! state_field_present "$state_file" "$field"; then
+            # Report the primary (current-schema) key name
+            missing+=("${field%%|*}")
         fi
     done
 
@@ -131,14 +147,14 @@ calculate_file_score() {
     local required_count=${#REQUIRED_FILES[@]}
     local optional_count=${#OPTIONAL_FILES[@]}
 
-    local required_present=0
+    local required_present=0 file
     for file in ${REQUIRED_FILES[@]+"${REQUIRED_FILES[@]}"}; do
-        [[ -f "$file" ]] && ((required_present++))
+        if [[ -f "$file" ]]; then required_present=$((required_present + 1)); fi
     done
 
     local optional_present=0
     for file in ${OPTIONAL_FILES[@]+"${OPTIONAL_FILES[@]}"}; do
-        [[ -f "$file" ]] && ((optional_present++))
+        if [[ -f "$file" ]]; then optional_present=$((optional_present + 1)); fi
     done
 
     # Required files are 70% of score, optional are 30%
@@ -166,18 +182,18 @@ calculate_state_score() {
     local required_count=${#REQUIRED_STATE_FIELDS[@]}
     local important_count=${#IMPORTANT_STATE_FIELDS[@]}
 
-    local required_present=0
+    local required_present=0 field
     for field in ${REQUIRED_STATE_FIELDS[@]+"${REQUIRED_STATE_FIELDS[@]}"}; do
-        local value
-        value=$(yaml_get "$state_file" "$field" 2>/dev/null || echo "null")
-        [[ "$value" != "null" && -n "$value" ]] && ((required_present++))
+        if state_field_present "$state_file" "$field"; then
+            required_present=$((required_present + 1))
+        fi
     done
 
     local important_present=0
     for field in ${IMPORTANT_STATE_FIELDS[@]+"${IMPORTANT_STATE_FIELDS[@]}"}; do
-        local value
-        value=$(yaml_get "$state_file" "$field" 2>/dev/null || echo "null")
-        [[ "$value" != "null" && -n "$value" ]] && ((important_present++))
+        if state_field_present "$state_file" "$field"; then
+            important_present=$((important_present + 1))
+        fi
     done
 
     # Required fields are 60% of score, important are 40%
@@ -525,6 +541,7 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     export -f check_required_files
     export -f check_optional_files
     export -f check_required_fields
+    export -f state_field_present
     export -f calculate_file_score
     export -f calculate_state_score
     export -f calculate_completeness_score

@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Skill Management Script
-# Enable, disable, and execute workflow skills
+# Enable, disable, list and inspect workflow skills.
+# (Skills are executed by Claude Code agents, not by this script.)
 
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
@@ -55,7 +56,6 @@ show_usage() {
     echo "Commands:"
     echo "  enable    - Enable a skill"
     echo "  disable   - Disable a skill"
-    echo "  execute   - Execute a skill with parameters"
     echo "  list      - List all available skills"
     echo "  status    - Show skill status"
     echo ""
@@ -92,7 +92,7 @@ if ! validate_workflow_initialized 2>/dev/null; then
 fi
 
 # Create skill directories if they don't exist
-mkdir -p .workflow/skills/{definitions,chains,execution_logs}
+mkdir -p .workflow/skills/{definitions,chains}
 
 # Initialize enabled skills file if it doesn't exist
 if [ ! -f .workflow/skills/enabled.yaml ]; then
@@ -352,77 +352,18 @@ disable_skill() {
     echo -e "${GREEN}✓ Skill '${skill}' disabled${NC}"
 }
 
-# Function to execute a skill
+# Skills are executed by Claude Code agents (Skill tool / subagents), not by
+# this script. An earlier version "executed" skills here by writing hard-coded
+# outcomes ("Found 25 relevant papers", "Model size reduced by 75%", ...) to a
+# log and appending SKILL_EXECUTED to checkpoints.log. That recorded work that
+# never happened, so `execute` now refuses loudly and writes nothing.
 execute_skill() {
     local skill=$1
-    local params=$2
-    
-    echo -e "${BLUE}🚀 Executing skill: ${skill}...${NC}"
-    
-    # Check if skill is enabled
-    if ! grep -q "  - ${skill}" .workflow/skills/enabled.yaml; then
-        echo -e "${RED}Error: Skill not enabled. Enable it first.${NC}"
-        exit 1
-    fi
-    
-    # Create execution log
-    local exec_id=$(date +%s)
-    local log_file=".workflow/skills/execution_logs/${skill}_${exec_id}.log"
-    
-    # Log execution start
-    cat > $log_file << EOF
-Skill Execution Log
-===================
-Skill: ${skill}
-Execution ID: ${exec_id}
-Started: $(date -Iseconds)
-Parameters: ${params}
-
-Output:
--------
-EOF
-    
-    # Execute skill based on type
-    case $skill in
-        literature_review)
-            echo "Searching for papers..." >> $log_file
-            echo "Query: ${params}" >> $log_file
-            # Simulate execution
-            echo "Found 25 relevant papers" >> $log_file
-            echo "Creating synthesis..." >> $log_file
-            ;;
-            
-        code_generation)
-            echo "Generating code from spec..." >> $log_file
-            echo "Language: Python" >> $log_file
-            echo "Style: Modular" >> $log_file
-            # Simulate execution
-            echo "Generated 5 modules" >> $log_file
-            echo "Created unit tests" >> $log_file
-            ;;
-            
-        quantization)
-            echo "Quantizing model..." >> $log_file
-            echo "Target: 8-bit" >> $log_file
-            # Simulate execution
-            echo "Model size reduced by 75%" >> $log_file
-            echo "Inference speed improved by 2.3x" >> $log_file
-            ;;
-            
-        *)
-            echo "Executing custom skill..." >> $log_file
-            ;;
-    esac
-    
-    # Log execution end
-    echo "" >> $log_file
-    echo "Completed: $(date -Iseconds)" >> $log_file
-    
-    # Update checkpoint
-    echo "$(date -Iseconds) | SKILL_EXECUTED | ${skill} | exec_id:${exec_id}" >> .workflow/checkpoints.log
-    
-    echo -e "${GREEN}✓ Skill execution complete${NC}"
-    echo -e "Log file: ${YELLOW}${log_file}${NC}"
+    echo -e "${RED}Error: 'execute' is not supported by enable_skill.sh.${NC}" >&2
+    echo "Skills are executed by Claude Code agents (the Skill tool or UWS subagents)," >&2
+    echo "not by this script. It only enables, disables, lists and reports skills." >&2
+    echo "Nothing was run and nothing was logged for skill '${skill}'." >&2
+    exit 2
 }
 
 # Function to list available skills
@@ -503,13 +444,7 @@ show_skill_status() {
             echo -e "  ${CYAN}${key}:${NC}${value}"
         done
     fi
-    
-    # Show recent executions
-    echo ""
-    echo "Recent Executions:"
-    grep "SKILL_EXECUTED.*${skill}" .workflow/checkpoints.log | tail -3 | while IFS='|' read -r timestamp event details; do
-        echo -e "  ${YELLOW}$(echo $timestamp | xargs)${NC}"
-    done || echo -e "  ${YELLOW}No recent executions${NC}"
+
 }
 
 # Function to show skill dependencies
@@ -549,7 +484,7 @@ case $COMMAND in
         if [ -z "$SKILL_NAME" ]; then
             show_usage
         fi
-        execute_skill $SKILL_NAME "$PARAMS"
+        execute_skill "$SKILL_NAME"
         ;;
     list)
         list_skills

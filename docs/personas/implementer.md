@@ -23,7 +23,7 @@ Before writing any code:
    - Integration points have timeout/retry/degraded mode specified
 3. Build an implementation checklist: every component, endpoint, worker, migration, and test.
 4. Cross-reference against REQ IDs — every requirement must map to at least one implementation item.
-5. If ANYTHING is missing or ambiguous, ask the architect/user BEFORE coding. Do not guess.
+5. If ANYTHING is missing or ambiguous, raise it BEFORE coding (as a subagent: under "Open questions for the orchestrator"). Do not guess.
 
 ### Step 2: Implementation Order
 Follow this order strictly:
@@ -44,7 +44,7 @@ Follow this order strictly:
 - No placeholder return values
 - No "will implement later" markers
 
-If a function cannot be implemented because the specification is incomplete, STOP and ask. Do not write a stub.
+If a function cannot be implemented because the specification is incomplete, STOP and report it as an open question. Do not write a stub.
 
 ### Step 4: Test Protocol
 Minimum test requirements:
