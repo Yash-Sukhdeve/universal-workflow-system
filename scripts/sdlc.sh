@@ -597,6 +597,10 @@ main() {
                 fi
             else
                 yaml_set "$STATE_FILE" "goal" "$details" >/dev/null 2>&1 || true
+                # Keep the handoff's managed summary (which shows the goal) current
+                if declare -f refresh_handoff_header > /dev/null 2>&1; then
+                    refresh_handoff_header "" "" "" "${WORKFLOW_DIR}/handoff.md"
+                fi
                 echo -e "${GREEN}✓ Goal declared:${NC} ${details}"
                 echo -e "  Deliverable gating is now ${GREEN}active${NC} — use ${CYAN}$0 check <n>${NC} then ${CYAN}$0 next${NC}."
             fi

@@ -217,35 +217,50 @@ EOF
 create_handoff_template() {
     echo "🤝 Creating handoff template..."
     
+    # The summary block is rendered from state.yaml and refreshed by UWS on
+    # every checkpoint and phase change; every other section belongs to the
+    # people and agents working on the project and is never rewritten.
+    local summary_block
+    if [[ -f "${SCRIPT_DIR}/lib/handoff_utils.sh" ]]; then
+        source "${SCRIPT_DIR}/lib/handoff_utils.sh"
+        summary_block="$(uws_handoff_render_block .workflow/state.yaml .workflow/checkpoints.log)"
+    else
+        summary_block="<!-- uws:managed:start -->
+## Last Session Summary
+- **Phase**: phase_1_planning
+- **Checkpoint**: CP_1_001
+<!-- uws:managed:end -->"
+    fi
+    local init_date
+    init_date="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)"
+
     cat > .workflow/handoff.md << EOF
 # Context Handoff Document
 
-## Last Session Summary
-- **Date**: $(date -Iseconds)
-- **Phase**: phase_1_planning
-- **Checkpoint**: CP_1_001
-- **Working on**: Initial setup
+${summary_block}
 
 ## Critical Context
+<!-- Durable facts the next session must know: decisions, constraints, gotchas. -->
 1. Project type: ${PROJECT_TYPE}
-2. Workflow system initialized
-3. Ready to begin planning phase
+2. UWS initialized: ${init_date}
 
 ## Next Actions
-- [ ] Define project scope
-- [ ] Document requirements
-- [ ] Set up development environment
+<!-- Keep this list current; open items are shown to Claude at session start. -->
+- [ ] Declare the project goal: \`uws sdlc goal "..."\` or \`uws research goal "..."\`
+- [ ] Start a methodology: \`uws sdlc start\` or \`uws research start\`
+
+## Blockers
+- None
 
 ## Commands to Resume
 \`\`\`bash
-cd "${PROJECT_ROOT}"
-./scripts/recover_context.sh
+uws recover          # or ./uws recover; in Claude Code: /uws:recover
 \`\`\`
 
 ## Notes
 _Add session-specific notes here_
 EOF
-    
+
     echo "  ✓ Handoff template created"
 }
 

@@ -358,33 +358,24 @@ deliverables_remaining() {
 }
 
 #######################################
-# Refresh the handoff.md "Last Session Summary" header in place, leaving the
-# appended transition log intact.
-# Arguments: $1 - phase, $2 - checkpoint, $3 - working_on, $4 - (optional) file
+# Refresh the UWS-managed summary block of handoff.md from state.yaml
+# (see lib/handoff_utils.sh). Only the block between the
+# <!-- uws:managed:start/end --> markers is rewritten; human-written sections
+# and the appended transition log are left intact. Legacy handoffs are
+# migrated on first call.
+# state.yaml is the single source of truth, so the phase/checkpoint/working_on
+# arguments are accepted for backward compatibility but not used: callers run
+# this after updating state.
+# Arguments: $1 - phase, $2 - checkpoint, $3 - working_on (all ignored),
+#            $4 - (optional) handoff file
 #######################################
 refresh_handoff_header() {
-    local phase="$1" checkpoint="$2" working_on="$3"
     local file="${4:-${_WR_WORKFLOW_DIR}/handoff.md}"
     [[ -f "$file" ]] || return 0
-    local ts
-    ts=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)
-    awk -v ts="$ts" -v ph="$phase" -v cp="$checkpoint" -v wo="$working_on" '
-        BEGIN { in_summary = 0 }
-        /^## Last Session Summary/ {
-            print
-            print "- **Date**: " ts
-            print "- **Phase**: " ph
-            print "- **Checkpoint**: " cp
-            print "- **Working on**: " wo
-            in_summary = 1
-            next
-        }
-        in_summary == 1 {
-            if ($0 ~ /^## /) { in_summary = 0; print; next }
-            next
-        }
-        { print }
-    ' "$file" > "${file}.tmp" 2>/dev/null && mv "${file}.tmp" "$file" || rm -f "${file}.tmp"
+    if ! declare -f uws_handoff_sync >/dev/null 2>&1; then
+        source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/handoff_utils.sh"
+    fi
+    uws_handoff_sync "$file" "$(dirname "$file")/state.yaml" || true
 }
 
 #######################################
