@@ -46,7 +46,8 @@ readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
 # Get recovery start time
-RECOVERY_START_TIME=$(date +%s%3N 2>/dev/null || date +%s)
+source "${SCRIPT_LIB_DIR}/portable.sh"
+RECOVERY_START_TIME=$(now_ms)
 
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
 echo -e "${BOLD}           📡 CONTEXT RECOVERY SYSTEM (RWF Enhanced)${NC}"
@@ -223,9 +224,9 @@ CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo -e "  🌿 Branch:     ${GREEN}${CURRENT_BRANCH}${NC}"
 
 # Count uncommitted changes
-MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || echo 0)
-UNTRACKED=$(git status --porcelain 2>/dev/null | grep -c "^??" || echo 0)
-STAGED=$(git status --porcelain 2>/dev/null | grep -c "^[AM]" || echo 0)
+MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || true)
+UNTRACKED=$(git status --porcelain 2>/dev/null | grep -c "^??" || true)
+STAGED=$(git status --porcelain 2>/dev/null | grep -c "^[AM]" || true)
 
 echo -e "  📝 Modified:   ${YELLOW}${MODIFIED} files${NC}"
 echo -e "  ➕ Staged:     ${GREEN}${STAGED} files${NC}"
@@ -314,7 +315,7 @@ else
 fi
 
 # Calculate recovery time
-RECOVERY_END_TIME=$(date +%s%3N 2>/dev/null || date +%s)
+RECOVERY_END_TIME=$(now_ms)
 RECOVERY_TIME_MS=$((RECOVERY_END_TIME - RECOVERY_START_TIME))
 
 # Update session state to mark context as recovered

@@ -510,7 +510,12 @@ class UWSAdapter:
                 for s in sessions if s.status == "active"
             ],
             "enabled_skills": skills,
-            "current_phase": state.get("phase"),
-            "current_checkpoint": state.get("checkpoint"),
+            # state.yaml uses current_phase / current_checkpoint (there is no
+            # 'phase'/'checkpoint' key) — reading the wrong keys returned None.
+            "current_phase": state.get("current_phase"),
+            "current_checkpoint": state.get("current_checkpoint"),
+            "goal": state.get("goal"),
+            "phases": state.get("phases"),
+            "methodology_progress": state.get("methodology_progress"),
             "status_output": result.stdout
         }

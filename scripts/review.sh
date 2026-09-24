@@ -6,6 +6,7 @@
 #
 
 set -e
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 COMMAND="${1:-list}"
 ARG="${2:-}"
@@ -71,7 +72,7 @@ if [[ "$COMMAND" == "approve" ]]; then
     # 4. Cleanup Notifications
     # Remove the line containing the CL_ID
     if [[ -f "$NOTIFICATIONS_FILE" ]]; then
-        sed -i "/${CL_ID}/d" "$NOTIFICATIONS_FILE"
+        sed_inplace "/${CL_ID}/d" "$NOTIFICATIONS_FILE"
         echo "Removed from Notifications."
     fi
     
@@ -100,7 +101,7 @@ if [[ "$COMMAND" == "reject" ]]; then
     fi
     
     # 2. Cleanup
-    sed -i "/${CL_ID}/d" "$NOTIFICATIONS_FILE"
+    sed_inplace "/${CL_ID}/d" "$NOTIFICATIONS_FILE"
     rm -rf "$CL_DIR"
     
     echo "❌ CR Rejected. Feedback sent."

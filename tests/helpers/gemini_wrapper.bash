@@ -408,14 +408,14 @@ apply_state_changes() {
     local checkpoint
     checkpoint=$(echo "$changes" | grep "checkpoint:" | cut -d' ' -f2)
     if [[ -n "$checkpoint" && -f "${dir}/.workflow/state.yaml" ]]; then
-        sed -i "s/current_checkpoint:.*/current_checkpoint: \"${checkpoint}\"/" "${dir}/.workflow/state.yaml"
+        sed -i.bak "s/current_checkpoint:.*/current_checkpoint: \"${checkpoint}\"/" "${dir}/.workflow/state.yaml"
     fi
 
     # Extract and apply phase
     local phase
     phase=$(echo "$changes" | grep "phase:" | cut -d' ' -f2)
     if [[ -n "$phase" && -f "${dir}/.workflow/state.yaml" ]]; then
-        sed -i "s/current_phase:.*/current_phase: \"${phase}\"/" "${dir}/.workflow/state.yaml"
+        sed -i.bak "s/current_phase:.*/current_phase: \"${phase}\"/" "${dir}/.workflow/state.yaml"
     fi
 
     return 0

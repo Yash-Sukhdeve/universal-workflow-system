@@ -15,6 +15,7 @@
 #
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -255,9 +256,9 @@ uninstall_project() {
     if [[ -f "$root/CLAUDE.md" ]]; then
         if grep -q '<!-- UWS-BEGIN -->' "$root/CLAUDE.md" 2>/dev/null; then
             if [[ "$DRY_RUN" == false ]]; then
-                sed -i '/<!-- UWS-BEGIN -->/,/<!-- UWS-END -->/d' "$root/CLAUDE.md"
+                sed_inplace '/<!-- UWS-BEGIN -->/,/<!-- UWS-END -->/d' "$root/CLAUDE.md"
                 # Remove trailing blank lines
-                sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$root/CLAUDE.md" 2>/dev/null || true
+                sed_inplace -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$root/CLAUDE.md" 2>/dev/null || true
 
                 # Check if file is now empty or just a header
                 local content_lines
@@ -358,7 +359,7 @@ with open('$root/.mcp.json', 'w') as f:
 
     # ── Step 10: Remove empty phase/work directories ──────────────────
     local work_dirs=("phases" "artifacts" "workspace" "archive")
-    for dir in "${work_dirs[@]}"; do
+    for dir in ${work_dirs[@]+"${work_dirs[@]}"}; do
         if [[ -d "$root/$dir" ]]; then
             # Only remove if empty (or contains only .gitkeep)
             local file_count
@@ -426,7 +427,7 @@ with open('$root/.mcp.json', 'w') as f:
         )
 
         local has_uws_lines=false
-        for pattern in "${uws_patterns[@]}"; do
+        for pattern in ${uws_patterns[@]+"${uws_patterns[@]}"}; do
             if grep -qF "$(echo "$pattern" | sed 's/\\//g')" "$root/.gitignore" 2>/dev/null; then
                 has_uws_lines=true
                 break
@@ -441,9 +442,9 @@ with open('$root/.mcp.json', 'w') as f:
                 grep -vE '^\s*\.uws/|^\s*\.claude/|^\s*memory/|^# UWS internal|^# Claude Code project|^# Workflow system|^\s*\.workflow/agents/memory|^\s*\.workflow/\*\.tmp|^\s*\.workflow/\*\.backup|^\s*workspace/\*|^\s*!workspace/\.gitkeep' "$root/.gitignore" > "$temp_gi" 2>/dev/null || true
 
                 # Remove consecutive blank lines left behind
-                sed -i '/^$/N;/^\n$/d' "$temp_gi" 2>/dev/null || true
+                sed_inplace '/^$/N;/^\n$/d' "$temp_gi" 2>/dev/null || true
                 # Remove trailing blank lines
-                sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$temp_gi" 2>/dev/null || true
+                sed_inplace -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$temp_gi" 2>/dev/null || true
 
                 local remaining_lines
                 remaining_lines=$(tr -d '[:space:]' < "$temp_gi" | wc -c)

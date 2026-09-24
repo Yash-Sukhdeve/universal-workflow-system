@@ -109,7 +109,7 @@ teardown() {
     # Rapid modifications
     for i in {1..10}; do
         # Simulate rapid state changes
-        sed -i "s/progress: [0-9]*/progress: $((i * 10))/" .workflow/state.yaml 2>/dev/null || true
+        sed -i.bak "s/progress: [0-9]*/progress: $((i * 10))/" .workflow/state.yaml 2>/dev/null || true
         create_handoff_checkpoint "${TEST_TMP_DIR}" "Rapid $i" "claude" "gemini"
     done
 

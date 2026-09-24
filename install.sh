@@ -22,6 +22,8 @@ check_prereqs() {
     local bash_major="${BASH_VERSINFO[0]}"
     if (( bash_major < 4 )); then
         echo "Error: Bash 4.0+ required (found $BASH_VERSION)" >&2
+        echo "  macOS ships Bash 3.2: run 'brew install bash', then re-run with that bash:" >&2
+        echo "  \"\$(brew --prefix)/bin/bash\" ./install.sh" >&2
         ok=false
     fi
 
@@ -84,16 +86,18 @@ main() {
         echo ""
     fi
 
-    # Optional: Install vector memory server (system-level)
-    if [[ -f "${SCRIPT_DIR}/scripts/lib/vector_memory_setup.sh" ]]; then
+    # Optional: Install vector memory server (system-level). Opt-in: it is a ~1.5GB download.
+    if [[ "${UWS_SKIP_VECTOR_MEMORY:-false}" == "true" ]]; then
+        : # explicitly skipped
+    elif [[ -f "${SCRIPT_DIR}/scripts/lib/vector_memory_setup.sh" ]]; then
         source "${SCRIPT_DIR}/scripts/lib/vector_memory_setup.sh"
         if uws_vm_check_python 2>/dev/null; then
             if ! uws_vm_is_installed; then
                 echo ""
                 echo "Optional: Vector memory server provides semantic search."
                 if [[ -t 0 ]]; then
-                    read -p "Install now? (~1.5GB disk, requires Python) [Y/n]: " vm_confirm
-                    if [[ "${vm_confirm:-}" =~ ^[Nn]$ ]]; then
+                    read -r -p "Install now? (~1.5GB disk, requires Python) [y/N]: " vm_confirm || vm_confirm=""
+                    if [[ ! "${vm_confirm:-}" =~ ^[Yy]$ ]]; then
                         echo "Skipped. Run 'uws init' in a project later to set up."
                     else
                         # System-level only (no project-specific .mcp.json)

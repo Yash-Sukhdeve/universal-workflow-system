@@ -13,7 +13,7 @@ setup() {
     setup_dual_environment
 
     # Set up research project type
-    sed -i 's/type: "software"/type: "research"/' "${TEST_TMP_DIR}/.workflow/state.yaml" 2>/dev/null || true
+    sed -i.bak 's/type: "software"/type: "research"/' "${TEST_TMP_DIR}/.workflow/state.yaml" 2>/dev/null || true
 }
 
 teardown() {
@@ -152,7 +152,7 @@ EOF
     create_claude_session_state "${TEST_TMP_DIR}" "phase_3_validation" "CP_3_001" "experimenter"
 
     # Simulate rejection - go back to experiment design
-    sed -i 's/phase_3_validation/phase_1_planning/' .workflow/state.yaml
+    sed -i.bak 's/phase_3_validation/phase_1_planning/' .workflow/state.yaml
 
     # Handoff should work for regression
     run create_handoff_checkpoint "${TEST_TMP_DIR}" "Revision needed" "claude" "gemini"
@@ -202,17 +202,17 @@ EOF
     create_handoff_checkpoint "${TEST_TMP_DIR}" "H2" "gemini" "claude"
 
     # Collection
-    sed -i 's/phase_1_planning/phase_2_implementation/' .workflow/state.yaml
+    sed -i.bak 's/phase_1_planning/phase_2_implementation/' .workflow/state.yaml
     "${SCRIPTS_DIR}/checkpoint.sh" create "Collection" 2>/dev/null || true
     create_handoff_checkpoint "${TEST_TMP_DIR}" "H3" "claude" "gemini"
 
     # Analysis
-    sed -i 's/phase_2_implementation/phase_3_validation/' .workflow/state.yaml
+    sed -i.bak 's/phase_2_implementation/phase_3_validation/' .workflow/state.yaml
     "${SCRIPTS_DIR}/checkpoint.sh" create "Analysis" 2>/dev/null || true
     create_handoff_checkpoint "${TEST_TMP_DIR}" "H4" "gemini" "claude"
 
     # Publication
-    sed -i 's/phase_3_validation/phase_4_delivery/' .workflow/state.yaml
+    sed -i.bak 's/phase_3_validation/phase_4_delivery/' .workflow/state.yaml
     "${SCRIPTS_DIR}/checkpoint.sh" create "Publication" 2>/dev/null || true
 
     end_time=$(date +%s)
@@ -247,7 +247,7 @@ EOF
     create_claude_session_state "${TEST_TMP_DIR}" "phase_4_delivery" "CP_4_001" "documenter"
 
     # Update to research type
-    sed -i 's/type: "software"/type: "research"/' .workflow/state.yaml
+    sed -i.bak 's/type: "software"/type: "research"/' .workflow/state.yaml
 
     # Verify required fields
     grep -q "current_phase:" .workflow/state.yaml

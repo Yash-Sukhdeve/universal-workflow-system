@@ -1,0 +1,14 @@
+{
+  "name": "uws",
+  "displayName": "Universal Workflow System",
+  "version": "1.2.0",
+  "description": "Git-native workflow state for Claude Code: phase-gated SDLC and research workflows, checkpoints, context recovery across sessions, and seven role subagents.",
+  "author": {
+    "name": "Yash Sukhdeve",
+    "url": "https://github.com/Yash-Sukhdeve"
+  },
+  "homepage": "https://github.com/Yash-Sukhdeve/universal-workflow-system",
+  "repository": "https://github.com/Yash-Sukhdeve/universal-workflow-system",
+  "license": "MIT",
+  "keywords": ["workflow", "context-recovery", "checkpoints", "sdlc", "research", "subagents"]
+}

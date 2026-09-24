@@ -74,12 +74,12 @@ atomic_commit() {
     fi
 
     # Clean up backups (transaction succeeded)
-    for backup in "${ATOMIC_BACKUPS[@]}"; do
+    for backup in ${ATOMIC_BACKUPS[@]+"${ATOMIC_BACKUPS[@]}"}; do
         rm -f "$backup" 2>/dev/null || true
     done
 
     # Clean up any temp files
-    for temp in "${ATOMIC_TEMPS[@]}"; do
+    for temp in ${ATOMIC_TEMPS[@]+"${ATOMIC_TEMPS[@]}"}; do
         rm -f "$temp" 2>/dev/null || true
     done
 
@@ -115,7 +115,7 @@ atomic_rollback() {
     local rollback_errors=0
 
     # Restore from backups
-    for backup in "${ATOMIC_BACKUPS[@]}"; do
+    for backup in ${ATOMIC_BACKUPS[@]+"${ATOMIC_BACKUPS[@]}"}; do
         local original="${backup%.atomic_backup.*}"
         original="${original%.atomic_backup}"
 
@@ -130,7 +130,7 @@ atomic_rollback() {
     done
 
     # Clean up temp files
-    for temp in "${ATOMIC_TEMPS[@]}"; do
+    for temp in ${ATOMIC_TEMPS[@]+"${ATOMIC_TEMPS[@]}"}; do
         rm -f "$temp" 2>/dev/null || true
     done
 

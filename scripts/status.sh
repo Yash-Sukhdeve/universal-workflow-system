@@ -86,13 +86,9 @@ get_yaml_value() {
     fi
 }
 
-# Helper function to get nested phase status from state.yaml
-# Extracts phases.<phase_name>.status using sed (yaml_get only supports top-level)
-get_phase_status() {
-    local phase_name="$1"
-    local file="${2:-.workflow/state.yaml}"
-    sed -n "/^  ${phase_name}:/,/^  [^ ]/{ s/^    status: *\"\{0,1\}\([^\"]*\)\"\{0,1\}/\1/p; }" "$file" 2>/dev/null | head -1
-}
+# get_phase_status(phase[,file]) is now provided canonically by
+# scripts/lib/workflow_routing.sh (sourced above) so the reader and the
+# writer (set_phase_status) stay in lockstep on the indentation contract.
 
 # Helper function to create progress bar
 create_progress_bar() {
@@ -136,8 +132,9 @@ if [ "$COMPACT" = true ]; then
     exit 0
 fi
 
-# Full status display
-clear
+# Full status display (only clear an interactive terminal: `clear` fails without TERM,
+# which made `uws status` exit 1 under agents, hooks and CI)
+if [[ -t 1 ]]; then clear 2>/dev/null || true; fi
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║                       UNIVERSAL WORKFLOW SYSTEM STATUS                        ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
@@ -150,7 +147,8 @@ echo -e "${BLUE}└────────────────────�
 
 PROJECT_NAME=$(basename "$(pwd)")
 PROJECT_TYPE=$(get_yaml_value "project_type" "${STATE_FILE}")
-CREATED=$(get_yaml_value "created" "${STATE_FILE}")
+# 'created' is nested under metadata: in state.yaml; read the dotted key.
+CREATED=$(get_yaml_value "metadata.created" "${STATE_FILE}")
 
 echo -e "  ${CYAN}Name:${NC}         ${BOLD}${PROJECT_NAME}${NC}"
 echo -e "  ${CYAN}Type:${NC}         ${GREEN}${PROJECT_TYPE}${NC}"
@@ -260,7 +258,8 @@ echo -e "${BLUE}│ ${BOLD}ENABLED SKILLS${NC}                                  
 echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
 
 if [ -f ${WORKFLOW_DIR}/skills/enabled.yaml ]; then
-    SKILL_COUNT=$(grep -c "^  - " ${WORKFLOW_DIR}/skills/enabled.yaml 2>/dev/null || echo 0)
+    SKILL_COUNT=$(grep -c "^  - " ${WORKFLOW_DIR}/skills/enabled.yaml 2>/dev/null || true)
+    SKILL_COUNT=${SKILL_COUNT:-0}
     SKILL_COUNT=$(echo "$SKILL_COUNT" | tr -d '[:space:]')
 
     if [ "$SKILL_COUNT" -gt 0 ] 2>/dev/null; then
@@ -288,9 +287,9 @@ echo -e "${BLUE}└────────────────────�
 
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "not initialized")
 LAST_COMMIT=$(git log -1 --format="%h - %s (%cr)" 2>/dev/null || echo "No commits yet")
-MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || echo 0)
-UNTRACKED=$(git status --porcelain 2>/dev/null | grep -c "^??" || echo 0)
-STAGED=$(git status --porcelain 2>/dev/null | grep -c "^[AM]" || echo 0)
+MODIFIED=$(git status --porcelain 2>/dev/null | grep -c "^ M" || true)
+UNTRACKED=$(git status --porcelain 2>/dev/null | grep -c "^??" || true)
+STAGED=$(git status --porcelain 2>/dev/null | grep -c "^[AM]" || true)
 MODIFIED=$(echo "$MODIFIED" | tr -d '[:space:]')
 UNTRACKED=$(echo "$UNTRACKED" | tr -d '[:space:]')
 STAGED=$(echo "$STAGED" | tr -d '[:space:]')
@@ -336,8 +335,8 @@ if [ "$VERBOSE" = true ]; then
     echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
     
     if [ -d ${WORKFLOW_DIR}/knowledge ]; then
-        PATTERN_COUNT=$(grep -c "pattern:" ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null || echo 0)
-        SOLUTION_COUNT=$(grep -c "solution:" ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null || echo 0)
+        PATTERN_COUNT=$(cat ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null | grep -c "pattern:" || true)
+        SOLUTION_COUNT=$(cat ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null | grep -c "solution:" || true)
         
         echo -e "  ${CYAN}Patterns Learned:${NC}  ${GREEN}${PATTERN_COUNT}${NC}"
         echo -e "  ${CYAN}Solutions Stored:${NC}  ${GREEN}${SOLUTION_COUNT}${NC}"

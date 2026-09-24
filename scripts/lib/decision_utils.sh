@@ -118,7 +118,7 @@ EOF
     if [[ -n "$alternatives" ]]; then
         echo "alternatives_considered:" >> "$DECISION_LOG_FILE"
         IFS=',' read -ra alts <<< "$alternatives"
-        for alt in "${alts[@]}"; do
+        for alt in ${alts[@]+"${alts[@]}"}; do
             echo "  - \"${alt# }\"" >> "$DECISION_LOG_FILE"
         done
     fi
@@ -400,7 +400,7 @@ format_blocker() {
         *)        color="$NC" ;;
     esac
 
-    echo -e "${color}[${sev^^}]${NC} ${id}: ${desc}"
+    echo -e "${color}[$(printf '%s' "$sev" | tr '[:lower:]' '[:upper:]')]${NC} ${id}: ${desc}"
 }
 
 #######################################

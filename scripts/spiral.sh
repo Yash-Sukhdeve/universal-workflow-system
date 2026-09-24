@@ -6,6 +6,7 @@
 #
 
 set -e
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 ACTION="${1:-status}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,8 +50,8 @@ if [[ "$ACTION" == "start-cycle" ]]; then
         echo "spiral_cycle: 1" >> "$STATE_FILE"
         echo "Starting Spiral Cycle 1: Planning"
     else
-        sed -i "s/spiral_cycle:.*/spiral_cycle: $new_cycle/" "$STATE_FILE"
-        sed -i "s/spiral_quadrant:.*/spiral_quadrant: \"planning\"/" "$STATE_FILE"
+        sed_inplace "s/spiral_cycle:.*/spiral_cycle: $new_cycle/" "$STATE_FILE"
+        sed_inplace "s/spiral_quadrant:.*/spiral_quadrant: \"planning\"/" "$STATE_FILE"
         echo "Starting Spiral Cycle $new_cycle: Planning"
     fi
     exit 0
@@ -77,7 +78,7 @@ if [[ "$ACTION" == "next" ]]; then
             ;;
     esac
     
-    sed -i "s/spiral_quadrant:.*/spiral_quadrant: \"$new_quadrant\"/" "$STATE_FILE"
+    sed_inplace "s/spiral_quadrant:.*/spiral_quadrant: \"$new_quadrant\"/" "$STATE_FILE"
     echo "✅ Advancing to Quadrant: $new_quadrant"
     
     # Trigger side effects

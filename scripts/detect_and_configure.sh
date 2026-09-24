@@ -5,6 +5,7 @@
 # Can be run on existing projects or to reconfigure current setup
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -539,7 +540,7 @@ apply_configuration() {
             yq eval ".active_methodology = \"${methodology}\"" -i .workflow/state.yaml 2>/dev/null || true
         else
             if grep -q "^active_methodology:" .workflow/state.yaml 2>/dev/null; then
-                sed -i "s|^active_methodology:.*|active_methodology: \"${methodology}\"|" .workflow/state.yaml
+                sed_inplace "s|^active_methodology:.*|active_methodology: \"${methodology}\"|" .workflow/state.yaml
             else
                 echo "active_methodology: \"${methodology}\"" >> .workflow/state.yaml
             fi
@@ -566,10 +567,10 @@ apply_configuration() {
             yq eval ".agents.default_agent = \"${default_agent}\"" -i .workflow/config.yaml 2>/dev/null || true
         else
             if grep -q "default_agent:" .workflow/config.yaml 2>/dev/null; then
-                sed -i "s|default_agent:.*|default_agent: \"${default_agent}\"|" .workflow/config.yaml
+                sed_inplace "s|default_agent:.*|default_agent: \"${default_agent}\"|" .workflow/config.yaml
             else
                 # Insert after auto_select line
-                sed -i "/auto_select:/a\\  default_agent: \"${default_agent}\"" .workflow/config.yaml
+                append_after_match .workflow/config.yaml 'auto_select:' "  default_agent: \"${default_agent}\""
             fi
         fi
         echo -e "${GREEN}✓${NC} Set default agent: ${default_agent}"

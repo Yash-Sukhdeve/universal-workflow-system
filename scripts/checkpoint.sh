@@ -5,6 +5,7 @@
 # RWF Compliance: R3 (State Safety), R4 (Error-Free), R5 (Reproducibility)
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
@@ -195,8 +196,8 @@ create_checkpoint() {
             local escaped_id escaped_ts
             escaped_id=$(printf '%s\n' "${checkpoint_id}" | sed 's/[&/\]/\\&/g')
             escaped_ts=$(printf '%s\n' "${timestamp}" | sed 's/[&/\]/\\&/g')
-            sed -i "s|^current_checkpoint:.*|current_checkpoint: \"${escaped_id}\"|" ${WORKFLOW_DIR}/state.yaml
-            sed -i "s|^last_updated:.*|last_updated: \"${escaped_ts}\"|" ${WORKFLOW_DIR}/state.yaml
+            sed_inplace "s|^current_checkpoint:.*|current_checkpoint: \"${escaped_id}\"|" ${WORKFLOW_DIR}/state.yaml
+            sed_inplace "s|^last_updated:.*|last_updated: \"${escaped_ts}\"|" ${WORKFLOW_DIR}/state.yaml
         fi
         rm -f ${WORKFLOW_DIR}/state.yaml.bak
     fi
@@ -234,7 +235,7 @@ create_checkpoint() {
         esac
         # Update progress using sed on the nested YAML structure
         # Match the phase block, then update the progress line within it
-        sed -i "/^  ${_phase_key}:/,/^  [^ ]/{s/^\(    progress: \).*/\1${_progress}/}" ${WORKFLOW_DIR}/state.yaml
+        sed_inplace "/^  ${_phase_key}:/,/^  [^ ]/{s/^\(    progress: \).*/\1${_progress}/;}" ${WORKFLOW_DIR}/state.yaml
     fi
 
     # Create checkpoint snapshot directory structure (v2 format)
@@ -703,7 +704,7 @@ show_checkpoint_status() {
     echo -e "${CYAN}Phase Progress:${NC}"
     for phase in $(seq 1 5); do
         local count
-        count=$(grep -c "CP_${phase}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null || echo 0)
+        count=$(grep -c "CP_${phase}_" ${WORKFLOW_DIR}/checkpoints.log 2>/dev/null || true)
         count=$(echo "$count" | tr -d '[:space:]')
         [[ -z "$count" || ! "$count" =~ ^[0-9]+$ ]] && count=0
         local phase_name=""
@@ -955,10 +956,10 @@ toggle_auto_checkpoint() {
     local current=$(grep 'auto_checkpoint:' ${WORKFLOW_DIR}/config.yaml | cut -d':' -f2 | xargs)
     
     if [ "$current" = "true" ]; then
-        sed -i 's/auto_checkpoint: true/auto_checkpoint: false/' ${WORKFLOW_DIR}/config.yaml
+        sed_inplace 's/auto_checkpoint: true/auto_checkpoint: false/' ${WORKFLOW_DIR}/config.yaml
         echo -e "${YELLOW}⏸  Auto-checkpointing disabled${NC}"
     else
-        sed -i 's/auto_checkpoint: false/auto_checkpoint: true/' ${WORKFLOW_DIR}/config.yaml
+        sed_inplace 's/auto_checkpoint: false/auto_checkpoint: true/' ${WORKFLOW_DIR}/config.yaml
         echo -e "${GREEN}▶  Auto-checkpointing enabled${NC}"
         
         # Setup cron job for hourly checkpoints

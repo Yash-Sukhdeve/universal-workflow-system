@@ -6,6 +6,7 @@
 #
 
 set -e
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 MESSAGE="${1:-Update}"
 TICKET_ID="${2:-}"
@@ -107,7 +108,7 @@ EOF
 # Prepend to top of file (after header)
 TEMP_NOTE="${UWS_DIR}/temp_note.md"
 echo "- [ ] **${CL_ID}** (${AGENT}): ${MESSAGE} [View Summary](.uws/crs/${CL_ID}/summary.md)" > "$TEMP_NOTE"
-sed -i '4r '"$TEMP_NOTE" "$NOTIFICATIONS_FILE"
+sed_inplace '4r '"$TEMP_NOTE" "$NOTIFICATIONS_FILE"
 rm "$TEMP_NOTE"
 
 # 6. Update Ticket Status (if provided)

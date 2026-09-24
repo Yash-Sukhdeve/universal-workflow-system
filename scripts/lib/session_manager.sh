@@ -3,6 +3,7 @@
 # Manages concurrent agent sessions for real-time dashboard monitoring
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/portable.sh"
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -126,7 +127,7 @@ EOF
     fi
 
     # Remove "sessions: []" line if present (empty array marker)
-    sed -i 's/^sessions: \[\]/sessions:/' "$temp_file"
+    sed_inplace 's/^sessions: \[\]/sessions:/' "$temp_file"
 
     mv "$temp_file" "$SESSIONS_FILE"
 
@@ -331,7 +332,9 @@ get_session_count() {
     if command -v yq &> /dev/null; then
         yq '.sessions | length' "$SESSIONS_FILE"
     else
-        grep -c "^  - id:" "$SESSIONS_FILE" 2>/dev/null || echo "0"
+        local n
+        n=$(grep -c "^  - id:" "$SESSIONS_FILE" 2>/dev/null || true)
+        echo "${n:-0}"
     fi
 }
 

@@ -15,6 +15,7 @@
 # RWF Compliance: R3 (State Safety), R4 (Error-Free)
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/portable.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_LIB_DIR="${SCRIPT_DIR}/lib"
@@ -95,7 +96,7 @@ set_phase() {
 
     # Validate phase
     local valid=false
-    for p in "${SDLC_PHASES[@]}"; do
+    for p in ${SDLC_PHASES[@]+"${SDLC_PHASES[@]}"}; do
         if [[ "$p" == "$new_phase" ]]; then
             valid=true
             break
@@ -126,6 +127,15 @@ set_phase() {
         atomic_commit 2>/dev/null || true
     fi
 
+    # Milestone 1: keep the UWS meta-phase (current_phase) + phases board in
+    # sync with the methodology phase, seed the deliverable ledger, and refresh
+    # the handoff header. Without this, current_phase is stuck at phase_1.
+    if declare -f sync_meta_phase > /dev/null 2>&1; then
+        local _total
+        _total=$(get_phase_deliverables "$new_phase" | wc -l | tr -d '[:space:]')
+        sync_meta_phase "sdlc" "$new_phase" "${_total:-0}"
+    fi
+
     # Log the transition
     if declare -f log_info > /dev/null 2>&1; then
         log_info "sdlc" "Phase changed to: $new_phase"
@@ -152,7 +162,7 @@ set_phase_fallback() {
             # Manual escaping as last resort
             local escaped_phase
             escaped_phase=$(printf '%s\n' "$new_phase" | sed 's/[&/\]/\\&/g')
-            sed -i "s|^sdlc_phase:.*|sdlc_phase: \"${escaped_phase}\"|" "$STATE_FILE"
+            sed_inplace "s|^sdlc_phase:.*|sdlc_phase: \"${escaped_phase}\"|" "$STATE_FILE"
         fi
     fi
 }
@@ -166,7 +176,7 @@ get_next_phase() {
     local current="$1"
     local found=false
 
-    for phase in "${SDLC_PHASES[@]}"; do
+    for phase in ${SDLC_PHASES[@]+"${SDLC_PHASES[@]}"}; do
         if [[ "$found" == "true" ]]; then
             echo "$phase"
             return 0
@@ -247,6 +257,44 @@ get_phase_deliverables() {
 }
 
 #######################################
+# Hard deliverable gate for next/goto. Active ONLY once a goal is declared
+# (goal-driven mode). Blocks advancement while the current phase has unmet
+# deliverables, unless overridden with --force.
+# Arguments: $1 - current phase, $2 - force flag ("--force" overrides)
+#######################################
+_deliverable_gate() {
+    local phase="$1" force="${2:-}"
+    [[ "$force" == "--force" ]] && return 0
+    declare -f gate_enabled > /dev/null 2>&1 || return 0
+    gate_enabled || return 0
+
+    local total
+    total=$(get_phase_deliverables "$phase" | wc -l | tr -d '[:space:]')
+    if declare -f mp_ensure > /dev/null 2>&1; then
+        mp_ensure "sdlc" "$phase" "${total:-0}"
+    fi
+
+    local remaining=0
+    if declare -f deliverables_remaining > /dev/null 2>&1; then
+        remaining=$(deliverables_remaining "sdlc" "$phase" 2>/dev/null || echo 0)
+    fi
+    [[ "$remaining" =~ ^[0-9]+$ ]] || remaining=0
+
+    if (( remaining > 0 )); then
+        echo -e "${RED}✗ Blocked: ${remaining} unmet deliverable(s) in '${phase}'.${NC}" >&2
+        echo -e "${CYAN}Deliverables (mark done with: $0 check <n>):${NC}"
+        local i=1 line
+        while IFS= read -r line; do
+            echo -e "   [${i}] ${line#- }"
+            i=$(( i + 1 ))
+        done < <(get_phase_deliverables "$phase")
+        echo -e "${YELLOW}Override with:${NC} $0 next --force"
+        return 1
+    fi
+    return 0
+}
+
+#######################################
 # Append phase transition to handoff.md (G6 fix)
 #######################################
 append_to_handoff() {
@@ -291,7 +339,7 @@ show_status() {
         # Show phase progression
         echo -e "  ${BOLD}Progress:${NC}"
         local found_current=false
-        for phase in "${SDLC_PHASES[@]}"; do
+        for phase in ${SDLC_PHASES[@]+"${SDLC_PHASES[@]}"}; do
             if [[ "$phase" == "$current_phase" ]]; then
                 echo -e "    ${GREEN}► ${phase}${NC} (current)"
                 found_current=true
@@ -368,6 +416,9 @@ main() {
                 echo -e "Run ${CYAN}./scripts/sdlc.sh start${NC} first."
                 exit 1
             fi
+
+            # Hard deliverable gate (active once a goal is declared; --force overrides)
+            _deliverable_gate "$current_phase" "${details:-}" || exit 1
 
             # Show exit criteria for current phase before advancing
             echo -e "${CYAN}Exit criteria for ${current_phase}:${NC}"
@@ -470,6 +521,9 @@ main() {
                 exit 0
             fi
 
+            # Hard deliverable gate (active once a goal is declared; --force overrides)
+            _deliverable_gate "$current_phase" "${3:-}" || exit 1
+
             set_phase "$target_phase"
             echo -e "${GREEN}✅ Jumped to: ${target_phase}${NC} (from ${current_phase})"
 
@@ -516,7 +570,7 @@ main() {
 
             # G1 fix: Remove sdlc_phase AND clear sdlc-related state consistently
             if grep -q "^sdlc_phase:" "$STATE_FILE" 2>/dev/null; then
-                sed -i '/^sdlc_phase:/d' "$STATE_FILE"
+                sed_inplace '/^sdlc_phase:/d' "$STATE_FILE"
             fi
 
             # Also reset current_phase back to phase_1_planning to prevent
@@ -524,11 +578,69 @@ main() {
             if declare -f yaml_set > /dev/null 2>&1; then
                 yaml_set "$STATE_FILE" "current_phase" "phase_1_planning" 2>/dev/null || true
             else
-                sed -i 's/^current_phase:.*/current_phase: "phase_1_planning"/' "$STATE_FILE" 2>/dev/null || true
+                sed_inplace 's/^current_phase:.*/current_phase: "phase_1_planning"/' "$STATE_FILE" 2>/dev/null || true
             fi
 
             echo -e "${GREEN}SDLC state reset.${NC}"
             echo -e "Run ${CYAN}./scripts/sdlc.sh start${NC} to begin a new cycle."
+            ;;
+
+        goal)
+            if [[ -z "$details" ]]; then
+                local _g
+                _g=$(yaml_get "$STATE_FILE" "goal" 2>/dev/null || echo "")
+                [[ "$_g" == "null" ]] && _g=""
+                if [[ -z "$_g" ]]; then
+                    echo -e "${YELLOW}No goal declared.${NC} Set one with: ${CYAN}$0 goal \"<objective>\"${NC}"
+                else
+                    echo -e "${CYAN}Goal:${NC} ${_g}"
+                fi
+            else
+                yaml_set "$STATE_FILE" "goal" "$details" >/dev/null 2>&1 || true
+                echo -e "${GREEN}✓ Goal declared:${NC} ${details}"
+                echo -e "  Deliverable gating is now ${GREEN}active${NC} — use ${CYAN}$0 check <n>${NC} then ${CYAN}$0 next${NC}."
+            fi
+            ;;
+
+        check)
+            local current_phase
+            current_phase=$(get_phase)
+            if [[ "$current_phase" == "none" ]]; then
+                echo -e "${RED}Error: SDLC not started.${NC}"
+                exit 1
+            fi
+            local _total
+            _total=$(get_phase_deliverables "$current_phase" | wc -l | tr -d '[:space:]')
+            if [[ ! "$details" =~ ^[0-9]+$ ]]; then
+                echo -e "${RED}Usage: $0 check <deliverable-number>${NC}"
+                echo -e "${CYAN}Deliverables for ${current_phase}:${NC}"
+                local _i=1 _l
+                while IFS= read -r _l; do echo -e "   [${_i}] ${_l#- }"; _i=$(( _i + 1 )); done < <(get_phase_deliverables "$current_phase")
+                exit 1
+            fi
+            if (( details < 1 || details > _total )); then
+                echo -e "${RED}Error: deliverable number out of range (1..${_total}).${NC}"
+                exit 1
+            fi
+            declare -f mp_ensure > /dev/null 2>&1 && mp_ensure "sdlc" "$current_phase" "${_total:-0}"
+            declare -f mark_deliverable > /dev/null 2>&1 && mark_deliverable "sdlc" "$current_phase" "$details"
+            local _line
+            _line=$(get_phase_deliverables "$current_phase" | sed -n "${details}p")
+            echo -e "${GREEN}✓ Marked [${details}]:${NC} ${_line#- }"
+            local _rem=0
+            declare -f deliverables_remaining > /dev/null 2>&1 && _rem=$(deliverables_remaining "sdlc" "$current_phase" 2>/dev/null || echo 0)
+            if (( _rem == 0 )); then
+                echo -e "  ${GREEN}All deliverables met for ${current_phase}.${NC} Advance with ${CYAN}$0 next${NC}."
+            else
+                echo -e "  ${YELLOW}${_rem} remaining.${NC}"
+            fi
+            ;;
+
+        deliverables)
+            local _p="${details:-}"
+            [[ -z "$_p" ]] && _p="$(get_phase)"
+            [[ "$_p" == "none" || -z "$_p" ]] && _p="requirements"
+            get_phase_deliverables "$_p"
             ;;
 
         help|--help|-h)

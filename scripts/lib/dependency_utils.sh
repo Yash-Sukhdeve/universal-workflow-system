@@ -122,7 +122,7 @@ validate_bash_version() {
 validate_core_dependencies() {
     local missing=()
 
-    for dep in "${CORE_DEPS[@]}"; do
+    for dep in ${CORE_DEPS[@]+"${CORE_DEPS[@]}"}; do
         if ! command_exists "$dep"; then
             missing+=("$dep")
         fi
@@ -130,7 +130,7 @@ validate_core_dependencies() {
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         echo -e "${RED}Error: Missing required dependencies:${NC}" >&2
-        for dep in "${missing[@]}"; do
+        for dep in ${missing[@]+"${missing[@]}"}; do
             echo -e "  - $dep" >&2
         done
         return 1
@@ -147,7 +147,7 @@ validate_core_dependencies() {
 check_optional_dependencies() {
     local missing=()
 
-    for dep in "${OPTIONAL_DEPS[@]}"; do
+    for dep in ${OPTIONAL_DEPS[@]+"${OPTIONAL_DEPS[@]}"}; do
         if ! command_exists "$dep"; then
             missing+=("$dep")
         fi
@@ -155,7 +155,7 @@ check_optional_dependencies() {
 
     if [[ ${#missing[@]} -gt 0 ]] && [[ "${DEPENDENCY_UTILS_QUIET:-false}" != "true" ]]; then
         echo -e "${YELLOW}Note: Optional dependencies not found:${NC}" >&2
-        for dep in "${missing[@]}"; do
+        for dep in ${missing[@]+"${missing[@]}"}; do
             case "$dep" in
                 yq)
                     echo -e "  - yq (YAML parsing - using fallback)" >&2
@@ -196,7 +196,7 @@ validate_workflow_structure() {
     local essential_files=("state.yaml")
     local missing=()
 
-    for file in "${essential_files[@]}"; do
+    for file in ${essential_files[@]+"${essential_files[@]}"}; do
         if [[ ! -f "$workflow_dir/$file" ]]; then
             missing+=("$file")
         fi
@@ -204,7 +204,7 @@ validate_workflow_structure() {
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         echo -e "${RED}Error: Missing essential workflow files:${NC}" >&2
-        for file in "${missing[@]}"; do
+        for file in ${missing[@]+"${missing[@]}"}; do
             echo -e "  - $workflow_dir/$file" >&2
         done
         return 1
@@ -375,7 +375,7 @@ print_dependency_status() {
     # Core dependencies
     echo -e ""
     echo -e "  ${CYAN}Core Dependencies:${NC}"
-    for dep in "${CORE_DEPS[@]}"; do
+    for dep in ${CORE_DEPS[@]+"${CORE_DEPS[@]}"}; do
         if command_exists "$dep"; then
             echo -e "    ${GREEN}✓${NC} $dep"
         else
@@ -386,7 +386,7 @@ print_dependency_status() {
     # Optional dependencies
     echo -e ""
     echo -e "  ${CYAN}Optional Dependencies:${NC}"
-    for dep in "${OPTIONAL_DEPS[@]}"; do
+    for dep in ${OPTIONAL_DEPS[@]+"${OPTIONAL_DEPS[@]}"}; do
         if command_exists "$dep"; then
             local ver
             ver=$(get_command_version "$dep")

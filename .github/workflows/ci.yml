@@ -41,6 +41,59 @@ jobs:
           # Fail on critical errors only
           find scripts -name "*.sh" -type f -exec shellcheck -x -e SC1091 -S error {} \;
 
+      - name: Reject GNU-only constructs (macOS/BSD portability)
+        run: |
+          # `sed -i 's/..' f` fails on BSD sed: use sed_inplace (scripts/lib/portable.sh)
+          # `head -c -N` is GNU-only. Both broke every state write on macOS.
+          # `date +%N` prints a literal "N" on BSD (exit 0): use now_ms.
+          if grep -rnE "sed -i( |$)|head -c -[0-9]|date [^|;]*%[0-9]*N" scripts bin | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#|portable\.sh:'; then
+            echo "::error::GNU-only sed -i / head -c -N / date %N found; use scripts/lib/portable.sh"
+            exit 1
+          fi
+          # macOS /bin/bash is 3.2: no case modification, associative arrays, mapfile, namerefs
+          if grep -rnE '\$\{[A-Za-z_0-9]+(,,|\^\^)\}|declare -A|local -A|mapfile|readarray|declare -n|local -n' scripts bin | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; then
+            echo "::error::bash 4-only construct found; macOS ships bash 3.2"
+            exit 1
+          fi
+
+      - name: Lint user-facing entry points (warnings fail)
+        run: |
+          # These run on users' machines, so they get the stricter warning level
+          shellcheck -x -e SC1091 -S warning bin/uws install.sh \
+            claude-code-integration/install.sh plugins/uws/hooks/*.sh
+
+  # ============================================================================
+  # CLAUDE CODE PLUGIN / MARKETPLACE VALIDATION
+  # ============================================================================
+  plugin-validate:
+    name: Plugin Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Validate marketplace and plugin
+        run: |
+          # No credentials needed: validation is offline
+          claude plugin validate .
+          # The validator skips symlinked component dirs (agents/, scripts/, bin/),
+          # so validate a dereferenced copy: that is what the plugin cache holds.
+          materialized="$(mktemp -d)/uws"
+          cp -RL plugins/uws "$materialized"
+          claude plugin validate "$materialized"
+          test -x "$materialized/bin/uws"
+          test -x "$materialized/scripts/init_workflow.sh"
+          ls "$materialized"/agents/uws-*.md
+
   # ============================================================================
   # UNIT TESTS - Ubuntu
   # ============================================================================
@@ -197,7 +250,7 @@ jobs:
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [test-ubuntu, test-macos]
+    needs: [test-ubuntu, test-macos, plugin-validate]
     if: always()
 
     steps:
@@ -205,9 +258,13 @@ jobs:
         run: |
           echo "Ubuntu tests: ${{ needs.test-ubuntu.result }}"
           echo "macOS tests: ${{ needs.test-macos.result }}"
+          echo "Plugin manifests: ${{ needs.plugin-validate.result }}"
 
-          if [[ "${{ needs.test-ubuntu.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-macos.result }}" == "failure" ]]; then
+          # Require success: a skipped job (e.g. tests skipped because lint failed)
+          # must not count as passing.
+          if [[ "${{ needs.test-ubuntu.result }}" != "success" ]] || \
+             [[ "${{ needs.test-macos.result }}" != "success" ]] || \
+             [[ "${{ needs.plugin-validate.result }}" != "success" ]]; then
             echo "::error::Some tests failed"
             exit 1
           fi

@@ -34,7 +34,7 @@ teardown() {
 
 @test "validate_state_schema detects invalid phase" {
     create_minimal_state
-    sed -i 's/phase_1_planning/invalid_phase/' "${TEST_TMP_DIR}/.workflow/state.yaml"
+    sed -i.bak 's/phase_1_planning/invalid_phase/' "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     run validate_state_schema "${TEST_TMP_DIR}/.workflow/state.yaml"
 
@@ -45,7 +45,7 @@ teardown() {
 @test "validate_state_schema detects invalid checkpoint format" {
     create_minimal_state
     # The minimal state uses CP_INIT, not CP_1_001
-    sed -i 's/CP_INIT/INVALID_CP/' "${TEST_TMP_DIR}/.workflow/state.yaml"
+    sed -i.bak 's/CP_INIT/INVALID_CP/' "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     run validate_state_schema "${TEST_TMP_DIR}/.workflow/state.yaml"
 
@@ -57,7 +57,7 @@ teardown() {
 
     for type in "${types[@]}"; do
         create_minimal_state
-        sed -i "s/type: software/type: ${type}/" "${TEST_TMP_DIR}/.workflow/state.yaml"
+        sed -i.bak "s/type: software/type: ${type}/" "${TEST_TMP_DIR}/.workflow/state.yaml"
 
         run validate_state_schema "${TEST_TMP_DIR}/.workflow/state.yaml"
         assert_success
@@ -67,7 +67,7 @@ teardown() {
 @test "validate_state_schema detects invalid project type" {
     create_minimal_state
     # Value has quotes in the YAML file
-    sed -i 's/type: "hybrid"/type: "invalid_type"/' "${TEST_TMP_DIR}/.workflow/state.yaml"
+    sed -i.bak 's/type: "hybrid"/type: "invalid_type"/' "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     run validate_state_schema "${TEST_TMP_DIR}/.workflow/state.yaml"
 

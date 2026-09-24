@@ -8,6 +8,19 @@
 # ============================================================================
 
 # Get the project root directory
+
+# Nanoseconds since the epoch; BSD date has no %N (it prints a literal "N")
+if ! declare -f _uws_now_ns >/dev/null 2>&1; then
+_uws_now_ns() {
+    local t
+    t="$(date +%s%N 2>/dev/null || true)"
+    case "$t" in
+        ''|*[!0-9]*) perl -MTime::HiRes=time -e 'printf "%d\n", time() * 1e9' ;;
+        *) echo "$t" ;;
+    esac
+}
+fi
+
 DUAL_COMPAT_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export DUAL_COMPAT_PROJECT_ROOT
 
@@ -467,7 +480,7 @@ measure_handoff_time() {
 
     local start_time end_time elapsed
 
-    start_time=$(date +%s%N)
+    start_time=$(_uws_now_ns)
 
     # Run recovery
     if [[ -x "${dir}/scripts/recover_context.sh" ]]; then
@@ -478,7 +491,7 @@ measure_handoff_time() {
         WORKFLOW_DIR="${dir}/.workflow" "${DUAL_COMPAT_PROJECT_ROOT}/scripts/recover_context.sh" > /dev/null 2>&1
     fi
 
-    end_time=$(date +%s%N)
+    end_time=$(_uws_now_ns)
     elapsed=$(( (end_time - start_time) / 1000000 ))
 
     echo "$elapsed"

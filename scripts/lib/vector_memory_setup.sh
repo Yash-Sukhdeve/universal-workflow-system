@@ -437,14 +437,20 @@ setup_vector_memory() {
         return 0
     fi
 
-    # Interactive prompt (only if terminal attached and not skipped)
-    if [[ "$skip_prompt" != "skip_prompt" ]] && [[ -t 0 ]]; then
-        echo ""
-        echo "  Vector memory provides semantic search across sessions."
-        echo "  Requires ~1.5GB disk space for packages + model download."
-        read -p "  Install vector memory server? [Y/n]: " vm_confirm
-        if [[ "${vm_confirm:-}" =~ ^[Nn]$ ]]; then
-            echo -e "  ${YELLOW}Skipped. Set UWS_SKIP_VECTOR_MEMORY=true to always skip.${NC}"
+    # Opt-in only: this is a ~1.5GB download. Interactive runs ask (default No);
+    # non-interactive runs (agents, CI, piped input) install only with UWS_VECTOR_MEMORY=true.
+    if [[ "$skip_prompt" != "skip_prompt" ]] && [[ "${UWS_VECTOR_MEMORY:-}" != "true" ]]; then
+        if [[ -t 0 ]]; then
+            echo ""
+            echo "  Vector memory provides semantic search across sessions."
+            echo "  Requires ~1.5GB disk space for packages + model download."
+            read -r -p "  Install vector memory server? [y/N]: " vm_confirm || vm_confirm=""
+            if [[ ! "${vm_confirm:-}" =~ ^[Yy]$ ]]; then
+                echo -e "  ${YELLOW}Vector memory skipped. Install later: UWS_VECTOR_MEMORY=true uws init${NC}"
+                return 0
+            fi
+        else
+            echo -e "  ${YELLOW}Vector memory skipped (non-interactive; set UWS_VECTOR_MEMORY=true to install)${NC}"
             return 0
         fi
     fi
