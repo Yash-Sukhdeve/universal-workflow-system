@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Context hygiene
 
-what UWS injects into Claude's context at session start is small,
+What UWS injects into Claude's context at session start is small,
 correct, plain text and current.
 
 #### Added
@@ -60,7 +60,7 @@ correct, plain text and current.
 
 ### Installability
 
-every documented install path now produces a working setup, and CI
+Every documented install path now produces a working setup, and CI
 checks the artifacts a user's project receives rather than only this repository.
 
 #### Added
