@@ -91,7 +91,21 @@ teardown() {
 # REQUIRED FIELDS CHECK
 # =============================================================================
 
-@test "check_required_fields returns empty when all present" {
+@test "check_required_fields returns empty when all present (flat schema)" {
+    # The schema init_workflow.sh writes: flat top-level keys
+    cat > .workflow/state.yaml << 'EOF'
+project_type: "software"
+goal: ""
+current_phase: "phase_1_planning"
+current_checkpoint: "CP_1_001"
+last_updated: "2025-01-15T10:00:00"
+EOF
+
+    run check_required_fields .workflow/state.yaml
+    [ -z "$output" ]
+}
+
+@test "check_required_fields accepts legacy nested metadata.last_updated" {
     cat > .workflow/state.yaml << 'EOF'
 current_phase: "phase_1_planning"
 current_checkpoint: "CP_1_001"
@@ -125,14 +139,14 @@ EOF
     [[ "$output" == *"current_checkpoint"* ]]
 }
 
-@test "check_required_fields lists missing metadata.last_updated" {
+@test "check_required_fields lists missing last_updated by its current (flat) name" {
     cat > .workflow/state.yaml << 'EOF'
 current_phase: "phase_1_planning"
 current_checkpoint: "CP_1_001"
 EOF
 
     run check_required_fields .workflow/state.yaml
-    [[ "$output" == *"metadata.last_updated"* ]] || [[ "$output" == *"last_updated"* ]]
+    [ "$output" = "last_updated" ]
 }
 
 @test "check_required_fields handles missing file" {
@@ -204,6 +218,69 @@ EOF
 @test "calculate_state_score returns 0 for missing file" {
     run calculate_state_score .workflow/nonexistent.yaml
     [ "$output" -eq 0 ] || [ "$output" = "0" ]
+}
+
+@test "calculate_state_score is 100 for the flat schema written by init" {
+    cat > .workflow/state.yaml << 'EOF'
+project_type: "software"
+goal: ""
+current_phase: "phase_1_planning"
+current_checkpoint: "CP_1_001"
+last_updated: "2025-01-15T10:00:00"
+
+metadata:
+  version: "1.1.0"
+  workflow_version: "1.1.0"
+  created: "2025-01-15T10:00:00"
+EOF
+
+    run calculate_state_score .workflow/state.yaml
+    [ "$status" -eq 0 ]
+    [ "$output" -eq 100 ]
+}
+
+@test "calculate_state_score accepts unquoted scalars (yq-written state)" {
+    cat > .workflow/state.yaml << 'EOF'
+project_type: software
+current_phase: phase_1_planning
+current_checkpoint: CP_1_001
+last_updated: 2025-01-15T10:00:00
+metadata:
+  version: 1.1.0
+  created: 2025-01-15T10:00:00
+EOF
+
+    run calculate_state_score .workflow/state.yaml
+    [ "$output" -eq 100 ]
+}
+
+@test "calculate_state_score ignores fields of the obsolete nested schema" {
+    # session/health/active_agent blocks are not written by current UWS and
+    # must not be required for a complete score
+    cat > .workflow/state.yaml << 'EOF'
+project_type: "software"
+current_phase: "phase_1_planning"
+current_checkpoint: "CP_1_001"
+last_updated: "2025-01-15T10:00:00"
+metadata:
+  version: "1.1.0"
+  created: "2025-01-15T10:00:00"
+EOF
+
+    run calculate_state_score .workflow/state.yaml
+    [ "$output" -eq 100 ]
+    run check_required_fields .workflow/state.yaml
+    [ -z "$output" ]
+}
+
+@test "calculate_file_score is 100 with the files init creates (no checksums.yaml)" {
+    mkdir -p .workflow/agents .workflow/skills
+    touch .workflow/state.yaml .workflow/checkpoints.log .workflow/handoff.md \
+          .workflow/config.yaml .workflow/agents/registry.yaml .workflow/skills/catalog.yaml
+    rm -f .workflow/checksums.yaml
+
+    run calculate_file_score
+    [ "$output" -eq 100 ]
 }
 
 @test "calculate_state_score increases with more fields" {

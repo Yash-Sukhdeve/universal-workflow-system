@@ -152,7 +152,10 @@ CONTEXT=""
 if [[ -f "$WORKFLOW_DIR/state.yaml" ]]; then
     PHASE=$(grep -E "^current_phase:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | cut -d: -f2 | tr -d ' "' || echo "unknown")
     CHECKPOINT=$(grep -E "^current_checkpoint:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | cut -d: -f2 | tr -d ' "' || echo "none")
-    PROJECT_TYPE=$(grep -E "^  type:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || echo "unknown")
+    # Flat key (current schema); nested project.type only for old state files
+    PROJECT_TYPE=$(grep -E "^project_type:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || true)
+    [[ -z "$PROJECT_TYPE" ]] && PROJECT_TYPE=$(grep -E "^  type:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || true)
+    PROJECT_TYPE="${PROJECT_TYPE:-unknown}"
 
     CONTEXT+="## Workflow State\n"
     CONTEXT+="- Phase: ${PHASE}\n"
@@ -162,7 +165,8 @@ fi
 
 # Read recent checkpoints
 if [[ -f "$WORKFLOW_DIR/checkpoints.log" ]]; then
-    RECENT=$(tail -3 "$WORKFLOW_DIR/checkpoints.log" 2>/dev/null | grep -v "^#" || echo "")
+    # Real checkpoints only: no comments, INIT/AUTO markers or AGENT_*/SKILL_* events
+    RECENT=$(grep -E '^[^#].*\|[[:space:]]*CP_[A-Za-z0-9_]+[[:space:]]*\|' "$WORKFLOW_DIR/checkpoints.log" 2>/dev/null | tail -3 || true)
     if [[ -n "$RECENT" ]]; then
         CONTEXT+="## Recent Checkpoints\n\`\`\`\n${RECENT}\n\`\`\`\n\n"
     fi

@@ -67,6 +67,7 @@ source_lib "precondition_utils.sh" || true
 source_lib "checksum_utils.sh" || true
 source_lib "completeness_utils.sh" || true
 source_lib "decision_utils.sh" || true
+source_lib "handoff_utils.sh" || true
 
 # Color codes
 readonly GREEN='\033[0;32m'
@@ -172,19 +173,27 @@ create_checkpoint() {
         timestamp="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
     fi
 
+    # Which last_updated key this state file uses: the flat top-level key
+    # (init_workflow.sh schema) unless only the legacy nested one exists.
+    local updated_key="last_updated"
+    if ! grep -q '^last_updated:' ${WORKFLOW_DIR}/state.yaml 2>/dev/null \
+        && sed -n '/^metadata:/,/^[^ ]/p' ${WORKFLOW_DIR}/state.yaml 2>/dev/null | grep -q '^  last_updated:'; then
+        updated_key="metadata.last_updated"
+    fi
+
     # Update state file atomically
     if declare -f atomic_yaml_set > /dev/null 2>&1; then
         atomic_yaml_set ${WORKFLOW_DIR}/state.yaml "current_checkpoint" "$checkpoint_id" || {
             echo -e "${RED}Error: Failed to update state file atomically${NC}"
             return 1
         }
-        atomic_yaml_set ${WORKFLOW_DIR}/state.yaml "metadata.last_updated" "$timestamp"
+        atomic_yaml_set ${WORKFLOW_DIR}/state.yaml "$updated_key" "$timestamp"
     elif declare -f yaml_set > /dev/null 2>&1; then
         yaml_set ${WORKFLOW_DIR}/state.yaml "current_checkpoint" "$checkpoint_id" || {
             echo -e "${RED}Error: Failed to update state file${NC}"
             return 1
         }
-        yaml_set ${WORKFLOW_DIR}/state.yaml "metadata.last_updated" "$timestamp"
+        yaml_set ${WORKFLOW_DIR}/state.yaml "$updated_key" "$timestamp"
     else
         # Fallback to sed with backup - using safe escaping
         cp ${WORKFLOW_DIR}/state.yaml ${WORKFLOW_DIR}/state.yaml.bak
@@ -236,6 +245,15 @@ create_checkpoint() {
         # Update progress using sed on the nested YAML structure
         # Match the phase block, then update the progress line within it
         sed_inplace "/^  ${_phase_key}:/,/^  [^ ]/{s/^\(    progress: \).*/\1${_progress}/;}" ${WORKFLOW_DIR}/state.yaml
+    fi
+
+    # Refresh the UWS-managed summary block of handoff.md (date, phase,
+    # checkpoint, goal) so the handoff never lags the state. Human-written
+    # sections are left untouched. Non-fatal: a checkpoint must not fail
+    # because the handoff could not be refreshed.
+    if declare -f uws_handoff_sync > /dev/null 2>&1; then
+        uws_handoff_sync "${WORKFLOW_DIR}/handoff.md" "${WORKFLOW_DIR}/state.yaml" \
+            || echo -e "  ${YELLOW}Warning: could not refresh handoff.md summary${NC}" >&2
     fi
 
     # Create checkpoint snapshot directory structure (v2 format)

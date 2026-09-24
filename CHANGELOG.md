@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Context hygiene: what UWS injects into Claude's context at session start is small,
+correct, plain text and current.
+
+### Added
+- `recover_context.sh --hook` (also `uws recover --hook`): one line of SessionStart
+  hook JSON with a plain-text summary capped at 1.2 KB (goal, phases, checkpoint, the
+  last three real checkpoints, open next actions and blockers from `handoff.md`, git
+  branch and counts). Read-only, silent outside UWS projects. The plugin's
+  SessionStart hook and this repository's `.claude/settings.json` both use it
+- `handoff.md` now has a UWS-managed summary block between
+  `<!-- uws:managed:start -->` / `<!-- uws:managed:end -->`, rendered from
+  `state.yaml` and refreshed on every checkpoint, phase change and goal change;
+  everything outside the block is never rewritten. Older handoffs are migrated on the
+  first refresh (their "Last Session Summary" section becomes the block)
+- `tests/integration/test_context_hygiene.bats` (23 tests)
+
+### Changed
+- The SessionStart injection for this repository's own state dropped from 5,815 bytes
+  (86 lines, 69 ANSI escapes, emoji, box drawing) to 1,172 bytes of JSON
+- Human-mode `recover_context.sh` prints no ANSI colour when stdout is not a terminal
+  or `NO_COLOR` is set, and its suggestions use `uws ...` commands
+- `init` writes a handoff that states facts (project type, init date) instead of
+  "Ready to begin planning phase", and resumes with `uws recover` / `/uws:recover`
+  instead of `./scripts/recover_context.sh`, which user projects do not have
+
+### Fixed
+- Recovery read `project.type` and `metadata.last_updated`, but `state.yaml` uses flat
+  keys, so it showed "Project Type: null" and "Last Updated: null"
+- Completeness scored an obsolete nested schema (`project.name`, `session.*`,
+  `health.*`, ...), so every current project showed "61% PARTIAL"; a freshly
+  initialized project now scores 100% (legacy nested keys are still accepted)
+- `checkpoint create` wrote `metadata.last_updated`, leaving the flat `last_updated`
+  stale; it now updates whichever key the state file uses
+- "Recent Checkpoints" listed the `# Format:` comment, `INIT`/`AUTO` markers and
+  `AGENT_*`/`SKILL_*` events; only `| CP_` entries are shown (also in the installer's
+  SessionStart hook, which additionally read the project type from the flat key)
+
 Installability: every documented install path now produces a working setup, and CI
 checks the artifacts a user's project receives rather than only this repository.
 
