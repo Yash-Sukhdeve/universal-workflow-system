@@ -66,7 +66,6 @@ teardown() {
     # Verify all required directories exist
     assert_dir_exists "${TEST_TMP_DIR}/.workflow"
     assert_dir_exists "${TEST_TMP_DIR}/.workflow/agents"
-    assert_dir_exists "${TEST_TMP_DIR}/.workflow/skills"
     assert_dir_exists "${TEST_TMP_DIR}/phases/phase_1_planning"
     assert_dir_exists "${TEST_TMP_DIR}/phases/phase_2_implementation"
     assert_dir_exists "${TEST_TMP_DIR}/artifacts"
@@ -87,17 +86,25 @@ teardown() {
 }
 
 @test "E2E: ML pipeline agent transition - researcher to implementer" {
-    # Activate researcher
-    run "${TEST_TMP_DIR}/scripts/activate_agent.sh" researcher
-    [ "$status" -eq 0 ] || [ "$status" -eq 1 ]  # May fail gracefully in test env
+    # Agents are dispatched as subagents; orchestrate.sh records each dispatch
+    # with record_active_agent (state.yaml active_agent + checkpoints.log).
+    source "${SCRIPTS_DIR}/lib/workflow_routing.sh"
+    run record_active_agent researcher "${TEST_TMP_DIR}/.workflow/state.yaml"
+    [ "$status" -eq 0 ]
+    [ "$(get_active_agent "${TEST_TMP_DIR}/.workflow/state.yaml")" = "researcher" ]
 
-    # Create researcher workspace
+    # Researcher output lands in its workspace
     mkdir -p "${TEST_TMP_DIR}/workspace/researcher"
     echo "Literature review completed" > "${TEST_TMP_DIR}/workspace/researcher/notes.md"
 
     # Transition to implementer
-    run "${TEST_TMP_DIR}/scripts/activate_agent.sh" implementer
-    [ "$status" -eq 0 ] || [ "$status" -eq 1 ]
+    run record_active_agent implementer "${TEST_TMP_DIR}/.workflow/state.yaml"
+    [ "$status" -eq 0 ]
+    [ "$(get_active_agent "${TEST_TMP_DIR}/.workflow/state.yaml")" = "implementer" ]
+    # ML project metadata survives the rewrite
+    grep -q 'type: "ml"' "${TEST_TMP_DIR}/.workflow/state.yaml"
+    [ -f "${TEST_TMP_DIR}/workspace/researcher/notes.md" ]
+    [ "$(grep -c 'AGENT_DISPATCHED' "${TEST_TMP_DIR}/.workflow/checkpoints.log")" -eq 2 ]
 }
 
 @test "E2E: Checkpoint creation during ML workflow" {

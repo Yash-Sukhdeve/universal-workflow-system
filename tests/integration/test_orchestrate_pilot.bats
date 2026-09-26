@@ -56,6 +56,18 @@ teardown() { teardown_test_environment; }
     grep -q "Deliverables" workspace/researcher/TASK.md
 }
 
+@test "orchestrate dispatch records the active agent (state.yaml, checkpoints.log, handoff)" {
+    run "${SCRIPTS_DIR}/orchestrate.sh" dispatch "Build a face-unlock system"
+    assert_success
+    source "${SCRIPTS_DIR}/lib/workflow_routing.sh"
+    [ "$(get_active_agent .workflow/state.yaml)" = "researcher" ]
+    grep -q '^  status: "active"$' .workflow/state.yaml
+    tail -1 .workflow/checkpoints.log | grep -q '| AGENT_DISPATCHED | researcher$'
+    grep -q -- '- \*\*Active agent\*\*: researcher' .workflow/handoff.md
+    # the retired persona file is never written
+    [ ! -e .workflow/agents/active.yaml ]
+}
+
 @test "the uws-researcher subagent definition exists and embeds the persona" {
     [ -f "${PROJECT_ROOT}/.claude/agents/uws-researcher.md" ]
     grep -q "^name: uws-researcher" "${PROJECT_ROOT}/.claude/agents/uws-researcher.md"

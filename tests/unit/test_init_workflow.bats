@@ -61,12 +61,18 @@ teardown() {
     [[ -d "${TEST_TMP_DIR}/.workflow/agents" ]]
 }
 
-@test "init_workflow.sh creates skills directory" {
+@test "init_workflow.sh creates no retired agent/skill artifacts" {
+    # skills/ (catalog, enabled list) and agents/active.yaml belonged to the
+    # retired `uws skill` / `uws agent` commands; nothing reads them.
     rm -rf "${TEST_TMP_DIR}/.workflow"
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -d "${TEST_TMP_DIR}/.workflow/skills" ]]
+    [ -f "${TEST_TMP_DIR}/.workflow/state.yaml" ]
+    [ ! -e "${TEST_TMP_DIR}/.workflow/skills" ]
+    [ ! -e "${TEST_TMP_DIR}/.workflow/agents/active.yaml" ]
+    run grep -E "skill_chains_enabled|auto_discover|auto_activate" "${TEST_TMP_DIR}/.workflow/config.yaml"
+    [ "$status" -ne 0 ]
 }
 
 # ============================================================================
@@ -270,15 +276,27 @@ EOF
 }
 
 # ============================================================================
-# SKILL CATALOG TESTS
+# CLI WRAPPER TESTS
 # ============================================================================
 
-@test "init_workflow.sh creates skill catalog" {
-    rm -rf "${TEST_TMP_DIR}/.workflow"
+@test "generated ./uws wrapper retires agent/skill and routes orchestrate" {
+    rm -rf "${TEST_TMP_DIR}/.workflow" "${TEST_TMP_DIR}/uws"
 
-    run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
+    UWS_NO_WRAPPER=false run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
+    [ -x "${TEST_TMP_DIR}/uws" ]
 
-    [[ -f "${TEST_TMP_DIR}/.workflow/skills/catalog.yaml" ]]
+    run "${TEST_TMP_DIR}/uws" agent researcher
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"retired"* ]]
+    [[ "$output" == *"orchestrate dispatch"* ]]
+
+    run "${TEST_TMP_DIR}/uws" skill testing
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Skills are native Claude Code skills"* ]]
+
+    run "${TEST_TMP_DIR}/uws" orchestrate help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"dispatch"* ]]
 }
 
 # ============================================================================

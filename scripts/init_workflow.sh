@@ -146,9 +146,7 @@ create_workflow_structure() {
     echo "🏗️  Creating workflow structure..."
     
     # Create directories
-    mkdir -p .workflow/{agents,skills,knowledge,scripts,templates}
-    mkdir -p .workflow/agents/{configs,memory}
-    mkdir -p .workflow/skills/{definitions,chains}
+    mkdir -p .workflow/{agents,knowledge,scripts,templates}
     mkdir -p phases/{phase_1_planning,phase_2_implementation,phase_3_validation,phase_4_delivery,phase_5_maintenance}
     mkdir -p {artifacts,workspace,archive}
     
@@ -339,10 +337,11 @@ validate_workflow_scripts() {
 
     # Check that required scripts exist
     local required_scripts=(
-        "activate_agent.sh"
         "checkpoint.sh"
-        "enable_skill.sh"
+        "orchestrate.sh"
         "recover_context.sh"
+        "research.sh"
+        "sdlc.sh"
         "status.sh"
     )
 
@@ -380,13 +379,8 @@ workflow:
   state_backup: true
   
 agents:
-  auto_activate: true
   default_agent: "$([ "$PROJECT_TYPE" == "research" ] && echo "researcher" || echo "implementer")"
-  
-skills:
-  auto_discover: true
-  skill_chains_enabled: true
-  
+
 git:
   auto_commit_state: false
   branch_naming: "type/description"
@@ -462,89 +456,6 @@ EOF
     echo "  ✓ Agent registry initialized"
 }
 
-# Initialize skill catalog
-initialize_skill_catalog() {
-    echo "📚 Initializing skill catalog..."
-
-    cat > .workflow/skills/catalog.yaml << 'EOF'
-# Skill Catalog - Available Skills
-
-skills:
-  # Research Skills
-  literature_review:
-    description: "Search and analyze academic literature"
-    agent: researcher
-
-  experimental_design:
-    description: "Design experiments and studies"
-    agent: researcher
-
-  statistical_validation:
-    description: "Statistical analysis and validation"
-    agent: researcher
-
-  # Architecture Skills
-  system_design:
-    description: "High-level system architecture design"
-    agent: architect
-
-  api_design:
-    description: "API design and documentation"
-    agent: architect
-
-  # Implementation Skills
-  code_generation:
-    description: "Generate code from specifications"
-    agent: implementer
-
-  debugging:
-    description: "Debug and fix issues"
-    agent: implementer
-
-  testing:
-    description: "Write and run tests"
-    agent: implementer
-
-  # Experiment Skills
-  benchmarking:
-    description: "Performance benchmarking"
-    agent: experimenter
-
-  data_analysis:
-    description: "Analyze experimental data"
-    agent: experimenter
-
-  # Optimization Skills
-  performance_profiling:
-    description: "Profile and analyze performance"
-    agent: optimizer
-
-  quantization:
-    description: "Model quantization for efficiency"
-    agent: optimizer
-
-  # Deployment Skills
-  ci_cd:
-    description: "Continuous integration and deployment"
-    agent: deployer
-
-  containerization:
-    description: "Docker and container management"
-    agent: deployer
-
-  # Documentation Skills
-  technical_writing:
-    description: "Write technical documentation"
-    agent: documenter
-
-  api_documentation:
-    description: "Generate API documentation"
-    agent: documenter
-EOF
-
-    echo "  ✓ Skill catalog initialized"
-}
-
 # Create uws CLI wrapper in the project root
 create_uws_wrapper() {
     echo "Creating uws CLI wrapper..."
@@ -579,8 +490,12 @@ case "\$CMD" in
     checkpoint)   "\$UWS_SCRIPTS/checkpoint.sh" "\$@" ;;
     sdlc)         "\$UWS_SCRIPTS/sdlc.sh" "\$@" ;;
     research)     "\$UWS_SCRIPTS/research.sh" "\$@" ;;
-    agent)        "\$UWS_SCRIPTS/activate_agent.sh" "\$@" ;;
-    skill)        "\$UWS_SCRIPTS/enable_skill.sh" "\$@" ;;
+    orchestrate)  "\$UWS_SCRIPTS/orchestrate.sh" "\$@" ;;
+    dashboard)    "\$UWS_SCRIPTS/start_dashboard.sh" "\$@" ;;
+    agent|skill)
+        echo "uws \$CMD: retired. Agents are Claude Code subagents: run './uws orchestrate dispatch \"<task>\"' or use /agents. Skills are native Claude Code skills." >&2
+        exit 2
+        ;;
     recover)      "\$UWS_SCRIPTS/recover_context.sh" "\$@" ;;
     init)         "\$UWS_SCRIPTS/init_workflow.sh" "\$@" ;;
     spiral)       "\$UWS_SCRIPTS/spiral.sh" "\$@" ;;
@@ -600,9 +515,8 @@ case "\$CMD" in
         echo "  checkpoint [msg]      Create checkpoint"
         echo "  recover               Recover context after break"
         echo ""
-        echo "Agents & Skills:"
-        echo "  agent <name>          Activate agent"
-        echo "  skill <name>          Enable/disable skill"
+        echo "Agents:"
+        echo "  orchestrate dispatch \"<task>\"  Route the current phase to its subagent"
         echo ""
         echo "Other:"
         echo "  pm [cmd]              Project management"
@@ -610,6 +524,7 @@ case "\$CMD" in
         echo "  review [cmd]          Review changes"
         echo "  detect                Re-detect project type"
         echo "  spiral [action]       Spiral model"
+        echo "  dashboard             Start the review/PM dashboard (http://localhost:8080)"
         ;;
     *)
         echo "Unknown command: \$CMD"
@@ -693,7 +608,6 @@ main() {
     create_project_config
     initialize_knowledge_base
     initialize_agent_registry
-    initialize_skill_catalog
 
     # Create uws CLI wrapper (the Claude Code plugin sets UWS_NO_WRAPPER: its
     # scripts live in a versioned cache dir that a baked-in path would outlive)
@@ -724,7 +638,7 @@ main() {
     echo "  ${u} sdlc [action]       - SDLC workflow"
     echo "  ${u} research [action]   - Research workflow"
     echo "  ${u} checkpoint create [msg] - Create checkpoint"
-    echo "  ${u} agent [name]        - Activate agent"
+    echo "  ${u} orchestrate dispatch \"<task>\" - Hand the current phase to its subagent"
     echo "  ${u} recover             - Recover context"
     echo "═══════════════════════════════════════════════════════════════"
 }

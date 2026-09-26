@@ -92,12 +92,13 @@ answer `y` at the prompt, or set `UWS_VECTOR_MEMORY=true` for non-interactive ru
 | Component | Description | Location |
 |-----------|-------------|----------|
 | **Workflow Scripts** | Core Bash scripts for state management | `scripts/` |
-| **Multi-Agent System** | 7 specialized AI agents | `.workflow/agents/` |
+| **Multi-Agent System** | 7 role subagents, dispatched per phase | `.claude/agents/`, `scripts/orchestrate.sh` |
 | **SDLC Workflow** | Software development lifecycle | `scripts/sdlc.sh` |
 | **Research Workflow** | Scientific method workflow | `scripts/research.sh` |
 | **Claude Code Plugin** | Slash commands, hooks & subagents | `plugins/uws/` |
 | **Gemini Integration** | Antigravity workflows | `antigravity-integration/` |
 | **Vector Memory** | Semantic search across sessions | `scripts/lib/vector_memory_setup.sh` |
+| **Dashboard** | Local review/PM page (change requests, board, active agent) | `dashboard/`, `uws dashboard` |
 | **Test Suite** | BATS unit, integration and system tests | `tests/` |
 
 > Company OS (the FastAPI backend + React dashboard formerly built in this repo) has
@@ -142,10 +143,10 @@ uws init [type]              # Initialize UWS (software|research|ml|llm|...)
 uws status [-v|-c]           # Show workflow status
 uws checkpoint create "msg"  # Create checkpoint
 uws recover                  # Recover context after break
-uws agent <name>             # Activate agent (researcher|architect|implementer|...)
-uws skill <name>             # Enable/disable skills
 uws sdlc [cmd]               # SDLC workflow (status|start|next|fail|reset)
 uws research [cmd]           # Research workflow (status|start|next|reject|reset)
+uws orchestrate dispatch "<task>"   # Hand the current phase to its subagent
+uws dashboard                # Serve the review/PM dashboard on http://localhost:8080
 uws help                     # Show all commands
 ```
 
@@ -178,11 +179,8 @@ Core scripts for managing workflow state.
 # Recover context after session break
 ./scripts/recover_context.sh
 
-# Activate an agent
-./scripts/activate_agent.sh researcher
-
-# Enable skills
-./scripts/enable_skill.sh testing debugging
+# Hand the current phase to its subagent (writes the brief, records the agent)
+./scripts/orchestrate.sh dispatch "Write the requirements"
 ```
 
 **Script Reference:**
@@ -193,8 +191,8 @@ Core scripts for managing workflow state.
 | `status.sh` | Show workflow status | `./scripts/status.sh` |
 | `checkpoint.sh` | Manage checkpoints | `./scripts/checkpoint.sh create\|list\|restore` |
 | `recover_context.sh` | Recover after breaks | `./scripts/recover_context.sh` |
-| `activate_agent.sh` | Switch active agent | `./scripts/activate_agent.sh <agent>` |
-| `enable_skill.sh` | Enable agent skills | `./scripts/enable_skill.sh <skill>...` |
+| `orchestrate.sh` | Route a phase to its subagent | `./scripts/orchestrate.sh dispatch\|collect\|status` |
+| `start_dashboard.sh` | Serve the review/PM dashboard | `./scripts/start_dashboard.sh` |
 | `sdlc.sh` | SDLC workflow | `./scripts/sdlc.sh status\|start\|next` |
 | `research.sh` | Research workflow | `./scripts/research.sh status\|start\|next` |
 
@@ -202,33 +200,37 @@ Core scripts for managing workflow state.
 
 ### 2. Multi-Agent System
 
-Seven specialized agents for different development tasks.
+Seven role agents, each a real Claude Code subagent (`.claude/agents/uws-<role>.md`,
+generated from `docs/personas/` by `scripts/gen_subagents.sh` and shipped by the plugin).
+They run in their own context; the main session does not role-play them.
 
-| Agent | Icon | Capabilities | Primary Skills |
-|-------|------|--------------|----------------|
-| **Researcher** | 🔬 | Literature review, experiments | `literature_review`, `statistical_validation` |
-| **Architect** | 🏗️ | System design, APIs | `system_design`, `api_design` |
-| **Implementer** | 💻 | Code development | `code_generation`, `testing` |
-| **Experimenter** | 🧪 | Benchmarks, A/B tests | `experimental_design`, `benchmarking` |
-| **Optimizer** | ⚡ | Performance tuning | `profiling`, `quantization` |
-| **Deployer** | 🚀 | CI/CD, containers | `containerization`, `ci_cd` |
-| **Documenter** | 📝 | Documentation, papers | `technical_writing`, `paper_writing` |
+| Agent | Icon | Used for |
+|-------|------|----------|
+| **Researcher** | 🔬 | Requirements, literature review, gap analysis |
+| **Architect** | 🏗️ | System and API design |
+| **Implementer** | 💻 | Code and tests |
+| **Experimenter** | 🧪 | Verification, benchmarks |
+| **Optimizer** | ⚡ | Performance work |
+| **Deployer** | 🚀 | CI/CD, deployment |
+| **Documenter** | 📝 | Documentation |
 
 **Usage:**
 
 ```bash
-# Activate an agent
-./scripts/activate_agent.sh researcher
+# Hand the current SDLC/research phase to the agent that owns it: writes
+# workspace/<role>/TASK.md, records the agent in state.yaml, prints a DISPATCH line
+./scripts/orchestrate.sh dispatch "Write the requirements"
 
-# Check current agent
-./scripts/activate_agent.sh status
+# After the subagent has written its artifact, stage it for human review
+./scripts/orchestrate.sh collect "researcher: requirements"
 
-# Deactivate agent
-./scripts/activate_agent.sh deactivate
-
-# View agent capabilities
-cat .workflow/agents/registry.yaml
+# Which agent owns the current phase?
+./scripts/orchestrate.sh status
 ```
+
+In Claude Code, `/uws-orchestrate` runs this loop; `/agents` lists the subagents. The
+earlier `activate_agent.sh` / `enable_skill.sh` (persona role-play and an enabled-skills
+list) were retired; `uws agent` and `uws skill` now print a pointer here.
 
 ---
 
@@ -298,8 +300,8 @@ hypothesis → literature_review → experiment_design → data_collection → a
 # 3. Read handoff notes
 cat .workflow/handoff.md
 
-# 4. Activate appropriate agent
-./scripts/activate_agent.sh implementer
+# 4. Hand the current phase to its subagent
+./scripts/orchestrate.sh dispatch "Implement user authentication"
 
 # 5. Work on your tasks...
 
@@ -319,8 +321,7 @@ When using with Claude Code, these slash commands are available:
 | `/uws-status` | Show workflow status |
 | `/uws-checkpoint <msg>` | Create checkpoint |
 | `/uws-recover` | Recover context |
-| `/uws-agent <name>` | Activate agent |
-| `/uws-skill <name>` | Enable/disable skill |
+| `/uws-orchestrate` | Dispatch the current phase to its subagent |
 | `/uws-sdlc <cmd>` | SDLC workflow |
 | `/uws-research <cmd>` | Research workflow |
 | `/uws-handoff` | Prepare session handoff |
@@ -361,7 +362,7 @@ uws-research     # Research workflow
 
 | Component | Tests | Framework |
 |-----------|-------|-----------|
-| Core Scripts | 773 | BATS |
+| Core Scripts | 701 | BATS |
 
 ---
 
@@ -378,8 +379,7 @@ universal-workflow-system/
 ├── .workflow/                  # Workflow state (per-project)
 │   ├── state.yaml              # Current phase/checkpoint
 │   ├── handoff.md              # Session handoff notes
-│   ├── agents/                 # Agent registry & state
-│   ├── skills/                 # Skill definitions
+│   ├── agents/                 # Agent registry
 │   └── checkpoints/            # Checkpoint snapshots
 ├── scripts/                    # Core workflow scripts
 │   ├── lib/                    # Utility libraries
@@ -388,7 +388,9 @@ universal-workflow-system/
 │   ├── status.sh               # Show status
 │   ├── checkpoint.sh           # Manage checkpoints
 │   ├── sdlc.sh                 # SDLC workflow
-│   └── research.sh             # Research workflow
+│   ├── research.sh             # Research workflow
+│   └── orchestrate.sh          # Phase -> subagent dispatch
+├── dashboard/                  # Static review/PM dashboard (uws dashboard)
 ├── antigravity-integration/    # Gemini Antigravity
 ├── tests/                      # Test suites
 │   ├── unit/                   # Unit tests
@@ -495,11 +497,12 @@ $ uws init software
   ✓ State file initialized
   ✓ Checkpoint system ready
 
-$ uws agent architect
-  ✓ Activated agent: architect
-
 $ uws sdlc start
   ✓ SDLC started at: requirements
+
+$ uws orchestrate dispatch "Write the requirements"
+  ✓ Prepared dispatch for researcher (sdlc:requirements)
+  DISPATCH: agent=researcher subagent=.claude/agents/uws-researcher.md ...
 
 $ uws sdlc next
   ✓ Advanced to: design
@@ -509,13 +512,13 @@ $ uws checkpoint create "Architecture designed"
 
 $ uws status
   Phase: phase_1_planning
-  Agent: architect
+  Agent: researcher
   Checkpoint: CP_1_002
   SDLC: design
 
-$ uws sdlc next && uws agent implementer
+$ uws sdlc next && uws orchestrate dispatch "Build the parser"
   ✓ Advanced to: implementation
-  ✓ Activated agent: implementer
+  ✓ Prepared dispatch for implementer (sdlc:implementation)
 ```
 
 Run the full automated walkthroughs:

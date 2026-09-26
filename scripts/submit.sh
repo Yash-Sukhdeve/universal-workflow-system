@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Universal Workflow System - Robust Submission (Company OS)
+# Universal Workflow System - Robust Submission
 #
 # Usage: ./scripts/submit.sh "Summary Message" [Ticket-ID]
 #
@@ -20,14 +20,13 @@ PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 UWS_DIR="${PROJECT_ROOT}/.uws"
 STAGING_DIR="${UWS_DIR}/crs"
 NOTIFICATIONS_FILE="${PROJECT_ROOT}/NOTIFICATIONS.md"
-ACTIVE_AGENT_FILE="${WORKFLOW_DIR}/agents/active.yaml"
-
-# 1. Identify Active Agent
-if [[ -f "$ACTIVE_AGENT_FILE" ]]; then
-    AGENT=$(grep "current_agent:" "$ACTIVE_AGENT_FILE" | cut -d: -f2 | tr -d ' "')
-else
+# 1. Identify the active agent: the one orchestrate.sh last dispatched
+#    (state.yaml active_agent.name, written by record_active_agent).
+YAML_UTILS_QUIET=true source "${SCRIPT_DIR}/lib/workflow_routing.sh"
+AGENT="$(get_active_agent "${WORKFLOW_DIR}/state.yaml")"
+if [[ -z "$AGENT" ]]; then
     AGENT="unknown"
-    echo "Warning: No active agent found. Submitting as 'unknown'."
+    echo "Warning: No active agent recorded (run: uws orchestrate dispatch \"<task>\"). Submitting as 'unknown'."
 fi
 
 WORKSPACE_DIR="${PROJECT_ROOT}/workspace/${AGENT}"

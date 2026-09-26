@@ -54,13 +54,22 @@ teardown() {
 }
 
 # ============================================================================
-# AGENT ACTIVATION PERFORMANCE
+# AGENT DISPATCH-RECORD PERFORMANCE
+# activate_agent.sh was retired; its surviving job (recording which agent is
+# active) is record_active_agent, which orchestrate.sh calls on dispatch.
 # ============================================================================
+
+record_agent() {
+    bash -c 'source "$1/lib/workflow_routing.sh" && record_active_agent "$2" "$3"' \
+        _ "${SCRIPTS_DIR}" "$1" "${TEST_TMP_DIR}/.workflow/state.yaml"
+}
 
 @test "PERF: Agent activation under 500ms" {
     local start=$(date +%s%N)
-    run "${TEST_TMP_DIR}/scripts/activate_agent.sh" "implementer"
+    run record_agent "implementer"
     local end=$(date +%s%N)
+    [ "$status" -eq 0 ]
+    grep -q '^  name: "implementer"$' "${TEST_TMP_DIR}/.workflow/state.yaml"
     local elapsed_ms=$(( (end - start) / 1000000 ))
 
     [ "$elapsed_ms" -lt "$AGENT_ACTIVATION_TARGET_MS" ] || \
@@ -73,7 +82,7 @@ teardown() {
 
     for agent in "${agents[@]}"; do
         local start=$(date +%s%N)
-        run "${TEST_TMP_DIR}/scripts/activate_agent.sh" "$agent"
+        run record_agent "$agent"
         local end=$(date +%s%N)
         local elapsed_ms=$(( (end - start) / 1000000 ))
         ((elapsed_ms > max_ms)) && max_ms=$elapsed_ms

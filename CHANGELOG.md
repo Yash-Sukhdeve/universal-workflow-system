@@ -145,20 +145,61 @@ and Company OS can be versioned and installed independently.
   moved to `Yash-Sukhdeve/uws-company-os` with no UWS-side functionality lost (no
   UWS script ever imported from `company_os/`)
 - The `uws company-os [start|dashboard]` subcommand and its help text
+- The role-play agent and skill commands, which predate Claude Code subagents and
+  skills: `scripts/activate_agent.sh` (made the main session adopt a persona by
+  writing `.workflow/agents/active.yaml`, which a SessionStart hook told the model to
+  read), `scripts/enable_skill.sh` (kept an enabled-skills list that nothing used),
+  `.claude/commands/uws-agent.md`, `.claude/commands/uws-skill.md`, the Antigravity
+  `uws-agent`/`uws-skill` workflows (`uws-skill` only appended a comment to
+  `state.yaml`), the "ACTIVE AGENT ... Read .workflow/agents/active.yaml" SessionStart
+  hook in `.claude/settings.json`, and their tests (`tests/unit/test_activate_agent.bats`,
+  `tests/unit/test_enable_skill.bats`, `tests/integration/test_agent_transitions.bats`).
+  `uws agent` / `uws skill` (and `./uws agent|skill`) now print a one-line pointer to
+  `uws orchestrate dispatch` / `/agents` / native skills and exit 2
+- `init` no longer creates `.workflow/skills/` (catalog, definitions, chains) or
+  `.workflow/agents/{configs,memory}`, and `config.yaml` no longer carries the unused
+  `agents.auto_activate` and `skills:` keys; the installer's `state.yaml` has no
+  `enabled_skills`. Checkpoints no longer snapshot or restore `agents/active.yaml` /
+  `skills/enabled.yaml`. The now-unused `validate_skill`, `require_skill_available`
+  and `log_agent` library functions are gone
+- `sdlc.sh next` / `research.sh next` no longer "auto-switch" agents (a path that ran
+  `activate_agent.sh` only when an `auto_select` key nothing wrote was set); they print
+  the subagent that owns the new phase instead
+
+#### Added
+- `record_active_agent` / `get_active_agent` (`scripts/lib/workflow_routing.sh`): the
+  one job of `activate_agent.sh` that still mattered. `orchestrate.sh dispatch` calls
+  it to write `active_agent: {name, status, activated_at}` to `state.yaml` (replacing
+  any earlier or legacy block; plain awk, same with or without `yq`) and to log
+  `<ts> | AGENT_DISPATCHED | <agent>` to `checkpoints.log`. The handoff managed block,
+  `status.sh`, `recover_context.sh`, `submit.sh` and the dashboard read it
+- `uws orchestrate <dispatch|collect|status>` and `uws dashboard` CLI commands (also
+  in the generated per-project `./uws`)
+- `migrate_state.sh --clean` removes the retired `agents/active.yaml`,
+  `skills/enabled.yaml` and `skills/catalog.yaml`, backing each up first (it used to
+  prune unknown skills from `enabled.yaml`)
 
 #### Changed
 - README no longer documents Company OS installation/usage; it points to the new
   repository in one line
 - `.gitignore` no longer carries the two `company_os/dashboard/` entries
-
-Note: `dashboard/`, `scripts/dashboard_server.py`, and `scripts/start_dashboard.sh`
-are UWS's own review/PM/agent-session monitor (it only reads `.workflow/`, `.uws/`
-and calls `scripts/review.sh`/`pm.sh`/`lib/session_manager.sh` — no dependency on
-`company_os/`) and were kept; only the naming ("Company OS Dashboard" in its
-`<title>`) and its old `uws company-os dashboard` entry point predate this split.
-It is still runnable directly (`./scripts/start_dashboard.sh`) but is no longer
-wired into the `uws` CLI — a follow-up should either add a plain `uws dashboard`
-command or rename the page.
+- The review/PM dashboard (`dashboard/`, `scripts/dashboard_server.py`,
+  `scripts/start_dashboard.sh`) is reachable again as `uws dashboard` and is titled
+  "UWS Dashboard" ("Company OS" is now the separate product). It shows the project it
+  is started from (`UWS_PROJECT_ROOT`, set by `start_dashboard.sh`) instead of the UWS
+  installation, runs `review.sh`/`pm.sh` from the installation with that project's
+  `WORKFLOW_DIR`, reads the active agent from `state.yaml`, listens on 127.0.0.1 only
+  (its POST endpoints approve change requests without authentication), and takes
+  `UWS_DASHBOARD_PORT` (default 8080). The plugin ships `dashboard/` so
+  `uws dashboard` works from it too
+- `status.sh` / `recover_context.sh` show the dispatched agent from `state.yaml` and
+  no "Enabled skills" section; `/uws-recover` no longer tells the model to adopt the
+  active agent's persona. `submit.sh` stages `workspace/<active_agent.name>/`
+- `detect_and_configure.sh` recommendations, README, CONTRIBUTING, `docs/index.html`,
+  `docs/state-schema.md` and both `examples/*` (README and `walkthrough.sh`) use
+  `uws orchestrate dispatch` instead of the retired commands
+- `tests/benchmarks` "agent activation" now times `record_active_agent`; its JSON
+  gains an `"operation"` field saying so
 
 ## [1.1.0] - 2026-02-17
 

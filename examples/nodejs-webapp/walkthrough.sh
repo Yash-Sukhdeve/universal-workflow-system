@@ -5,6 +5,11 @@
 # Creates a temp directory, initializes UWS, and walks through
 # the full SDLC workflow with agent handoffs and checkpoints.
 #
+# Each handoff is `orchestrate.sh dispatch`: it picks the subagent that owns
+# the current phase, writes its brief to workspace/<role>/TASK.md and records
+# it as the active agent. In Claude Code the uws-<role> subagent then does the
+# work; this demo only shows the bookkeeping.
+#
 
 set -euo pipefail
 
@@ -47,34 +52,35 @@ step "2. Starting SDLC workflow"
 "$SCRIPTS/sdlc.sh" start 2>&1 || true
 "$SCRIPTS/sdlc.sh" status 2>&1
 
-step "3. Phase 1: Requirements - Activating architect agent"
-"$SCRIPTS/activate_agent.sh" architect 2>&1 || true
+step "3. Phase 1: Requirements - Dispatching to the researcher subagent"
+"$SCRIPTS/orchestrate.sh" dispatch "Gather requirements and user stories" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Requirements gathered" 2>&1 || true
 info "Checkpoint created for requirements phase"
 
-step "4. Phase 2: Design"
+step "4. Phase 2: Design - Dispatching to the architect subagent"
 "$SCRIPTS/sdlc.sh" next 2>&1 || true
 "$SCRIPTS/sdlc.sh" status 2>&1
+"$SCRIPTS/orchestrate.sh" dispatch "Design the API, data model and components" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "System design complete" 2>&1 || true
 
-step "5. Phase 3: Implementation - Switching to implementer"
+step "5. Phase 3: Implementation - Dispatching to the implementer subagent"
 "$SCRIPTS/sdlc.sh" next 2>&1 || true
-"$SCRIPTS/activate_agent.sh" implementer 2>&1 || true
+"$SCRIPTS/orchestrate.sh" dispatch "Implement auth service and dashboard UI" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Core features implemented" 2>&1 || true
 
-step "6. Phase 4: Verification - Switching to experimenter"
+step "6. Phase 4: Verification - Dispatching to the experimenter subagent"
 "$SCRIPTS/sdlc.sh" next 2>&1 || true
-"$SCRIPTS/activate_agent.sh" experimenter 2>&1 || true
+"$SCRIPTS/orchestrate.sh" dispatch "Verify requirements end to end" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "All tests passing" 2>&1 || true
 
-step "7. Phase 5: Deployment - Switching to deployer"
+step "7. Phase 5: Deployment - Dispatching to the deployer subagent"
 "$SCRIPTS/sdlc.sh" next 2>&1 || true
-"$SCRIPTS/activate_agent.sh" deployer 2>&1 || true
+"$SCRIPTS/orchestrate.sh" dispatch "Deploy to staging, then production" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Deployed to production" 2>&1 || true
 
-step "8. Phase 6: Maintenance - Back to implementer"
+step "8. Phase 6: Maintenance - Deployer subagent keeps watch"
 "$SCRIPTS/sdlc.sh" next 2>&1 || true
-"$SCRIPTS/activate_agent.sh" implementer 2>&1 || true
+"$SCRIPTS/orchestrate.sh" dispatch "Monitor production and triage issues" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Maintenance mode active" 2>&1 || true
 
 step "9. Final status"

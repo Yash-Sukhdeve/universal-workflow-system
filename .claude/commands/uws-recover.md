@@ -15,7 +15,7 @@ This displays:
 - Handoff notes with next actions
 - Methodology-aware suggestions
 
-After recovery, read `.workflow/agents/active.yaml` and adopt the active agent's persona (mindset, voice, responsibilities).
+The active agent shown is the subagent `orchestrate.sh` last dispatched; it runs as a Claude Code subagent (`.claude/agents/uws-<role>.md`), so do not adopt its persona in this session.
 
 If vector memory is configured, also query for relevant context:
   mcp__vector_memory_local__search_memories("current blockers", limit=3)

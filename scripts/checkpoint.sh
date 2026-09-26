@@ -273,16 +273,9 @@ create_checkpoint() {
     cp ${WORKFLOW_DIR}/state.yaml "$snapshot_dir/state.yaml"
     [[ -f ${WORKFLOW_DIR}/handoff.md ]] && cp ${WORKFLOW_DIR}/handoff.md "$snapshot_dir/handoff.md"
 
-    # Save active state (v2)
-    if [[ -f ${WORKFLOW_DIR}/agents/active.yaml ]]; then
-        cp ${WORKFLOW_DIR}/agents/active.yaml "$snapshot_dir/active_state/agent.yaml"
-        # Also copy to old location for backward compatibility
-        cp ${WORKFLOW_DIR}/agents/active.yaml "$snapshot_dir/active_agent.yaml"
-    fi
-    if [[ -f ${WORKFLOW_DIR}/skills/enabled.yaml ]]; then
-        cp ${WORKFLOW_DIR}/skills/enabled.yaml "$snapshot_dir/active_state/skills.yaml"
-        cp ${WORKFLOW_DIR}/skills/enabled.yaml "$snapshot_dir/enabled_skills.yaml"
-    fi
+    # The active agent is recorded in state.yaml (active_agent), which is
+    # snapshotted above; the retired agents/active.yaml and skills/enabled.yaml
+    # files are no longer saved.
 
     # Create session state (v2)
     cat > "$snapshot_dir/active_state/session.yaml" << EOF
@@ -334,7 +327,7 @@ workflow:
 
 recovery:
   compatible_versions: ["1.0", "2.0"]
-  restore_priority: ["state.yaml", "handoff.md", "active_state/agent.yaml"]
+  restore_priority: ["state.yaml", "handoff.md"]
 EOF
 
     echo -e "  ${CYAN}Creating manifest with checksums...${NC}"
@@ -590,8 +583,6 @@ restore_checkpoint() {
     fi
 
     [[ -f ${WORKFLOW_DIR}/handoff.md ]] && cp ${WORKFLOW_DIR}/handoff.md "$backup_dir/handoff.md"
-    [[ -f ${WORKFLOW_DIR}/agents/active.yaml ]] && cp ${WORKFLOW_DIR}/agents/active.yaml "$backup_dir/active_agent.yaml"
-    [[ -f ${WORKFLOW_DIR}/skills/enabled.yaml ]] && cp ${WORKFLOW_DIR}/skills/enabled.yaml "$backup_dir/enabled_skills.yaml"
 
     # Create backup metadata
     cat > "$backup_dir/metadata.yaml" << EOF
@@ -632,22 +623,9 @@ EOF
     # Restore handoff
     [[ -f "$snapshot_dir/handoff.md" ]] && cp "$snapshot_dir/handoff.md" ${WORKFLOW_DIR}/handoff.md
 
-    # Restore agent and skills - check v2 locations first, then v1
-    if [[ -f "$snapshot_dir/active_state/agent.yaml" ]]; then
-        mkdir -p ${WORKFLOW_DIR}/agents
-        cp "$snapshot_dir/active_state/agent.yaml" ${WORKFLOW_DIR}/agents/active.yaml
-    elif [[ -f "$snapshot_dir/active_agent.yaml" ]]; then
-        mkdir -p ${WORKFLOW_DIR}/agents
-        cp "$snapshot_dir/active_agent.yaml" ${WORKFLOW_DIR}/agents/active.yaml
-    fi
-
-    if [[ -f "$snapshot_dir/active_state/skills.yaml" ]]; then
-        mkdir -p ${WORKFLOW_DIR}/skills
-        cp "$snapshot_dir/active_state/skills.yaml" ${WORKFLOW_DIR}/skills/enabled.yaml
-    elif [[ -f "$snapshot_dir/enabled_skills.yaml" ]]; then
-        mkdir -p ${WORKFLOW_DIR}/skills
-        cp "$snapshot_dir/enabled_skills.yaml" ${WORKFLOW_DIR}/skills/enabled.yaml
-    fi
+    # The active agent comes back with state.yaml (active_agent). Older
+    # snapshots may also hold the retired agents/active.yaml and
+    # skills/enabled.yaml copies; nothing reads those, so they are not restored.
 
     # Commit atomic transaction if available
     if declare -f atomic_commit > /dev/null 2>&1; then
@@ -708,7 +686,7 @@ show_checkpoint_status() {
     
     # Last checkpoint details
     if [ -f ${WORKFLOW_DIR}/checkpoints.log ]; then
-        # Last real checkpoint (skip AGENT_ACTIVATED/PHASE_TRANSITION events and comments)
+        # Last real checkpoint (skip AGENT_*/PHASE_TRANSITION events and comments)
         local last_checkpoint
         last_checkpoint=$({ grep -E '\| CP_[0-9]+_[0-9]+ \|' ${WORKFLOW_DIR}/checkpoints.log || true; } | tail -1)
         IFS='|' read -r timestamp checkpoint description <<< "$last_checkpoint"
@@ -935,16 +913,9 @@ show_completeness_report() {
 
         if [[ -f ${WORKFLOW_DIR}/agents/registry.yaml ]]; then
             echo -e "  ${GREEN}✓${NC} agents/registry.yaml"
-            ((score += 5))
+            ((score += 10))
         else
             echo -e "  ${YELLOW}○${NC} agents/registry.yaml"
-        fi
-
-        if [[ -f ${WORKFLOW_DIR}/skills/catalog.yaml ]]; then
-            echo -e "  ${GREEN}✓${NC} skills/catalog.yaml"
-            ((score += 5))
-        else
-            echo -e "  ${YELLOW}○${NC} skills/catalog.yaml"
         fi
 
         echo ""

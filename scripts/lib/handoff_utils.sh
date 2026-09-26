@@ -249,10 +249,11 @@ uws_handoff_render_block() {
 #######################################
 # One-shot migration: remove machine-generated "## Agent Activated: ..." and
 # "## Phase Transition: ..." sections (a section = the heading line through
-# the line before the next "## " heading, or EOF). scripts/activate_agent.sh
-# and scripts/sdlc.sh used to append one of these on every agent activation
-# / phase transition, which is exactly what made handoff.md grow without
-# bound; both now log a one-line event to checkpoints.log instead (already
+# the line before the next "## " heading, or EOF). The now-retired
+# scripts/activate_agent.sh and scripts/sdlc.sh used to append one of these
+# on every agent activation / phase transition, which is exactly what made
+# handoff.md grow without bound; agent dispatches and phase transitions now
+# log a one-line event to checkpoints.log instead (already
 # excluded from recovered context by uws_real_checkpoints in
 # hook_context.sh, which only admits "| CP_..." lines). Everything else in
 # the file — including any blank line immediately before a stripped heading,

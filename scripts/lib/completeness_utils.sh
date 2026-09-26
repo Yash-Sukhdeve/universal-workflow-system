@@ -43,7 +43,6 @@ OPTIONAL_FILES=(
     ".workflow/handoff.md"
     ".workflow/config.yaml"
     ".workflow/agents/registry.yaml"
-    ".workflow/skills/catalog.yaml"
 )
 
 # State fields follow the schema init_workflow.sh writes: flat top-level keys.

@@ -48,7 +48,8 @@ analysis → peer_review → publication`. Once a goal is declared (`sdlc.sh goa
   the `methodology_progress:` deliverable ledger
 - `checkpoints.log` - `TIMESTAMP | CP_ID | DESC`
 - `handoff.md` - human-readable handoff for the next session
-- `agents/registry.yaml`, `skills/catalog.yaml` - agent and skill definitions
+- `agents/registry.yaml` - agent definitions and transition rules
+- `active_agent:` in `state.yaml` - last agent `orchestrate.sh` dispatched (`record_active_agent`)
 - `checkpoints/snapshots/<CP_ID>/` - state snapshots (gitignored)
 
 ### Agents

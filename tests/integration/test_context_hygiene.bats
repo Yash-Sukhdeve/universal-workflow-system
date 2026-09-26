@@ -204,6 +204,7 @@ EOF
     init_project
     cat >> "$PROJ/.workflow/checkpoints.log" <<'EOF'
 2026-01-01T10:00:00Z | AGENT_ACTIVATED | researcher
+2026-01-01T10:00:30Z | AGENT_DISPATCHED | architect
 2026-01-01T10:01:00Z | SKILL_ENABLED | literature_review
 2026-01-01T10:02:00Z | AUTO | Pre-commit checkpoint
 2026-01-01T10:03:00Z | PHASE_TRANSITION | sdlc: requirements -> design
@@ -214,6 +215,7 @@ EOF
     [[ "$output" == *"CP_1_002 | Real work saved"* ]]
     [[ "$output" != *"Format:"* ]]
     [[ "$output" != *"AGENT_ACTIVATED"* ]]
+    [[ "$output" != *"AGENT_DISPATCHED"* ]]
     [[ "$output" != *"SKILL_ENABLED"* ]]
     [[ "$output" != *"AUTO"* ]]
     [[ "$output" != *"PHASE_TRANSITION"* ]]
@@ -222,10 +224,11 @@ EOF
     run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/recover_context.sh' </dev/null"
     [ "$status" -eq 0 ]
     local section
-    section="$(printf '%s\n' "$output" | awk '/Recent Checkpoints:/{f=1;next} /Active Agents:/{f=0} f')"
+    section="$(printf '%s\n' "$output" | awk '/Recent Checkpoints:/{f=1;next} /Active Agent:/{f=0} f')"
     [[ "$section" == *"CP_1_002 - Real work saved"* ]]
     [[ "$section" != *"Format"* ]]
     [[ "$section" != *"AGENT_ACTIVATED"* ]]
+    [[ "$section" != *"AGENT_DISPATCHED"* ]]
     [[ "$section" != *"SKILL_ENABLED"* ]]
     [[ "$section" != *"PHASE_TRANSITION"* ]]
     [[ "$section" != *"INIT"* ]]
@@ -426,21 +429,22 @@ EOF
     [ "$output" = "0" ]
 }
 
-@test "handoff: line count stays bounded across repeated agent activations" {
+@test "handoff: line count stays bounded across repeated agent dispatches" {
     init_project
     local h="$PROJ/.workflow/handoff.md"
     local agents=(researcher architect implementer experimenter optimizer deployer documenter researcher architect implementer)
     local lines_after_2 lines_after_10 i=0 a
     for a in "${agents[@]}"; do
         i=$(( i + 1 ))
-        run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/activate_agent.sh' '${a}' </dev/null"
+        run bash -c "cd '$PROJ' && source '${PROJECT_ROOT}/scripts/lib/workflow_routing.sh' && record_active_agent '${a}' </dev/null"
         [ "$status" -eq 0 ]
         [ "$i" -eq 2 ]  && lines_after_2=$(wc -l < "$h")
         [ "$i" -eq 10 ] && lines_after_10=$(wc -l < "$h")
     done
 
     [ "$lines_after_10" -eq "$lines_after_2" ]
-    [ "$(grep -c 'AGENT_ACTIVATED' "$PROJ/.workflow/checkpoints.log")" -eq 10 ]
+    [ "$(grep -c 'AGENT_DISPATCHED' "$PROJ/.workflow/checkpoints.log")" -eq 10 ]
+    [ "$(grep -c '^active_agent:' "$PROJ/.workflow/state.yaml")" -eq 1 ]
     [ "$(grep -c '<!-- uws:managed:start -->' "$h")" -eq 1 ]
     run grep -c '^## Agent Activated:' "$h"
     [ "$output" = "0" ]
@@ -471,13 +475,13 @@ EOF
     UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
     "${PROJECT_ROOT}/bin/uws" checkpoint create "fixed the user's login flow" </dev/null >/dev/null
     # An event logged after the checkpoint must not be shown as the last checkpoint
-    echo "2026-01-01T00:00:00Z | AGENT_ACTIVATED | implementer" >> .workflow/checkpoints.log
+    echo "2026-01-01T00:00:00Z | AGENT_DISPATCHED | implementer" >> .workflow/checkpoints.log
 
     # Recent checkpoints are listed in verbose mode
     run "${PROJECT_ROOT}/bin/uws" status --verbose </dev/null
     [ "$status" -eq 0 ]
     [[ "$output" == *"fixed the user's login flow"* ]]
-    [[ "$output" != *"AGENT_ACTIVATED"* ]]
+    [[ "$output" != *"AGENT_DISPATCHED"* ]]
     [[ "$output" != *"unmatched"* ]]
 
     run "${PROJECT_ROOT}/bin/uws" checkpoint status </dev/null

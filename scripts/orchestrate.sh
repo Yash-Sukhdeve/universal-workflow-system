@@ -10,7 +10,7 @@
 #
 # Usage:
 #   ./scripts/orchestrate.sh dispatch "<task>" [target-rel-path]
-#       Resolve current phase -> agent, activate it, write the task brief, and
+#       Resolve current phase -> agent, record it, write the task brief, and
 #       print a DISPATCH line for the session to act on.
 #   ./scripts/orchestrate.sh collect "<summary>" [ticket]
 #       After the subagent has written its artifact under workspace/<role>/,
@@ -81,10 +81,12 @@ cmd_dispatch() {
     local ws="${PROJECT_ROOT}/workspace/${AGENT}"
     mkdir -p "${ws}/$(dirname "$target")"
 
-    # Activate the agent so submit.sh attributes the change to the right workspace.
-    if [[ -f "${SCRIPT_DIR}/activate_agent.sh" ]]; then
-        bash "${SCRIPT_DIR}/activate_agent.sh" "$AGENT" >/dev/null 2>&1 || \
-            echo -e "${YELLOW}warn: activate_agent.sh failed; continuing${NC}" >&2
+    # Record the dispatched agent (state.yaml active_agent + AGENT_DISPATCHED in
+    # checkpoints.log) so submit.sh attributes the change to the right
+    # workspace and handoff.md shows who is working.
+    if declare -f record_active_agent >/dev/null 2>&1; then
+        record_active_agent "$AGENT" "$STATE_FILE" || \
+            echo -e "${YELLOW}warn: could not record active agent; continuing${NC}" >&2
     fi
 
     local goal deliv
@@ -131,7 +133,7 @@ cmd_collect() {
     # diffs the whole workspace/<agent>/ dir, so leaving TASK.md in would submit it
     # as a repo-root file and cause cross-CR conflicts. Strip it before staging.
     local active_agent
-    active_agent=$(grep 'current_agent:' "${WORKFLOW_DIR}/agents/active.yaml" 2>/dev/null | cut -d'"' -f2 || echo "")
+    active_agent=$(get_active_agent "$STATE_FILE" 2>/dev/null || true)
     if [[ -n "$active_agent" && -f "${PROJECT_ROOT}/workspace/${active_agent}/TASK.md" ]]; then
         rm -f "${PROJECT_ROOT}/workspace/${active_agent}/TASK.md"
     fi
