@@ -25,10 +25,9 @@ disable-model-invocation: true
    d. Related to another? → Store merged consolidated version
 
    NOTE: No delete_memory tool. "Removal" = superseding entry.
-   For severe contamination, use:
-     clear_old_memories(days_old=0, max_to_keep=0)
-   then re-store all valid memories from the review notes.
-   WARNING: Verify max_to_keep=0 is accepted by the server before
-   relying on this -- edge case not confirmed in source.
+   clear_old_memories cannot wipe a DB: the server rejects days_old < 1
+   and max_to_keep < 100. For severe contamination, delete the DB file
+   (<project_root>/memory/vector_memory.db) and re-store the valid
+   memories from the review notes (see the vector-memory skill).
 
 5. Document results in project completion notes.

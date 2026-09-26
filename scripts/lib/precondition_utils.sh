@@ -193,39 +193,6 @@ require_agent_valid() {
 }
 
 #######################################
-# Require skill is available
-# Arguments:
-#   $1 - Skill name
-# Returns:
-#   0 if available, 1 if not
-#######################################
-require_skill_available() {
-    local skill_name="$1"
-
-    if [[ -z "$skill_name" ]]; then
-        precondition_add_failure "Skill name is empty"
-        echo -e "${RED}Error: Skill name required${NC}" >&2
-        return 1
-    fi
-
-    # Check skill catalog
-    local catalog=".workflow/skills/catalog.yaml"
-    if [[ ! -f "$catalog" ]]; then
-        precondition_add_failure "Skill catalog missing"
-        echo -e "${YELLOW}Warning: Skill catalog not found${NC}" >&2
-        return 0  # Don't fail if catalog missing
-    fi
-
-    if ! grep -q "^  ${skill_name}:" "$catalog" 2>/dev/null; then
-        precondition_add_failure "Unknown skill: ${skill_name}"
-        echo -e "${RED}Error: Unknown skill '${skill_name}'${NC}" >&2
-        return 1
-    fi
-
-    return 0
-}
-
-#######################################
 # Require state is consistent
 # Validates cross-field consistency
 # Returns:
@@ -472,7 +439,6 @@ Workflow Preconditions:
   require_workflow_initialized     Verify .workflow exists with state
   require_checkpoint_exists <id>   Verify checkpoint is valid
   require_agent_valid <name>       Verify agent name is valid
-  require_skill_available <name>   Verify skill exists in catalog
   require_state_consistent [file]  Verify state file consistency
 
 File Preconditions:
@@ -511,7 +477,6 @@ Example:
   # Custom check with context
   precondition_clear
   require_agent_valid "$agent"
-  require_skill_available "$skill"
 
   if precondition_has_failures; then
       precondition_print_failures
@@ -530,7 +495,6 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     export -f require_workflow_initialized
     export -f require_checkpoint_exists
     export -f require_agent_valid
-    export -f require_skill_available
     export -f require_state_consistent
     export -f require_git_clean
     export -f require_file_readable

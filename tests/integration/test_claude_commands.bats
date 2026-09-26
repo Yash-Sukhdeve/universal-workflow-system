@@ -19,13 +19,12 @@ teardown() {
 # COMMAND FILE EXISTENCE TESTS
 # =============================================================================
 
-@test "all 9 command files exist in .claude/commands/" {
+@test "all 8 command files exist in .claude/commands/" {
     local commands=(
         "uws-status"
         "uws-checkpoint"
         "uws-recover"
-        "uws-agent"
-        "uws-skill"
+        "uws-orchestrate"
         "uws-handoff"
         "uws-init"
         "uws-sdlc"
@@ -112,22 +111,15 @@ teardown() {
     assert_success
 }
 
-@test "uws-agent command delegates to activate_agent.sh" {
-    cd "${TEST_TMP_DIR}"
-
-    run "${SCRIPTS_DIR}/activate_agent.sh" implementer
-
-    assert_success
-    [[ "$output" == *"implementer"* ]] || [[ "$output" == *"activated"* ]] || [[ "$output" == *"Agent"* ]]
-}
-
-@test "uws-skill command delegates to enable_skill.sh" {
-    cd "${TEST_TMP_DIR}"
-
-    run "${SCRIPTS_DIR}/enable_skill.sh" "" list
-
-    assert_success
-    [[ "$output" == *"Skills"* ]] || [[ "$output" == *"skill"* ]]
+@test "retired uws-agent/uws-skill commands and their scripts are gone" {
+    # Agents are Claude Code subagents (dispatched via /uws-orchestrate) and
+    # skills are native Claude Code skills; nothing may point at the old scripts.
+    [ ! -e "${PROJECT_ROOT}/.claude/commands/uws-agent.md" ]
+    [ ! -e "${PROJECT_ROOT}/.claude/commands/uws-skill.md" ]
+    [ ! -e "${SCRIPTS_DIR}/activate_agent.sh" ]
+    [ ! -e "${SCRIPTS_DIR}/enable_skill.sh" ]
+    run grep -rlE "activate_agent\.sh|enable_skill\.sh|agents/active\.yaml" "${PROJECT_ROOT}/.claude/commands" "${PROJECT_ROOT}/.claude/settings.json"
+    [ "$status" -ne 0 ]
 }
 
 @test "uws-handoff command updates handoff notes" {

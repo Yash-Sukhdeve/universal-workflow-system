@@ -19,50 +19,22 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ## 📝 Contribution Types
 
-### Adding New Agents
+### Adding or Changing Agents
 
-1. Define agent in `.workflow/agents/registry.yaml`
-2. Create agent configuration template
-3. Add handoff protocols
-4. Document capabilities and use cases
-5. Submit PR with example usage
+UWS agents are Claude Code subagents generated from persona documents:
 
-Example structure:
-```yaml
-new_agent:
-  name: "Your Agent Name"
-  description: "What this agent does"
-  capabilities:
-    - capability_1
-    - capability_2
-  primary_skills:
-    - skill_1
-    - skill_2
-```
+1. Write or edit the persona in `docs/personas/<role>.md` (shared rules live in
+   `docs/personas/_universal_protocol.md`)
+2. Add the role to `ROLES`, `role_description` and `role_tools` in
+   `scripts/gen_subagents.sh`, then run it to regenerate `.claude/agents/uws-<role>.md`
+3. If the role should own an SDLC/research phase, map it in `get_agent_for_phase`
+   (`scripts/lib/workflow_routing.sh`), which `scripts/orchestrate.sh` uses to dispatch
+4. Add tests (`tests/unit/test_gen_subagents.bats`, `tests/integration/test_orchestrate_pilot.bats`)
 
-### Adding New Skills
+### Adding Skills
 
-1. Create skill definition in `.workflow/skills/definitions/`
-2. Add to skill catalog (`.workflow/skills/catalog.yaml`)
-3. Create execution logic if needed
-4. Add tests and documentation
-5. Submit PR with examples
-
-Example skill definition:
-```yaml
-skill_name:
-  category: category_name
-  description: "What this skill does"
-  inputs:
-    - input_1
-    - input_2
-  outputs:
-    - output_1
-    - output_2
-  tools:
-    - tool_1
-    - tool_2
-```
+Skills are native Claude Code skills: add `.claude/skills/<name>/SKILL.md` with YAML
+frontmatter (`name`, `description`). UWS keeps no skill catalog of its own.
 
 ### Improving Documentation
 
@@ -125,8 +97,8 @@ Add screenshots here
 ./tests/run_all_tests.sh
 
 # Test specific component
-bats tests/unit/test_activate_agent.bats
-bats tests/unit/test_enable_skill.bats
+bats tests/unit/test_workflow_routing.bats
+bats tests/integration/test_orchestrate_pilot.bats
 ```
 
 ### Writing Tests

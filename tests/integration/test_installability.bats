@@ -173,6 +173,10 @@ EOF
     [ -x "$PLUGIN_DIR/bin/uws" ]
     [ -x "$PLUGIN_DIR/scripts/init_workflow.sh" ]
     [ -f "$PLUGIN_DIR/agents/uws-architect.md" ]
+    # `uws dashboard` serves <install>/dashboard via scripts/start_dashboard.sh
+    [ -x "$PLUGIN_DIR/scripts/start_dashboard.sh" ]
+    [ -f "$PLUGIN_DIR/dashboard/index.html" ]
+    grep -q '<title>UWS Dashboard</title>' "$PLUGIN_DIR/dashboard/index.html"
 }
 
 @test "plugin: every command calls the plugin's own uws, never a PATH lookup" {

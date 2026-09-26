@@ -23,9 +23,19 @@ correct, plain text and current.
   `state.yaml` and refreshed on every checkpoint, phase change and goal change;
   everything outside the block is never rewritten. Older handoffs are migrated on the
   first refresh (their "Last Session Summary" section becomes the block)
-- `tests/integration/test_context_hygiene.bats` (23 tests)
+- The managed block now also shows the active agent (linked to its
+  `docs/personas/<agent>.md`) and the current phase's remaining deliverables
+  (`- **Deliverables (sdlc: design)** - 1/4 done, 3 remaining:` plus the not-yet-checked
+  items), sourced from `state.yaml`'s `active_agent` and `methodology_progress` ledger
+- `tests/integration/test_context_hygiene.bats` (26 tests)
 
 #### Changed
+- Agent activation (`activate_agent.sh`) and SDLC phase transitions (`sdlc.sh next`/
+  `goto`) no longer append a "## Agent Activated" / "## Phase Transition" section to
+  `handoff.md` on every call — that appending is what made the file grow without bound.
+  Both now log a one-line event to `checkpoints.log` instead (`AGENT_ACTIVATED`,
+  `PHASE_TRANSITION`), already excluded from recovered context by the `| CP_` filter
+  above; the managed block picks up the new agent/phase/deliverables immediately
 - Subagents are generated with a per-role `model:` (architect and researcher: `opus`;
   implementer, experimenter, optimizer, deployer, documenter: `sonnet`); override with
   `UWS_AGENT_MODEL_<ROLE>` or `UWS_AGENT_MODEL=inherit` when running
@@ -57,6 +67,17 @@ correct, plain text and current.
 - "Recent Checkpoints" listed the `# Format:` comment, `INIT`/`AUTO` markers and
   `AGENT_*`/`SKILL_*` events; only `| CP_` entries are shown (also in the installer's
   SessionStart hook, which additionally read the project type from the flat key)
+- A pre-existing handoff containing old "## Agent Activated" / "## Phase Transition"
+  sections is cleaned up the next time its managed block refreshes: those sections are
+  removed (everything else, including any human-written section, is kept byte-for-byte)
+  and a `handoff.md.bak-<timestamp>` backup of the file is written first; a no-op, no
+  backup, once nothing is left to remove
+- `activate_agent.sh` set `active_agent.name`/`status`/`activated_at` in `state.yaml`
+  via `yaml_set`, but without `yq` that function's nested-key fallback only replaces a
+  `parent:\n  child:` pair that already exists — it never creates the `active_agent:`
+  section, so a freshly initialized project silently never got these fields on its
+  first agent activation. The first activation now seeds the section directly; every
+  activation after that uses the existing `yaml_set` path as before
 
 ### Installability
 
@@ -108,6 +129,77 @@ checks the artifacts a user's project receives rather than only this repository.
 - `.claude-plugin/marketplace.json` and the plugin manifest failed
   `claude plugin validate` (spaces in the name, no `owner`/`plugins`, hooks declared as
   prose)
+
+### Cleanup
+
+Company OS (the FastAPI backend + React dashboard) was a separate product built
+inside this repository; it is now extracted to its own private repository so UWS
+and Company OS can be versioned and installed independently.
+
+#### Removed
+- `company_os/` (FastAPI backend, React dashboard), `code_review/` (its December
+  2025 code review), `migrations/`, `docs/implementation/`, and the Company-OS-only
+  files under `docs/brainstorm/`, `tests/unit/`, and `tests/integration/`, plus
+  `Dockerfile`, `docker-compose.yml`, `.env.example`, `pyproject.toml`, `setup.py`,
+  `requirements.txt`, `tests/conftest.py`, and `scripts/start_company_os.sh` — all
+  moved to `Yash-Sukhdeve/uws-company-os` with no UWS-side functionality lost (no
+  UWS script ever imported from `company_os/`)
+- The `uws company-os [start|dashboard]` subcommand and its help text
+- The role-play agent and skill commands, which predate Claude Code subagents and
+  skills: `scripts/activate_agent.sh` (made the main session adopt a persona by
+  writing `.workflow/agents/active.yaml`, which a SessionStart hook told the model to
+  read), `scripts/enable_skill.sh` (kept an enabled-skills list that nothing used),
+  `.claude/commands/uws-agent.md`, `.claude/commands/uws-skill.md`, the Antigravity
+  `uws-agent`/`uws-skill` workflows (`uws-skill` only appended a comment to
+  `state.yaml`), the "ACTIVE AGENT ... Read .workflow/agents/active.yaml" SessionStart
+  hook in `.claude/settings.json`, and their tests (`tests/unit/test_activate_agent.bats`,
+  `tests/unit/test_enable_skill.bats`, `tests/integration/test_agent_transitions.bats`).
+  `uws agent` / `uws skill` (and `./uws agent|skill`) now print a one-line pointer to
+  `uws orchestrate dispatch` / `/agents` / native skills and exit 2
+- `init` no longer creates `.workflow/skills/` (catalog, definitions, chains) or
+  `.workflow/agents/{configs,memory}`, and `config.yaml` no longer carries the unused
+  `agents.auto_activate` and `skills:` keys; the installer's `state.yaml` has no
+  `enabled_skills`. Checkpoints no longer snapshot or restore `agents/active.yaml` /
+  `skills/enabled.yaml`. The now-unused `validate_skill`, `require_skill_available`
+  and `log_agent` library functions are gone
+- `sdlc.sh next` / `research.sh next` no longer "auto-switch" agents (a path that ran
+  `activate_agent.sh` only when an `auto_select` key nothing wrote was set); they print
+  the subagent that owns the new phase instead
+
+#### Added
+- `record_active_agent` / `get_active_agent` (`scripts/lib/workflow_routing.sh`): the
+  one job of `activate_agent.sh` that still mattered. `orchestrate.sh dispatch` calls
+  it to write `active_agent: {name, status, activated_at}` to `state.yaml` (replacing
+  any earlier or legacy block; plain awk, same with or without `yq`) and to log
+  `<ts> | AGENT_DISPATCHED | <agent>` to `checkpoints.log`. The handoff managed block,
+  `status.sh`, `recover_context.sh`, `submit.sh` and the dashboard read it
+- `uws orchestrate <dispatch|collect|status>` and `uws dashboard` CLI commands (also
+  in the generated per-project `./uws`)
+- `migrate_state.sh --clean` removes the retired `agents/active.yaml`,
+  `skills/enabled.yaml` and `skills/catalog.yaml`, backing each up first (it used to
+  prune unknown skills from `enabled.yaml`)
+
+#### Changed
+- README no longer documents Company OS installation/usage; it points to the new
+  repository in one line
+- `.gitignore` no longer carries the two `company_os/dashboard/` entries
+- The review/PM dashboard (`dashboard/`, `scripts/dashboard_server.py`,
+  `scripts/start_dashboard.sh`) is reachable again as `uws dashboard` and is titled
+  "UWS Dashboard" ("Company OS" is now the separate product). It shows the project it
+  is started from (`UWS_PROJECT_ROOT`, set by `start_dashboard.sh`) instead of the UWS
+  installation, runs `review.sh`/`pm.sh` from the installation with that project's
+  `WORKFLOW_DIR`, reads the active agent from `state.yaml`, listens on 127.0.0.1 only
+  (its POST endpoints approve change requests without authentication), and takes
+  `UWS_DASHBOARD_PORT` (default 8080). The plugin ships `dashboard/` so
+  `uws dashboard` works from it too
+- `status.sh` / `recover_context.sh` show the dispatched agent from `state.yaml` and
+  no "Enabled skills" section; `/uws-recover` no longer tells the model to adopt the
+  active agent's persona. `submit.sh` stages `workspace/<active_agent.name>/`
+- `detect_and_configure.sh` recommendations, README, CONTRIBUTING, `docs/index.html`,
+  `docs/state-schema.md` and both `examples/*` (README and `walkthrough.sh`) use
+  `uws orchestrate dispatch` instead of the retired commands
+- `tests/benchmarks` "agent activation" now times `record_active_agent`; its JSON
+  gains an `"operation"` field saying so
 
 ## [1.1.0] - 2026-02-17
 

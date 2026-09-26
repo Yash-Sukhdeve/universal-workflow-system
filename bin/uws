@@ -61,8 +61,8 @@ Workflow Commands:
   status [-v|-c]           Show workflow status
   checkpoint <cmd> [args]  Manage checkpoints (create|list|restore|status)
   recover                  Recover context after session break
-  agent <name> [cmd]       Activate/manage agents
-  skill <name> [cmd]       Enable/disable skills
+  orchestrate <cmd> [args] Route the current phase to its subagent
+                           (dispatch "<task>" | collect "<summary>" | status)
 
 Methodology Commands:
   sdlc [cmd]               SDLC workflow (status|start|next|fail|reset)
@@ -74,11 +74,8 @@ Project Management:
   pm [args]                Project management (issues/board)
   submit [args]            Submit code for review
   detect                   Auto-detect and configure project type
+  dashboard                Serve the review/PM dashboard (http://localhost:8080)
   uninstall [opts]         Remove UWS (--project|--global|--all) [--dry-run]
-
-Company OS:
-  company-os start         Start Company OS backend
-  company-os dashboard     Start React dashboard
 
 General:
   help                     Show this help message
@@ -91,11 +88,20 @@ Examples:
   uws init software        Initialize a software project
   uws status               Show current workflow state
   uws checkpoint create "Feature complete"
-  uws agent researcher     Activate the researcher agent
+  uws orchestrate dispatch "Write the requirements"
+                           Hand the current phase to its subagent
   uws sdlc next            Advance to next SDLC phase
   uws uninstall --dry-run  Preview what uninstall would remove
   uws uninstall --all      Remove UWS from project + system
 EOF
+}
+
+# `uws agent` / `uws skill` were retired: agents are real Claude Code
+# subagents (.claude/agents/uws-<role>.md) and skills are native Claude Code
+# skills, so there is nothing to activate or enable.
+retired_command() {
+    echo "uws $1: retired. Agents are Claude Code subagents: run 'uws orchestrate dispatch \"<task>\"' or use /agents. Skills are native Claude Code skills." >&2
+    exit 2
 }
 
 # ── Main dispatch ───────────────────────────────────────────────────────────
@@ -124,6 +130,9 @@ main() {
                 exit 1
             fi
             exit $?
+            ;;
+        agent|skill)
+            retired_command "$cmd"
             ;;
         uninstall)
             # uninstall doesn't need .workflow/ — find scripts via resolved install dir
@@ -165,11 +174,8 @@ main() {
         recover)
             "$scripts_dir/recover_context.sh" "$@"
             ;;
-        agent)
-            "$scripts_dir/activate_agent.sh" "$@"
-            ;;
-        skill)
-            "$scripts_dir/enable_skill.sh" "$@"
+        orchestrate)
+            "$scripts_dir/orchestrate.sh" "$@"
             ;;
         sdlc)
             "$scripts_dir/sdlc.sh" "$@"
@@ -192,22 +198,8 @@ main() {
         detect)
             "$scripts_dir/detect_and_configure.sh" "$@"
             ;;
-        company-os)
-            local subcmd="${1:-start}"
-            shift 2>/dev/null || true
-            case "$subcmd" in
-                start)
-                    "$scripts_dir/start_company_os.sh" "$@"
-                    ;;
-                dashboard)
-                    "$scripts_dir/start_dashboard.sh" "$@"
-                    ;;
-                *)
-                    echo "Unknown company-os subcommand: $subcmd" >&2
-                    echo "Usage: uws company-os [start|dashboard]" >&2
-                    exit 1
-                    ;;
-            esac
+        dashboard)
+            "$scripts_dir/start_dashboard.sh" "$@"
             ;;
         *)
             echo "Unknown command: $cmd" >&2

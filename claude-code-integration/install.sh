@@ -1039,9 +1039,6 @@ active_agent:
   activated_at: null
   status: "inactive"
 
-# Enabled skills
-enabled_skills: []
-
 # Phase progress tracking
 phases:
   phase_1_planning:

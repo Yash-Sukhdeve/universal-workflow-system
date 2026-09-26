@@ -316,25 +316,6 @@ log_checkpoint() {
 }
 
 #######################################
-# Log agent operation
-# Arguments:
-#   $1 - Action (activate, deactivate, handoff)
-#   $2 - Agent name
-#   $3 - Status
-#   $4 - (Optional) Additional context
-#######################################
-log_agent() {
-    local action="$1"
-    local agent_name="$2"
-    local status="$3"
-    local context="${4:-}"
-
-    log_operation "activate_agent.sh" "agent_${action}" "$status" "" \
-        "agent=${agent_name}" \
-        ${context:+"${context}"}
-}
-
-#######################################
 # Log recovery operation
 # Arguments:
 #   $1 - Status (start, success, partial, failed)
@@ -557,7 +538,6 @@ Basic Logging:
 Structured Logging:
   log_operation <component> <op> <status> [duration] [context]
   log_checkpoint <action> <id> <status> [message]
-  log_agent <action> <agent> <status> [context]
   log_recovery <status> [completeness] [details]
 
 Log Management:
@@ -599,7 +579,6 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     export -f log_fatal
     export -f log_operation
     export -f log_checkpoint
-    export -f log_agent
     export -f log_recovery
     export -f rotate_log
     export -f rotate_all_logs

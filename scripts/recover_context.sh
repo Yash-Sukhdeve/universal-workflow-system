@@ -215,33 +215,17 @@ else
 fi
 echo ""
 
-# Show active agents
-echo -e "${BLUE}🤖 Active Agents:${NC}"
+# Show the active agent: the subagent orchestrate.sh last dispatched
+# (state.yaml active_agent). Informational only: agents run as Claude Code
+# subagents, the main session does not adopt a persona.
+echo -e "${BLUE}🤖 Active Agent:${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-if [ -f .workflow/agents/active.yaml ]; then
-    ACTIVE_AGENT=$(uws_state_value .workflow/agents/active.yaml current_agent)
-    AGENT_TASK=$(uws_state_value .workflow/agents/active.yaml task)
-    echo -e "  👤 Agent:   ${GREEN}${ACTIVE_AGENT:-none}${NC}"
-    echo -e "  📋 Task:    ${YELLOW}${AGENT_TASK:-none}${NC}"
+ACTIVE_AGENT="$(uws_state_value .workflow/state.yaml _uws_no_such_key active_agent.name)"
+AGENT_STATUS="$(uws_state_value .workflow/state.yaml _uws_no_such_key active_agent.status)"
+if [[ -n "$ACTIVE_AGENT" && "$AGENT_STATUS" == "active" ]]; then
+    echo -e "  👤 Agent:   ${GREEN}${ACTIVE_AGENT}${NC} (subagent uws-${ACTIVE_AGENT})"
 else
-    echo -e "  ${YELLOW}No active agents${NC}"
-fi
-echo ""
-
-# Show enabled skills
-echo -e "${BLUE}🛠️  Enabled Skills:${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-if [ -f .workflow/skills/enabled.yaml ]; then
-    SKILLS="$(grep "^  - " .workflow/skills/enabled.yaml 2>/dev/null | sed 's/^  - //' || true)"
-    if [[ -n "$SKILLS" ]]; then
-        while IFS= read -r skill; do
-            echo -e "  ✓ ${GREEN}${skill}${NC}"
-        done <<< "$SKILLS"
-    else
-        echo -e "  ${YELLOW}No skills enabled${NC}"
-    fi
-else
-    echo -e "  ${YELLOW}No skills configured${NC}"
+    echo -e "  ${YELLOW}No agent dispatched${NC}"
 fi
 echo ""
 

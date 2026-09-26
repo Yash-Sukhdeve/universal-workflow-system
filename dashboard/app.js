@@ -319,7 +319,7 @@ function renderAgents() {
             <div class="empty-state">
                 <span class="empty-icon">🤖</span>
                 <p>No active agents</p>
-                <p class="empty-hint">Activate an agent with: ./scripts/activate_agent.sh &lt;agent&gt;</p>
+                <p class="empty-hint">Agents run as Claude Code subagents: uws orchestrate dispatch "&lt;task&gt;". The last dispatched agent is shown in the sidebar.</p>
             </div>
         `;
     } else {

@@ -9,7 +9,9 @@
 #   - reconciles `current_phase` to match the active methodology phase
 #     (fixes the historical desync where current_phase was stuck at phase_1)
 #   - refreshes the handoff.md header so recovery is honest
-#   - (--clean) prunes bogus/unknown skills from enabled.yaml
+#   - (--clean) removes files left by the retired `uws agent` / `uws skill`
+#     commands (agents/active.yaml, skills/enabled.yaml, skills/catalog.yaml),
+#     each backed up first as <file>.bak-<timestamp>
 #
 # Idempotent and backup-first: safe to run repeatedly.
 #
@@ -119,20 +121,22 @@ else
     echo -e "  ${YELLOW}i${NC} no active methodology phase found; current_phase left as-is"
 fi
 
-# --- 5. (--clean) prune unknown/bogus enabled skills ---
+# --- 5. (--clean) remove artifacts of the retired agent/skill commands ---
+# activate_agent.sh wrote agents/active.yaml (a persona for the main session
+# to role-play) and enable_skill.sh kept skills/enabled.yaml against
+# skills/catalog.yaml. Nothing reads them any more: agents are Claude Code
+# subagents (active agent = state.yaml active_agent) and skills are native.
 if [[ "$CLEAN" == "true" ]]; then
-    enabled="${WORKFLOW_DIR}/skills/enabled.yaml"
-    catalog="${WORKFLOW_DIR}/skills/catalog.yaml"
-    if [[ -f "$enabled" && -f "$catalog" ]]; then
-        while IFS= read -r skill; do
-            [[ -z "$skill" ]] && continue
-            if ! grep -qE "^  ${skill}:" "$catalog"; then
-                sed_inplace "/^  - ${skill}\$/d" "$enabled"
-                echo -e "  ${YELLOW}-${NC} pruned unknown enabled skill: ${skill}"
-                changed=true
-            fi
-        done < <(grep '^  - ' "$enabled" 2>/dev/null | sed 's/^  - //' || true)
-    fi
+    for retired in agents/active.yaml skills/enabled.yaml skills/catalog.yaml; do
+        f="${WORKFLOW_DIR}/${retired}"
+        [[ -f "$f" ]] || continue
+        if cp "$f" "${f}.bak-${ts}" && rm -f "$f"; then
+            echo -e "  ${YELLOW}-${NC} removed retired ${retired} (backup: ${retired}.bak-${ts})"
+            changed=true
+        else
+            echo -e "  ${RED}!${NC} could not remove ${retired}; left in place" >&2
+        fi
+    done
 fi
 
 if [[ "$changed" == "true" ]]; then

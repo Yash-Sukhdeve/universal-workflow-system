@@ -26,39 +26,35 @@ uws init software
 # Start the SDLC workflow
 uws sdlc start
 
-# Phase 1: Requirements
-uws agent architect
+# Phase 1: Requirements (owned by the researcher subagent)
+uws orchestrate dispatch "Gather requirements and user stories"
 uws sdlc status
 # Gather requirements, define user stories
 uws checkpoint create "Requirements: user auth, dashboard, REST API"
 
-# Phase 2: Design
+# Phase 2: Design (architect)
 uws sdlc next
-# Design system architecture, API contracts, DB schema
+uws orchestrate dispatch "Design the API, data model and components"
 uws checkpoint create "Design: microservice arch, PostgreSQL, JWT auth"
 
-# Phase 3: Implementation
+# Phase 3: Implementation (implementer)
 uws sdlc next
-uws agent implementer
-# Write code, create tests
+uws orchestrate dispatch "Implement auth service and dashboard UI"
 uws checkpoint create "Implementation: auth service, dashboard UI complete"
 
-# Phase 4: Verification
+# Phase 4: Verification (experimenter)
 uws sdlc next
-uws agent experimenter
-# Run tests, verify requirements
+uws orchestrate dispatch "Verify requirements end to end"
 uws checkpoint create "Verification: 95% test coverage, all requirements met"
 
-# Phase 5: Deployment
+# Phase 5: Deployment (deployer)
 uws sdlc next
-uws agent deployer
-# Deploy to staging, then production
+uws orchestrate dispatch "Deploy to staging, then production"
 uws checkpoint create "Deployed to production"
 
-# Phase 6: Maintenance
+# Phase 6: Maintenance (deployer)
 uws sdlc next
-uws agent implementer
-# Monitor, fix bugs, handle feedback
+uws orchestrate dispatch "Monitor production and triage issues"
 uws checkpoint create "Maintenance: first week stable"
 ```
 

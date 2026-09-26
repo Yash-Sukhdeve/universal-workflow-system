@@ -124,8 +124,9 @@ if [ "$COMPACT" = true ]; then
     
     echo -e "${BOLD}Workflow:${NC} ${GREEN}${PROJECT_TYPE}${NC} | ${BOLD}Phase:${NC} ${YELLOW}${CURRENT_PHASE}${NC} | ${BOLD}CP:${NC} ${CYAN}${CURRENT_CHECKPOINT}${NC}"
     
-    if [ -f ${WORKFLOW_DIR}/agents/active.yaml ]; then
-        ACTIVE_AGENT=$(get_yaml_value "current_agent" "${WORKFLOW_DIR}/agents/active.yaml")
+    ACTIVE_AGENT=""
+    declare -f get_active_agent >/dev/null 2>&1 && ACTIVE_AGENT=$(get_active_agent "${STATE_FILE}")
+    if [[ -n "$ACTIVE_AGENT" ]]; then
         echo -e "${BOLD}Agent:${NC} ${GREEN}${ACTIVE_AGENT}${NC}"
     fi
     
@@ -225,58 +226,19 @@ else
 fi
 echo ""
 
-# Active Agents
+# Active agent: the subagent orchestrate.sh last dispatched (state.yaml
+# active_agent, written by record_active_agent)
 echo -e "${BLUE}┌─────────────────────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ ${BOLD}ACTIVE AGENTS${NC}                                                              ${BLUE}│${NC}"
+echo -e "${BLUE}│ ${BOLD}ACTIVE AGENT${NC}                                                               ${BLUE}│${NC}"
 echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
 
-if [ -f ${WORKFLOW_DIR}/agents/active.yaml ]; then
-    ACTIVE_AGENT=$(get_yaml_value "current_agent" "${WORKFLOW_DIR}/agents/active.yaml")
-    AGENT_TASK=$(get_yaml_value "task" "${WORKFLOW_DIR}/agents/active.yaml")
-    AGENT_PROGRESS=$(get_yaml_value "progress" "${WORKFLOW_DIR}/agents/active.yaml")
-    
-    # Get agent icon from registry
-    if [ -f ${WORKFLOW_DIR}/agents/registry.yaml ]; then
-        AGENT_ICON=$(grep -A2 "^  ${ACTIVE_AGENT}:" ${WORKFLOW_DIR}/agents/registry.yaml | grep "icon:" | cut -d'"' -f2 || echo "👤")
-    else
-        AGENT_ICON="👤"
-    fi
-    
-    echo -e "  ${AGENT_ICON} ${BOLD}${ACTIVE_AGENT}${NC}"
-    echo -e "     ${CYAN}Task:${NC}     ${YELLOW}${AGENT_TASK}${NC}"
-    agent_pct="${AGENT_PROGRESS:-0}"
-    [[ "$agent_pct" == "N/A" ]] && agent_pct=0
-    echo -e "     ${CYAN}Progress:${NC} $(create_progress_bar "${agent_pct}" 100) ${agent_pct}%"
+ACTIVE_AGENT=""
+declare -f get_active_agent >/dev/null 2>&1 && ACTIVE_AGENT=$(get_active_agent "${STATE_FILE}")
+if [[ -n "$ACTIVE_AGENT" ]]; then
+    AGENT_SINCE=$(awk '/^active_agent:/{f=1;next} f&&/^[^[:space:]]/{exit} f&&/^  activated_at:/{sub(/^  activated_at:[[:space:]]*/,"");gsub(/"/,"");print;exit}' "${STATE_FILE}" 2>/dev/null || true)
+    echo -e "  🤖 ${BOLD}${ACTIVE_AGENT}${NC}  ${DIM}(subagent uws-${ACTIVE_AGENT}${AGENT_SINCE:+, dispatched ${AGENT_SINCE}})${NC}"
 else
-    echo -e "  ${DIM}No active agents${NC}"
-fi
-echo ""
-
-# Enabled Skills
-echo -e "${BLUE}┌─────────────────────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${BLUE}│ ${BOLD}ENABLED SKILLS${NC}                                                             ${BLUE}│${NC}"
-echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
-
-if [ -f ${WORKFLOW_DIR}/skills/enabled.yaml ]; then
-    SKILL_COUNT=$(grep -c "^  - " ${WORKFLOW_DIR}/skills/enabled.yaml 2>/dev/null || true)
-    SKILL_COUNT=${SKILL_COUNT:-0}
-    SKILL_COUNT=$(echo "$SKILL_COUNT" | tr -d '[:space:]')
-
-    if [ "$SKILL_COUNT" -gt 0 ] 2>/dev/null; then
-        echo -e "  ${CYAN}Active Skills (${SKILL_COUNT}):${NC}"
-        grep "^  - " ${WORKFLOW_DIR}/skills/enabled.yaml | head -5 | while read -r line; do
-            skill=$(echo "$line" | sed 's/^  - //')
-            echo -e "    ✓ ${GREEN}${skill}${NC}"
-        done
-
-        if [ "$SKILL_COUNT" -gt 5 ] 2>/dev/null; then
-            echo -e "    ${DIM}... and $((SKILL_COUNT - 5)) more${NC}"
-        fi
-    else
-        echo -e "  ${DIM}No skills enabled${NC}"
-    fi
-else
-    echo -e "  ${DIM}Skills not configured${NC}"
+    echo -e "  ${DIM}None dispatched (uws orchestrate dispatch \"<task>\")${NC}"
 fi
 echo ""
 
@@ -320,9 +282,12 @@ if [ "$VERBOSE" = true ]; then
     echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
     
     if [ -f ${WORKFLOW_DIR}/checkpoints.log ]; then
-        tail -3 ${WORKFLOW_DIR}/checkpoints.log | while IFS='|' read -r timestamp checkpoint description; do
-            echo -e "  ${YELLOW}$(echo $checkpoint | xargs)${NC} - $(echo $description | xargs)"
-            echo -e "    ${DIM}$(echo $timestamp | xargs)${NC}"
+        # Only real checkpoint lines: the log also holds AGENT_*/PHASE_TRANSITION
+        # events and comments. Trim with sed, not xargs (xargs rejects apostrophes).
+        { grep -E '\| CP_[0-9]+_[0-9]+ \|' ${WORKFLOW_DIR}/checkpoints.log || true; } | tail -3 | \
+            while IFS='|' read -r timestamp checkpoint description; do
+            echo -e "  ${YELLOW}$(printf '%s' "$checkpoint" | sed 's/^ *//; s/ *$//')${NC} - $(printf '%s' "$description" | sed 's/^ *//; s/ *$//')"
+            echo -e "    ${DIM}$(printf '%s' "$timestamp" | sed 's/^ *//; s/ *$//')${NC}"
         done
     else
         echo -e "  ${DIM}No checkpoints recorded${NC}"
@@ -353,8 +318,7 @@ echo -e "${BLUE}└────────────────────�
 
 echo -e "  ${CYAN}Continue work:${NC}     ${GREEN}./scripts/recover_context.sh${NC}"
 echo -e "  ${CYAN}Create checkpoint:${NC} ${GREEN}./scripts/checkpoint.sh \"message\"${NC}"
-echo -e "  ${CYAN}Change agent:${NC}      ${GREEN}./scripts/activate_agent.sh [agent]${NC}"
-echo -e "  ${CYAN}Enable skill:${NC}      ${GREEN}./scripts/enable_skill.sh [skill]${NC}"
+echo -e "  ${CYAN}Dispatch agent:${NC}    ${GREEN}./scripts/orchestrate.sh dispatch \"<task>\"${NC}"
 echo ""
 
 # Footer

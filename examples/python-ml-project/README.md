@@ -26,8 +26,8 @@ uws init research
 # Start the research workflow
 uws research start
 
-# Phase 1: Hypothesis
-uws agent researcher
+# Phase 1: Hypothesis (owned by the researcher subagent)
+uws orchestrate dispatch "State the hypothesis and success criteria"
 uws research status
 # Define your hypothesis, document in .workflow/handoff.md
 uws checkpoint create "Hypothesis: transformer attention improves tabular data"
@@ -38,32 +38,29 @@ uws research status   # Now in literature_review
 # Review related work, collect references
 uws checkpoint create "Literature review complete - 23 papers reviewed"
 
-# Phase 3: Experiment Design
+# Phase 3: Experiment Design (researcher)
 uws research next
-uws agent experimenter
 # Design experiments, define metrics
 uws checkpoint create "Experiment design: 3 baselines, 2 architectures, 5 datasets"
 
-# Phase 4: Data Collection
+# Phase 4: Data Collection (experimenter)
 uws research next
-# Prepare datasets, preprocessing pipelines
+uws orchestrate dispatch "Prepare datasets and run the experiments"
 uws checkpoint create "Data collection complete - 5 datasets preprocessed"
 
-# Phase 5: Analysis
+# Phase 5: Analysis (experimenter)
 uws research next
-uws agent researcher
-# Run experiments, analyze results
+# Analyze results
 uws checkpoint create "Analysis complete - transformer outperforms baselines on 4/5 datasets"
 
-# Phase 6: Peer Review
+# Phase 6: Peer Review (researcher)
 uws research next
-# Internal review, address feedback
+uws orchestrate dispatch "Review the analysis against the hypothesis"
 uws checkpoint create "Peer review feedback incorporated"
 
-# Phase 7: Publication
+# Phase 7: Publication (documenter)
 uws research next
-uws agent documenter
-# Write paper, prepare submission
+uws orchestrate dispatch "Write the paper"
 uws checkpoint create "Paper submitted to ICML"
 ```
 

@@ -5,6 +5,11 @@
 # Creates a temp directory, initializes UWS, and walks through
 # the full research workflow with agent handoffs and checkpoints.
 #
+# Each handoff is `orchestrate.sh dispatch`: it picks the subagent that owns
+# the current phase, writes its brief to workspace/<role>/TASK.md and records
+# it as the active agent. In Claude Code the uws-<role> subagent then does the
+# work; this demo only shows the bookkeeping.
+#
 
 set -euo pipefail
 
@@ -47,8 +52,8 @@ step "2. Starting research workflow"
 "$SCRIPTS/research.sh" start 2>&1 || true
 "$SCRIPTS/research.sh" status 2>&1
 
-step "3. Phase 1: Hypothesis - Activating researcher agent"
-"$SCRIPTS/activate_agent.sh" researcher 2>&1 || true
+step "3. Phase 1: Hypothesis - Dispatching to the researcher subagent"
+"$SCRIPTS/orchestrate.sh" dispatch "State the hypothesis and success criteria" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Hypothesis defined" 2>&1 || true
 info "Checkpoint created for hypothesis phase"
 
@@ -57,27 +62,27 @@ step "4. Phase 2: Literature Review"
 "$SCRIPTS/research.sh" status 2>&1
 "$SCRIPTS/checkpoint.sh" create "Literature review complete" 2>&1 || true
 
-step "5. Phase 3: Experiment Design - Switching to experimenter"
+step "5. Phase 3: Experiment Design (still the researcher)"
 "$SCRIPTS/research.sh" next 2>&1 || true
-"$SCRIPTS/activate_agent.sh" experimenter 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Experiment designed" 2>&1 || true
 
-step "6. Phase 4: Data Collection"
+step "6. Phase 4: Data Collection - Dispatching to the experimenter subagent"
 "$SCRIPTS/research.sh" next 2>&1 || true
+"$SCRIPTS/orchestrate.sh" dispatch "Prepare datasets and run the experiments" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Data collected" 2>&1 || true
 
-step "7. Phase 5: Analysis - Back to researcher"
+step "7. Phase 5: Analysis (experimenter)"
 "$SCRIPTS/research.sh" next 2>&1 || true
-"$SCRIPTS/activate_agent.sh" researcher 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Analysis complete" 2>&1 || true
 
-step "8. Phase 6: Peer Review"
+step "8. Phase 6: Peer Review - Dispatching back to the researcher subagent"
 "$SCRIPTS/research.sh" next 2>&1 || true
+"$SCRIPTS/orchestrate.sh" dispatch "Review the analysis against the hypothesis" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Peer review done" 2>&1 || true
 
-step "9. Phase 7: Publication - Switching to documenter"
+step "9. Phase 7: Publication - Dispatching to the documenter subagent"
 "$SCRIPTS/research.sh" next 2>&1 || true
-"$SCRIPTS/activate_agent.sh" documenter 2>&1 || true
+"$SCRIPTS/orchestrate.sh" dispatch "Write the paper" 2>&1 || true
 "$SCRIPTS/checkpoint.sh" create "Paper submitted" 2>&1 || true
 
 step "10. Final status"

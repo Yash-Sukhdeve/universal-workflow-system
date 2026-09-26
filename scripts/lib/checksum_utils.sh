@@ -119,7 +119,6 @@ files:"
         "checkpoints.log"
         "config.yaml"
         "agents/registry.yaml"
-        "skills/catalog.yaml"
     )
 
     for file in ${files[@]+"${files[@]}"}; do

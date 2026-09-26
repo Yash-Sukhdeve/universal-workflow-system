@@ -379,6 +379,81 @@ refresh_handoff_header() {
 }
 
 #######################################
+# Record which agent the orchestrator dispatched work to. Replaces the
+# retired scripts/activate_agent.sh (which made the main session role-play a
+# persona); agents are now real Claude Code subagents (.claude/agents/uws-*).
+#
+# Writes a fresh top-level block to state.yaml, replacing any existing one
+# (including legacy extra keys such as tool_origin or a flat
+# `active_agent: "x"` scalar):
+#   active_agent:
+#     name: "<agent>"
+#     status: "active"
+#     activated_at: "<ISO-8601>"
+# This is the block handoff_utils.sh renders as "Active agent" and submit.sh
+# reads to pick workspace/<agent>/. Plain awk rewrite, so it behaves the same
+# with and without yq. Also logs "<ts> | AGENT_DISPATCHED | <agent>" to
+# checkpoints.log (filtered out of recovered context by uws_real_checkpoints)
+# and refreshes handoff.md's managed block.
+# Arguments: $1 - agent name, $2 - (optional) state file
+# Returns: 0 on success, 1 on invalid name / missing state / write failure
+#######################################
+record_active_agent() {
+    local agent="${1:-}" file="${2:-$(_wr_state_file)}"
+    if [[ ! "$agent" =~ ^[a-z][a-z0-9_-]*$ ]]; then
+        echo "record_active_agent: invalid agent name '${agent}'" >&2
+        return 1
+    fi
+    if [[ ! -f "$file" ]]; then
+        echo "record_active_agent: state file not found: ${file}" >&2
+        return 1
+    fi
+
+    local ts tmp
+    ts="$(date +%Y-%m-%dT%H:%M:%S%z 2>/dev/null || date)"
+    tmp="$(mktemp "${file}.XXXXXX")" || return 1
+    # Drop the old block (the key line plus its indented/blank continuation
+    # lines), keep everything else byte-for-byte, then append the new block.
+    if ! awk '
+        /^active_agent:/ { skip = 1; next }
+        skip && (/^[[:space:]]/ || /^$/) { next }
+        { skip = 0; print }
+    ' "$file" > "$tmp"; then
+        rm -f "$tmp"; return 1
+    fi
+    {
+        echo "active_agent:"
+        echo "  name: \"${agent}\""
+        echo "  status: \"active\""
+        echo "  activated_at: \"${ts}\""
+    } >> "$tmp" || { rm -f "$tmp"; return 1; }
+    # cat > keeps the file's inode/permissions (mv would not)
+    cat "$tmp" > "$file" || { rm -f "$tmp"; return 1; }
+    rm -f "$tmp"
+
+    echo "${ts} | AGENT_DISPATCHED | ${agent}" >> "$(dirname "$file")/checkpoints.log" 2>/dev/null || true
+    refresh_handoff_header "" "" "" "$(dirname "$file")/handoff.md"
+    return 0
+}
+
+#######################################
+# Name of the agent last recorded by record_active_agent (empty if none).
+# Arguments: $1 - (optional) state file
+#######################################
+get_active_agent() {
+    local file="${1:-$(_wr_state_file)}"
+    [[ -f "$file" ]] || return 0
+    awk '
+        /^active_agent:/ { insec = 1; next }
+        insec && /^[^[:space:]]/ { exit }
+        insec && /^  name:/ {
+            sub(/^  name:[[:space:]]*/, ""); sub(/[[:space:]]*$/, "")
+            gsub(/^["'\'']|["'\'']$/, ""); if ($0 != "null") print; exit
+        }
+    ' "$file" 2>/dev/null || true
+}
+
+#######################################
 # Whether the deliverable gate is active. Goal-driven mode: the hard gate
 # turns on only once a non-empty goal is declared. With no goal, phases are
 # plain position labels and `next`/`goto` advance freely.

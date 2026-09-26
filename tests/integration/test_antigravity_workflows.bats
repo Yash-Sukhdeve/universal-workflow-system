@@ -19,13 +19,11 @@ teardown() {
 # WORKFLOW FILE EXISTENCE TESTS
 # =============================================================================
 
-@test "all 9 workflow files exist in antigravity-integration/workflows/" {
+@test "all 7 workflow files exist in antigravity-integration/workflows/" {
     local workflows=(
         "uws-status"
         "uws-checkpoint"
         "uws-recover"
-        "uws-agent"
-        "uws-skill"
         "uws-handoff"
         "uws-init"
         "uws-sdlc"
@@ -108,20 +106,15 @@ teardown() {
     assert_success
 }
 
-@test "uws-agent workflow can execute activate_agent.sh" {
-    cd "${TEST_TMP_DIR}"
-
-    run "${SCRIPTS_DIR}/activate_agent.sh" researcher
-
-    assert_success
-}
-
-@test "uws-skill workflow can execute enable_skill.sh" {
-    cd "${TEST_TMP_DIR}"
-
-    run "${SCRIPTS_DIR}/enable_skill.sh" code_generation enable
-
-    assert_success
+@test "retired uws-agent/uws-skill workflows are not shipped" {
+    # uws-skill only appended a comment to state.yaml ("simulation") and
+    # uws-agent overwrote the active_agent block with a flat scalar; both
+    # were removed together with the Claude-side agent/skill commands.
+    local d
+    for d in "${PROJECT_ROOT}/antigravity-integration/workflows" "${PROJECT_ROOT}/.agent/workflows"; do
+        [ ! -e "${d}/uws-agent.md" ]
+        [ ! -e "${d}/uws-skill.md" ]
+    done
 }
 
 @test "uws-handoff workflow can access handoff.md" {
