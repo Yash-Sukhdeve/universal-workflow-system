@@ -1,0 +1,612 @@
+# UWS Knowledge Base and Meta-Learning: Design
+
+- Status: proposed (design only; no code written)
+- Author role: uws-architect subagent, 2026-09-24
+- Repo state read: `chore/cleanup`, started at `ad6ff7a`, rechecked at `8c2372f` (only Company OS
+  removal in between; no cited file changed except `.gitignore` line numbers, updated here)
+- Goal (PI): "the workflow should have meta learning ability, a knowledge base that acts as a
+  brain to store useful information and timely remove incorrect or unnecessary information."
+
+## 0. Scope, deliverables, constraints
+
+- Scope: one knowledge base (KB) for UWS projects plus a cross-project KB, the item
+  lifecycle, meta-learning, migration of today's three memory stores, interfaces, risks, and a
+  first increment that can be tested.
+- Deliverable: this document only. No code.
+- Constraints: git-native plain files are the source of truth; any vector index is a cache
+  that can be rebuilt; the session-start context stays inside the existing 1200-byte budget;
+  Bash 3.2 and BSD tools (CLAUDE.md "Portability rules"); no automatic changes to rules
+  without a human; every removal auditable in git and reversible.
+
+Labels used below: **[verified]** = I opened the file or page in this session and checked
+it; **[inference]** = my reasoning, not checked against a source.
+
+## 1. Summary for a freshman
+
+Think of the KB as a lab notebook with rules. Each page holds one claim, says where the
+claim came from, and says how to re-check it. A claim starts as a *candidate*. It becomes
+*trusted* only after a check passes or a second party reviews it. When the code or document it
+depends on changes, the claim is marked *stale* until someone re-checks it. When it is shown
+wrong, replaced, or left unused and unchecked, it is *retired*: moved to a `retired/` folder
+in git, not deleted, so you can see what was removed and why, and bring it back.
+
+Agents do not get the notebook pasted into every session. They get one line saying the
+notebook exists and how many pages need attention. They search it when they need it.
+
+"Meta-learning" here means something concrete: UWS logs what happened to its own work (which
+gate failed, which change request was rejected, which trusted claim later turned out wrong),
+counts it, and when a pattern repeats often enough it writes a *proposal* to change a
+checklist, a route, or a model choice. A human approves or rejects each proposal.
+
+Five main decisions:
+1. One Markdown file per item with flat YAML front matter, under `docs/kb/`, tracked in
+   git. The vector database stops being a store and becomes an optional cache (ADR-KB-1).
+2. Nothing enters without provenance that a script can resolve. Confidence is computed from
+   evidence and status; agents cannot set it themselves (ADR-KB-3).
+3. Retrieval is pull, not push: at most one KB line at session start and at most 5 items
+   (about 1000 bytes) per search or subagent brief (ADR-KB-2).
+4. Removal is a rule table that a script can test (superseded, check failing, expired, unused,
+   unpromoted), carried out as `git mv` to `retired/` with a reason (Section 5.6).
+5. Meta-learning learns only from machine-recorded outcomes (exit codes, review decisions,
+   retirements). It never learns from narrative, and it never edits rules itself (Section 6).
+
+## 2. Current state inventory
+
+### 2.1 What exists today [verified]
+
+| Store | Where | Loaded when | Tracked in git? | Notes |
+|---|---|---|---|---|
+| Vector memory, local | `memory/vector_memory.db` (sqlite), server config in `.mcp.json` `vector_memory_local` | on MCP call; a second SessionStart hook tells the model to query it (`.claude/settings.json:18`) | No: `.gitignore:133` `memory/` | 31 rows |
+| Vector memory, global | `~/uws-global-knowledge/memory/vector_memory.db`; path from `scripts/lib/uws_config.sh:140-153` | same | No | 11 rows |
+| Protocol | `.claude/skills/vector-memory/SKILL.md`; `memory-gate`, `phase-distillation`, `memory-retrospective` skills | skill description always; body on invoke | Yes | 4 skills |
+| Claude Code auto-memory | `~/.claude/projects/<project>/memory/MEMORY.md` + topic files | every session (limits in 2.3) | No (machine-local) | MEMORY.md is 93 lines, 17,871 bytes |
+| CLAUDE.md | repo root, 126 lines, 6,566 bytes; `## Vector Memory Protocol` at line 105 | every session | Yes | human-written rules |
+| `.workflow/knowledge/` | `patterns.yaml`, written by `scripts/init_workflow.sh:403-418` | read only by `scripts/status.sh:340-342` (counts) | No: `.gitignore:168` | empty template (`patterns: []`) |
+| Decisions log | `.workflow/logs/decisions.log` | never | No: `.gitignore:91-92` | 49 entries, all "Created checkpoint" / "Activated agent" events |
+| Event history | `.workflow/checkpoints.log` (`AGENT_ACTIVATED` at `scripts/activate_agent.sh:321`, `PHASE_TRANSITION` at `scripts/sdlc.sh:318`) | 3 lines in session hook | No: `*.log` at `.gitignore:91` | |
+| Session hook | `scripts/lib/hook_context.sh:30` `UWS_HOOK_MAX_BYTES` default 1200 | SessionStart | Yes | hook must be read-only (`hook_context.sh:12`) |
+
+### 2.2 Defects found in the current memory (evidence for this redesign) [verified]
+
+1. **Duplicates.** Local rows 1-6 and 7-12 are the same six memories stored twice. After
+   removing the `CATEGORY: x |` prefix the texts are byte-identical. So 6 of 31 rows (19%) are
+   redundant.
+2. **Stale facts with no way to notice.** Local row 4 says "All 608 BATS tests passing". The
+   handoff (`CP_2_014`/`CP_2_015` in `checkpoints.log`) records 741. Nothing marks row 4 old.
+3. **A wrong claim promoted to cross-project memory.** Global row 6 begins "git stash pop
+   silently drops changes when merge conflicts occur". The git manual says the opposite:
+   "Applying the state can fail with conflicts; in this case, it is not removed from the stash
+   list" (https://git-scm.com/docs/git-stash). The row even contradicts itself in its next
+   sentence. It passed the `memory-gate` questions (`memory-gate/SKILL.md:16-21`) because
+   those questions ask whether a lesson is *general*, not whether it is *true*.
+4. **A wrong file name in both memory and protocol.** Global row 8 and
+   `vector-memory/SKILL.md:148,159` say the DB file is `memories.db`. The server uses
+   `vector_memory.db` (`~/.uws/tools/vector-memory/src/models.py:161`). `memories.db` is a
+   leftover file from February.
+5. **Test data in the real store.** Local row 13 mixes "configured Docker", a CI change and a
+   "batch_size" in a training config. None of these exist in UWS. [inference] It looks like a
+   fixture from the Phase 1 atomicity test that was written into the live DB.
+6. **No provenance field.** No row records a file, commit, URL, or command. The protocol only
+   asks for a phase prefix (`vector-memory/SKILL.md:18`).
+7. **Removal cannot happen.** The MCP tool refuses `days_old < 1` (`main.py:260`) and
+   `max_to_keep < 100` (`src/security.py:204-208`). "Removal" means adding another row
+   (`memory-gate/SKILL.md:38-42`), so wrong rows stay searchable. `delete_memory` exists in
+   `src/memory_store.py:474` but is not exposed as a tool.
+8. **Contradictory protocol.** `memory-retrospective/SKILL.md:29` suggests
+   `clear_old_memories(days_old=0, max_to_keep=0)`. `vector-memory/SKILL.md:150` and the code
+   say both values are rejected.
+9. **Context outside the budget.** The second SessionStart hook (`settings.json:18`) adds
+   278 bytes of context that the 1200-byte cap does not count. It also tells the model to run
+   memory searches at every resume. Auto-memory adds 17,871 bytes every session, about 15
+   times the UWS budget.
+10. **Lost meta-learning signal.** `sdlc.sh fail "<reason>"` prints the reason and regresses
+    the phase but does not save the reason anywhere (`scripts/sdlc.sh:548`; same for
+    `research.sh reject` at `scripts/research.sh:497`). The
+    events it does record go to gitignored logs.
+
+### 2.3 Native Claude Code memory vs what UWS adds [verified from docs, fetched 2026-09-24]
+
+Source: https://code.claude.com/docs/en/memory unless marked otherwise.
+
+- Auto-memory is written by Claude and holds "Your preferences, corrections you give Claude,
+  project context Claude can't derive from the code".
+- "The first 200 lines of `MEMORY.md`, or the first 25KB, whichever comes first, are loaded
+  at the start of every conversation."
+- "Claude Code doesn't load topic files such as `user_role.md` ... at startup. Claude reads
+  them on demand using its standard file tools".
+- "Auto memory is machine-local. All worktrees and subdirectories within the same git
+  repository share one auto memory directory. Files are not shared across machines".
+- Toggle: `autoMemoryEnabled` in settings, or `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
+- CLAUDE.md: "target under 200 lines per CLAUDE.md file. Longer files consume more context and
+  reduce adherence." `.claude/rules/` files with `paths` front matter "only load into context
+  when Claude works with matching files".
+- Subagents (https://code.claude.com/docs/en/sub-agents): "the main conversation's auto memory
+  isn't loaded" into a non-fork subagent. An optional `memory` field (`user` | `project` |
+  `local`) gives a subagent its own directory, and the first 200 lines or 25KB of its
+  `MEMORY.md` go into its system prompt. No UWS agent sets `memory` today (checked
+  `.claude/agents/*.md`).
+- Skills (https://code.claude.com/docs/en/skills): "skill descriptions are loaded into
+  context ... but full skill content only loads when invoked"; the `description` plus
+  `when_to_use` text is "truncated at 1,536 characters". `` !`cmd` `` "runs shell commands
+  before the skill content is sent to Claude".
+- Hooks (https://code.claude.com/docs/en/hooks): "On `SessionStart`, the hook's
+  `additionalContext` is added to the system prompt"; `UserPromptSubmit` also supports
+  `additionalContext`. I found no documented size limit, so UWS keeps its own.
+
+**What native memory lacks, and so UWS must add** [inference from the quotes above]:
+provenance, evidence levels, checks that can be re-run, staleness tied to source changes,
+contradiction links, removal rules, an audit trail in git shared with collaborators (native
+auto-memory is machine-local), and a scoped retrieval budget. Native memory stays for what
+it is designed for: the user's personal preferences and corrections (Section 7).
+
+## 3. Prior work used (only sources opened in this session)
+
+| Source | What it says (quoted or summarised from the opened page) | How this design uses it |
+|---|---|---|
+| Park et al., *Generative Agents*, arXiv:2304.03442 (PDF v2, Sec. 4.1-4.2) | Retrieval score = α_recency·recency + α_importance·importance + α_relevance·relevance, each min-max scaled to [0,1], "all αs are set to 1"; recency decays by 0.995 per game hour since last retrieval; importance is a 1-10 score from the LLM; reflections run when summed importance passes 150 | Ranking formula shape (5.3). **Changed**: the LLM-rated "importance" is replaced by a *trust* term from evidence level, because a model's own rating is not grounded evidence [inference] |
+| Packer et al., *MemGPT*, arXiv:2310.08560 (abstract) | "virtual context management ... drawing inspiration from hierarchical memory systems in traditional operating systems"; "manages different memory tiers" | Three tiers: session line, search results, files (5.3) |
+| Shinn et al., *Reflexion*, arXiv:2303.11366 (abstract) | agents "verbally reflect on task feedback signals, then maintain their own reflective text in an episodic memory buffer"; feedback may be "external or internally simulated" | Lessons come from feedback signals. UWS **allows only external signals** for rule-changing proposals (Section 6) |
+| Wang et al., *Voyager*, arXiv:2305.16291 (abstract) | "an ever-growing skill library of executable code"; "self-verification for program improvement" | Best knowledge is executable: a `check` command, and in the end a real test or lint rule (5.2, "graduation") |
+| Liu et al., *Lost in the Middle*, arXiv:2307.03172 (abstract) | performance "significantly degrades when models must access relevant information in the middle of long contexts" | Supports a small, ranked injection over a large dump (ADR-KB-2) |
+| Nygard, *Documenting Architecture Decisions*, cognitect.com blog, 2011-11-15 | ADR sections Title/Context/Decision/Status/Consequences; status proposed/accepted/deprecated/superseded; "keep the old one around, but mark it as superseded"; ADRs live in the repository | `decision` item body and the retire-not-delete rule |
+
+Not cited because not opened this session: A-MEM, MemoryBank, Mem0, and any study of LLM
+confidence calibration. The claim that agent-stated confidence is unreliable is therefore
+marked [inference] wherever it appears.
+
+## 4. Data model
+
+### 4.1 Item file
+
+One item per file: `docs/kb/items/<id>.md`. The front matter is flat `key: value`. Lists
+are one-line `[a, b]` so `grep`/`awk` can parse them without yq (yq is optional per
+CLAUDE.md). The body holds detail, quotes, and for decisions the Nygard sections.
+
+```markdown
+---
+id: K-20260924-3f9c1a
+type: fact
+scope: project
+status: trusted
+claim: "UWS caps SessionStart context at UWS_HOOK_MAX_BYTES, default 1200 bytes."
+evidence: verified
+source: [file:scripts/lib/hook_context.sh:30@ad6ff7a]
+check: "grep -q 'UWS_HOOK_MAX_BYTES:-1200' scripts/lib/hook_context.sh"
+watch: [scripts/lib/hook_context.sh]
+watch_blob: [eb77b3572c0baf05efa5c57a48f249589960443f]
+author: uws-architect
+reviewer: human
+captured_by: cli
+created: 2026-09-24
+verified_at: 2026-09-24
+review_by: 2027-03-23
+supersedes: []
+superseded_by:
+contradicts: []
+supports: []
+tags: [hooks, context-budget]
+---
+Why it matters: the KB session line must fit inside this cap.
+```
+
+### 4.2 Fields
+
+| Field | Required | Values / rule |
+|---|---|---|
+| `id` | yes | `K-<yyyymmdd>-<6 hex of sha1(claim)>`. Content-derived, so two branches do not both mint `K-0005` [inference: sequential IDs collide on merge] |
+| `type` | yes | `fact`, `decision` (ADR), `lesson`, `anti-pattern`, `question`, `hypothesis`, `proposal` (meta-learning output, Section 6) |
+| `scope` | yes | `project` (this repo) or `global` (cross-project KB) |
+| `status` | yes | `candidate`, `trusted`, `stale`, `disputed`, `retired` (state machine 5.1) |
+| `claim` | yes | one sentence, at most 240 bytes, no project paths if `scope: global` |
+| `evidence` | yes, except `question` | see 4.3 |
+| `source` | yes, except `question` | one or more of `file:<path>:<line>@<commit>`, `commit:<sha>`, `url:<url>` (body must hold a verbatim quote), `cmd:<command>#<output-file>@<commit>`, `item:<id>` (for inferred) |
+| `check` | required when `evidence: verified` | a shell command, exit 0 means the claim still holds; run with a time limit (default 10 s) |
+| `watch`, `watch_blob` | optional | paths whose git blob hash at verify time is recorded; a later change makes the item stale |
+| `falsifier` | required for `hypothesis` | the observation that would refute it (apocalypt.md principle 2) |
+| `author` | yes | agent role (`uws-implementer`), `human`, or a script name |
+| `reviewer` | for trusted non-`verified` items | must differ from `author` |
+| `captured_by` | yes | `cli`, `hook:<name>`, `skill:<name>`, `import:<store>#<row>` |
+| `created`, `verified_at` | yes | ISO dates |
+| `review_by` | yes | date by which it must be re-verified; default per type (4.4) |
+| `supersedes`, `superseded_by`, `contradicts`, `supports` | optional | item IDs |
+| `retired_at`, `retired_reason` | when retired | reason code from 5.6 |
+
+### 4.3 Evidence levels and computed confidence
+
+The levels follow apocalypt.md line 39: "Separate established facts, reported findings, your
+own observations, inferences, hypotheses, estimates, and open questions". Hypotheses and open
+questions are *types*, not evidence levels. Estimates are recorded as `inferred`.
+
+| Evidence | Meaning | Provenance required | Can become trusted by | Confidence shown |
+|---|---|---|---|---|
+| `verified` | a re-runnable `check` passes now | `check` plus a source | `uws kb verify` passing (no human needed for `project`) | high |
+| `observed` | seen in this project's real output | `cmd:`/`file:`/`commit:` that resolves | reviewer ≠ author | medium |
+| `reported` | stated by an external source | `url:` plus a verbatim quote in the body | reviewer ≠ author, who opened the URL | medium |
+| `inferred` | reasoned from other items | `item:` links only | reviewer; never above its weakest input | low |
+
+Confidence is **computed**, not typed in: `confidence = f(evidence, status)`, and it drops one
+level once `verified_at` is older than half the `review_by` window. [inference] A model's own
+statement of confidence is not evidence, so the design gives it no field.
+
+### 4.4 Default review windows (configurable, Section 9)
+
+`fact` 180 days; `lesson`/`anti-pattern` 365; `decision` no expiry (it changes only by being
+superseded, as in Nygard); `question` 30; `hypothesis` 90; `proposal` 30. Items with a
+`check` or `watch` are also re-checked whenever their sources change (5.4).
+
+### 4.5 Layout
+
+```
+docs/kb/
+  items/<id>.md        active items (candidate, trusted, stale, disputed)
+  retired/<id>.md      retired items (kept, restorable)
+  events.tsv           append-only audit: ts, id, from_status, to_status, reason, actor
+  outcomes.tsv         append-only process outcomes (Section 6)
+  .cache/              gitignored: search index, usage counts, optional vectors
+```
+
+`events.tsv` uses the `.tsv` extension on purpose: `.gitignore:91` ignores `*.log`. The
+global KB uses the same layout at `$(uws_global_memory_dir)/kb/` (`uws_config.sh:140-153`),
+which must be its own git repository (`uws kb init --global` runs `git init`).
+
+## 5. Lifecycle
+
+### 5.1 State machine
+
+```
+candidate --verify ok / review ok--> trusted
+candidate --TTL 30d, rejected-----> retired
+trusted  --watch blob changed-----> stale   --re-verify ok--> trusted
+trusted  --check fails / contradicted-by-trusted--> disputed
+stale    --grace 30d passes-------> retired (expired)
+disputed --resolved true----------> trusted
+disputed --resolved false / 14d---> retired (disproven)
+any      --superseded-------------> retired (superseded)
+retired  --uws kb restore---------> candidate
+```
+
+Only `trusted` items are returned by default. `stale` items appear with `--include-stale`
+and a warning marker. `candidate` and `disputed` items appear only in `uws kb review`.
+
+### 5.2 Capture: when, who, how
+
+| Trigger | Who | Item type | Mechanism |
+|---|---|---|---|
+| Bug fixed with a regression test | implementer | `lesson` (evidence `verified`, `check` = the test) | `uws kb add` at the end of the fix; the skill prompts for it |
+| `sdlc.sh fail <reason>` / `research.sh reject <reason>` | script | outcome row (6.1), plus a `question` item "why did <phase> fail" | new line in the `fail)`/`reject)` branch |
+| Design decision accepted | architect/human | `decision` with the Nygard body | `uws kb add --type decision` |
+| Experiment result | experimenter | `fact`, `cmd:` source pointing to the saved output file | `uws kb add` |
+| External doc or paper read | researcher | `fact`, evidence `reported`, with URL and verbatim quote | `uws kb add` |
+| Phase end | orchestrator | review queue, not new items | `uws kb review` replaces `phase-distillation` |
+
+There is no automatic capture from free conversation. [inference] Hooks cannot tell a true
+lesson from a plausible one; automatic capture would repeat defects 2.2-3 and 2.2-5.
+
+**Graduation** (from Voyager's executable skill library): when a `lesson` or `anti-pattern`
+can be written as a BATS test, ShellCheck rule, or lint, the item is retired with reason
+`graduated:<test path>`. The rule then lives in CI, where it is always enforced, and not in
+context, where it is only advice. For example, CLAUDE.md's `grep -c ... || echo 0` rule is a
+candidate for a lint.
+
+### 5.3 Retrieval under a budget
+
+Three tiers (MemGPT's tiering idea):
+
+1. **Session line (tier 0).** `hook_context.sh` adds one fixed line to its tail, at most 120
+   bytes: `KB: 23 trusted, 2 stale, 1 disputed, 4 to review. Search: uws kb search <words>`.
+   It is computed from `.cache/stats` (rebuilt by write commands), so the hook reads one file
+   and stays read-only. Remove the separate vector-memory SessionStart hook
+   (`settings.json:18`).
+2. **On-demand search (tier 1).** `uws kb search <words> [--type T] [--limit N]` prints at
+   most 5 lines, each at most 200 bytes: `K-… [lesson|verified|2026-09-01] <claim> (<first
+   source>)`. The total is at most 1000 bytes (`UWS_KB_BRIEF_BYTES`). `uws kb show <id>` prints
+   one full item.
+3. **Files (tier 2).** Agents may read `items/*.md` directly.
+
+Ranking (Generative Agents' sum with all α = 1, terms changed as noted):
+`score = relevance + trust + recency`, each in [0,1]. `relevance` = share of query terms found
+in claim, tags, and body in increment 1; cosine similarity from the optional vector cache
+later. `trust` = verified 1.0, reported 0.75, observed 0.6, inferred 0.3 (these starting
+constants are not from any source; meta-learning may propose changes, Section 6). `recency`
+= 0.995^(days since `verified_at`). The 0.995 comes from the paper, which applied it per
+*game hour since last retrieval*; applying it per day since verification is my change
+[inference].
+
+**Subagents**: `scripts/orchestrate.sh` writes `workspace/<role>/TASK.md` at line 94. Add a
+section "Relevant knowledge (trusted, top 5)" filled by `uws kb search "<task text>"`, capped
+at 1000 bytes. Subagents do not get the native `memory` field (Section 7).
+
+### 5.4 Revalidation
+
+`uws kb verify [--changed | --all | <id>]`:
+- `--changed` (run by `checkpoint.sh create` and by `sdlc/research next`): for each trusted
+  item, compare each `watch` path's current `git hash-object` to `watch_blob`. If it changed
+  and the item has a `check`, run the check: pass → refresh `verified_at` and `watch_blob`;
+  fail → `disputed`. If it changed and there is no `check` → `stale`.
+- A `file:` source whose path no longer exists at HEAD → `stale`.
+- `url:` sources are never fetched automatically, which avoids network access in hooks;
+  expiry from `review_by` covers them.
+- Checks run with a time limit (default 10 s each, 60 s total) using a portable timer, since
+  GNU `timeout` is not in macOS base [inference]. A timeout counts as "unknown", which marks
+  the item stale, not disputed.
+
+### 5.5 Contradictions
+
+- On `add`, the CLI searches for trusted items with overlapping `watch`/tags/terms and prints
+  them. The author must pass `--supersedes <id>`, `--contradicts <id>`, or `--no-conflict`.
+- `contradicts` a trusted item → the new item stays `candidate` and the old one gets a
+  "disputed by" marker in search output. Resolution happens by running both checks or by a
+  reviewer; the loser is retired with reason `disproven-by:<id>`.
+- Invariant (lint): no two `trusted` items are linked by `contradicts`.
+
+### 5.6 Removal rules (every rule testable)
+
+| Rule | Condition | Action | Automatic? |
+|---|---|---|---|
+| R1 superseded | a newer item lists it in `supersedes` | retire, `superseded-by:<id>` | yes, on `add` |
+| R2 disproven | status `disputed` for 14 days, or a reviewer rules it false | retire, `disproven` | `prune --apply` |
+| R3 expired | `review_by` passed → `stale`; stale for 30 more days | retire, `expired` | `prune --apply` |
+| R4 unused | not returned by any search in 20 sessions and older than 90 days; `decision` excluded | *propose* retirement | human confirms |
+| R5 unpromoted | `candidate` for 30 days | retire, `unpromoted` | `prune --apply` |
+| R6 graduated | a test or lint now enforces it | retire, `graduated:<path>` | on `add --graduate` |
+| R7 duplicate | same normalised claim hash as an active item | refuse `add` (exit 3) | yes |
+| R8 unprovenanced | missing or unresolvable source | refuse `add` (exit 2) | yes |
+
+`uws kb prune` is a dry run by default. It prints the planned moves and changes nothing.
+`--apply` does `git mv items/<id>.md retired/<id>.md`, sets `status: retired`,
+`retired_at`, and `retired_reason`, and appends to `events.tsv`. It never commits; the human
+or orchestrator commits. That keeps the audit in git history, and `uws kb restore <id>`
+reverses it. Hard delete exists only as `uws kb purge <id> --secret` for leaked secrets. It
+prints a warning that git history still holds the file and must be rewritten by hand.
+
+Usage counts for R4 live in `.cache/usage.tsv` (gitignored), so a search never dirties the
+tree. The side effect: R4 is per machine. That is why R4 only proposes.
+
+## 6. Meta-learning
+
+### 6.1 Operational definition
+
+Meta-learning = (a) record outcomes of UWS's own process as machine-written rows, (b) compute
+fixed metrics, (c) when a metric crosses a threshold with enough samples, create a `proposal`
+item that names a concrete change, (d) a human accepts or rejects it, and (e) after
+adoption, measure the same metric again and propose a revert if it did not improve.
+
+### 6.2 What is measured (`docs/kb/outcomes.tsv`, tracked)
+
+Columns: `ts, event, phase, role, model, subject, result, ref`. `ref` is a commit, CR ID, or
+item ID. Rows are written only by scripts:
+
+| Event | Written by | Result |
+|---|---|---|
+| `gate_fail` | `sdlc.sh fail` / `research.sh reject` (the reason is saved; today it is lost, 2.2-10) | reason text, target phase |
+| `gate_pass` | `sdlc/research next` | deliverables done/total from `methodology_progress` |
+| `cr_decision` | `review.sh approve/reject` | approved / rejected + reason |
+| `dispatch` | `orchestrate.sh dispatch/collect` | role, model (from agent front matter `model:`), deliverable path, first-pass CR result |
+| `escape` | `uws kb add --type lesson --escaped-from <phase>` | a bug found after the named phase's gate passed |
+| `kb_retire` | `prune`/`add` | reason code + the retired item's `evidence` and `captured_by` |
+
+### 6.3 Metrics and proposal thresholds (starting values; each needs n ≥ 5)
+
+| Metric | Proposal triggered | Example change proposed |
+|---|---|---|
+| Gate-escape rate per phase = escapes / gate_passes | > 20% over the last 10 passes | add the escaped check to that phase's deliverable checklist |
+| First-pass CR rejection rate per (role, model) | > 40% | route that role to another model, or add a checklist item from the top rejection reasons |
+| Disproven rate per `evidence` level and per `captured_by` | a level or source is disproven > 25% | raise that level's bar (e.g. `observed` needs 2 sources) or lower its `trust` weight |
+| Repeated `gate_fail` reason (same normalised text) | ≥ 3 times | a lesson item plus a checklist or test proposal |
+| R4-unused share of trusted items | > 50% | shorter review windows or fewer capture triggers |
+
+A proposal item carries: the metric, n, values before and after, the target file (e.g.
+`docs/personas/architect.md`, `scripts/orchestrate.sh` routing, a TASK.md template), the
+exact diff as text in the body, and `falsifier` ("revert if the metric does not improve over
+the next 10 events").
+
+### 6.4 Guards
+
+- **Only external signals.** Metrics read only `outcomes.tsv` rows written by scripts from
+  exit codes and review decisions. Reflexion allows "internally simulated" feedback; UWS does
+  not use it for rule changes.
+- **Only trusted knowledge.** `candidate` and `inferred` items never feed a metric or a
+  proposal.
+- **Human in the loop.** `uws kb approve <proposal-id>` records the decision. It does not
+  apply the diff. A human (or the implementer on explicit instruction) applies it through the
+  normal CR flow. Nothing edits CLAUDE.md, personas, settings, or routing by itself.
+- **Honest statistics.** Proposals report counts, not causes. Small n and confounding
+  (different tasks per model) are stated in every proposal, following apocalypt.md principle
+  4 ("Distinguish ... association, and causal evidence").
+
+## 7. Migration: one source of truth
+
+| Current store | Decision | How |
+|---|---|---|
+| Vector local DB (31 rows) | **import, then retire as a store** | `uws kb import vector --db memory/vector_memory.db` (uses Python's `sqlite3` module; python3 is already a dependency) writes `candidate` items: `evidence: inferred`, `source: [import:vector-local#<row>]`, `captured_by: import`. The 6 duplicate pairs collapse via R7. Row 13 is flagged "suspected fixture" for review. Unpromoted imports retire after 30 days (R5) |
+| Vector global DB (11 rows) | import into the global KB as candidates, same way | row 6 goes straight to `disputed` with the git-stash quote as counter-evidence; row 8 is corrected (file name) |
+| Vector MCP servers | stop writing; keep the binary available as an optional *cache* backend | remove the SessionStart hook at `settings.json:18`; replace the `vector-memory`, `memory-gate`, `phase-distillation`, `memory-retrospective` skills with one `uws-kb` skill; shrink CLAUDE.md section at line 105 to 3 lines. `.mcp.json` entries: PI decision (D3) |
+| Claude Code auto-memory | **keep, narrowed** to what the docs say it is for: user preferences and corrections | UWS never writes to it. Offer `uws kb import automemory` to turn project facts into candidates. The PI then trims `MEMORY.md` to a short index (D2). That is the user's private file, so UWS does not edit it |
+| CLAUDE.md / `.claude/rules/` | keep for human-written rules | the KB never writes them; accepted proposals change them through CRs |
+| Subagent `memory` field | **do not enable** | it would create 7 more stores without provenance; subagents get KB items through TASK.md |
+| `.workflow/knowledge/patterns.yaml` | **retire** | `init_workflow.sh:403-418` stops creating it; `migrate_state.sh` deletes it only if it equals the empty template; `status.sh:340-342` reads `uws kb stats` |
+| `.workflow/logs/decisions.log` | leave as is, not imported | its 49 entries are event noise, not decisions |
+
+## 8. Interfaces
+
+### 8.1 CLI (`bin/uws kb …`, implemented in `scripts/kb.sh` + `scripts/lib/kb_utils.sh`)
+
+| Verb | Purpose | Exit codes |
+|---|---|---|
+| `add --type T --claim "…" --evidence E --source S… [--check C] [--watch P…] [--supersedes ID] [--contradicts ID] [--no-conflict] [--scope global]` | create a candidate (runs R7/R8 and secret scan) | 0 ok, 2 invalid/unprovenanced, 3 duplicate, 4 conflict not declared |
+| `search <words> [--type] [--limit ≤5] [--include-stale] [--all]` | ranked, budgeted lines | 0, 1 no match |
+| `show <id>` | full item | 0, 1 not found |
+| `verify [<id>\|--changed\|--all]` | run checks and watch comparison; promote verified candidates | 0, 5 some disputed |
+| `review` / `approve <id>` / `reject <id> "<why>"` | reviewer queue (reviewer ≠ author enforced) | 0, 6 self-review refused |
+| `prune [--apply]` | apply R1-R6; dry run by default | 0 |
+| `retire <id> "<reason>"` / `restore <id>` | manual retire and undo | 0, 1 |
+| `lint` | invariants I1-I6 (8.4) | 0, 1 violation |
+| `stats` | counts by status/type/evidence; rebuilds `.cache/stats` | 0 |
+| `learn` | compute 6.3 metrics; write proposal candidates | 0 |
+| `import vector\|automemory` | migration (7) | 0 |
+
+### 8.2 Claude Code surface
+
+- Skill `uws-kb` (model-invocable; the description says to use it before stating a fact about
+  earlier work and after fixing a bug). Its body is short and uses `` !`uws kb stats` `` for
+  live counts. Ship it in both `.claude/skills/` and the plugin (`plugins/uws/`, which today
+  has commands but no skills directory).
+- Command `/uws:kb <verb>` in `plugins/uws/commands/kb.md`, calling
+  `${CLAUDE_PLUGIN_ROOT}/bin/uws` (per CLAUDE.md "never a bare `uws`").
+- Hooks: tier-0 line inside `hook_context.sh`; `verify --changed` inside `checkpoint.sh
+  create`, which the PreCompact hook already calls. No new hook events are needed.
+
+### 8.3 Research team: claim ledger
+
+A paper project uses `type: fact|hypothesis` items tagged `paper:<name>`. Every sentence with
+a number or citation in the manuscript maps to an item ID. `uws kb ledger <paper-tag>` prints
+the table: claim, evidence, source, status. `lint --paper <tag>` fails if a cited item is not
+`trusted`, if a `reported` item lacks a quote, or if a `cmd:` output file is missing. This
+enforces apocalypt.md principle 6 ("Keep reported numbers traceable to generated outputs")
+and the user's rule R6 (BibTeX from `bib_sources/`): a `url:` source for a paper must point
+to the saved `bib_sources/<citekey>.bib`.
+
+### 8.4 Invariants checked by `lint`
+
+I1 every item parses and has the required fields; I2 every trusted item's sources resolve;
+I3 no two trusted items contradict; I4 every `supersedes` target is retired; I5 deleting
+`.cache/` and rebuilding gives identical `search` output; I6 search and hook output stay
+within their byte budgets.
+
+## 9. Configuration (environment variables; all optional)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `UWS_KB_DIR` | `docs/kb` | project KB root |
+| `UWS_GLOBAL_MEMORY_DIR` | `~/uws-global-knowledge` (existing, `uws_config.sh:140`) | global KB is `<dir>/kb` |
+| `UWS_KB_SEARCH_LIMIT` | 5 | max items per search/brief |
+| `UWS_KB_ITEM_BYTES` / `UWS_KB_BRIEF_BYTES` | 200 / 1000 | per-line and total caps |
+| `UWS_KB_CHECK_TIMEOUT` / `UWS_KB_VERIFY_BUDGET` | 10 / 60 s | check time limits |
+| `UWS_KB_CANDIDATE_TTL_DAYS`, `UWS_KB_STALE_GRACE_DAYS`, `UWS_KB_DISPUTE_DAYS` | 30, 30, 14 | R5, R3, R2 |
+| `UWS_KB_UNUSED_SESSIONS`, `UWS_KB_UNUSED_MIN_AGE_DAYS` | 20, 90 | R4 |
+| `UWS_KB_NOW` | unset | fake clock for tests |
+
+## 10. Risks and failure modes
+
+| # | Failure | Detection | Mitigation |
+|---|---|---|---|
+| 1 | Agents fill the KB with plausible but untrue items (slop) | disproven-rate metric; lint I2 | R8 provenance gate; reviewer ≠ author; `inferred` is capped at low confidence; auto-retire after 30 days if unpromoted (R5) |
+| 2 | Context bloat creeps back | I6 in CI; the hook test measures bytes | fixed tier-0 line; hard caps on search; no full-item injection |
+| 3 | Too many stale flags (every edit to a watched file) so people ignore them | stale count in `stats` | prefer `check` over bare `watch`; a changed file with a passing check is refreshed silently |
+| 4 | A `check` command is harmful or slow (it is code from an agent) | review at promotion; time limit | checks run only on `verify`, never in the SessionStart hook; commands showing up in `events.tsv` are reviewed like code in the CR diff; refuse checks with `rm`, `git push`, `curl … \|` patterns [inference: a denylist is incomplete, so review is the real control] |
+| 5 | Secrets or personal data stored in an item and committed | secret scan on `add` (key patterns, `BEGIN … PRIVATE KEY`) | refuse on match; `purge --secret` with a history-rewrite warning |
+| 6 | Prompt injection through retrieved text | n/a at runtime | search output is framed as "evidence to assess", following apocalypt.md principle 10; imperative text in `claim` is flagged by lint |
+| 7 | Merge conflicts across branches | git conflict | content-hash IDs; one file per item; `events.tsv`/`outcomes.tsv` append-only, and a `.gitattributes merge=union` line for both |
+| 8 | Two agents write at once | lint I1 | `atomic_write`/`atomic_append` from `scripts/lib/atomic_utils.sh:202,311` |
+| 9 | The meta-learning loop overfits on small n or learns a confounded "cause" | n shown in each proposal | n ≥ 5, human approval, falsifier with automatic revert proposal |
+| 10 | Checkpoint restore rolls back state but not the KB (or the reverse) | lint after restore | the KB is tracked files, so `git checkout` restores both together; `.cache/` is rebuilt |
+| 11 | The PI decides to untrack `.workflow/` (pending, handoff Next Actions) | — | `UWS_KB_DIR` can move the KB to a tracked path (D1) |
+| 12 | The stale `uws` on PATH (`~/.local/bin/uws` points to a different checkout, `~/Documents/AI_Professor/...`) runs old code without `kb` | `uws kb` says "unknown command" | tests call `bin/uws`; plugin commands use `${CLAUDE_PLUGIN_ROOT}` |
+| 13 | The global KB is not a git repo (for example a copied directory) | `kb init --global` check | refuse global writes unless `git rev-parse` succeeds there |
+
+## 11. ADRs (short)
+
+- **ADR-KB-1 Plain files as the source, vector DB as cache.** Status: proposed. Context:
+  2.2-1..8 show a DB that cannot delete, has no provenance, and is not in git. Decision: we will
+  store items as Markdown in git. Consequences: + review, diff, restore, audit; + no server
+  needed; − keyword search is weaker than embeddings. At 42 rows total that is acceptable
+  [inference]. An embedding cache in `.cache/` can come later without changing the format.
+- **ADR-KB-2 Pull, not push.** Decision: we will inject one line at session start and at most
+  5 items on demand. Consequences: + bounded context (supported by Lost in the Middle); −
+  agents must remember to search, so the skill description and TASK.md brief do the
+  reminding.
+- **ADR-KB-3 Computed confidence and a reviewer who is not the author.** Consequences: + no
+  self-certified items; − slower promotion for `observed`/`reported` items.
+- **ADR-KB-4 Retire, never delete.** Follows Nygard's "keep the old one around, but mark it as
+  superseded". Consequences: + reversible, auditable; − `retired/` grows. It is not loaded, so
+  it costs disk only.
+
+## 12. Minimal first increment (project scope only)
+
+**In:** item format; `add` (R7, R8, secret scan), `search`, `show`, `verify` (check +
+watch), `prune` (R1, R2, R3, R5), `retire`, `restore`, `lint` (I1-I4, I6), `stats`; tier-0
+line in `hook_context.sh`; `events.tsv`; removal of `.gitignore:168` and the
+`patterns.yaml` scaffold; the `uws-kb` skill and `/uws:kb` command.
+**Out (increment 2+):** global scope, imports, `learn`/`outcomes.tsv`, R4, vector cache,
+claim ledger, TASK.md injection.
+**Why this slice:** it stops new unprovenanced memory, gives a working remove path, and
+proves the context budget. Each later piece builds on this format.
+
+### Acceptance tests (BATS, run on the existing Ubuntu + macOS CI matrix)
+
+Each test runs in `setup_test_environment` with a git repo and `UWS_KB_NOW` fixed.
+
+1. `uws kb add --type fact --claim X --evidence observed` with no `--source` → exit 2, and
+   `items/` is still empty.
+2. `add … --source file:scripts/lib/hook_context.sh:30` → exit 0; one file in `items/`;
+   `status: candidate`; the source has `@<HEAD sha>` appended; `events.tsv` gains one line.
+3. `--source file:does/not/exist:1` → exit 2.
+4. Adding the same claim twice → second call exits 3 and prints the first ID.
+5. `--evidence verified --check 'grep -q 1200 f'` then `verify <id>` → `trusted`,
+   `verified_at` = fake today. Edit `f` so the grep fails, then `verify --changed` →
+   `disputed`; `search` no longer returns it.
+6. Item with `--watch g` and no check, trusted by `approve` from a different `--as` reviewer;
+   edit `g` → `verify --changed` → `stale`. `approve` by the same actor as the author → exit 6.
+7. `add B --supersedes A` → A is in `retired/` with `retired_reason: superseded-by:B`;
+   `restore A` → A is back in `items/` as `candidate`; `git log --follow` shows both moves.
+8. With `review_by` in the past: `prune` (dry run) leaves `git status --porcelain` unchanged;
+   `prune --apply` → `stale`; move the clock 31 days ahead, `prune --apply` → retired
+   `expired`.
+9. Seed 50 trusted items → `search test` prints ≤ 5 lines, each ≤ 200 bytes, total ≤ 1000
+   bytes, and no retired/disputed/stale items.
+10. With those 50 items, `recover_context.sh --hook` JSON `additionalContext` ≤ 1200 bytes
+    and contains `KB: 50 trusted`; `git status --porcelain` is unchanged by the hook.
+11. Two trusted items linked by `contradicts` → `lint` exits 1 and names both.
+12. `add --claim "key AKIA…"` (AWS key shape) → exit 2.
+13. `rm -rf docs/kb/.cache && uws kb stats && uws kb search test` gives the same output
+    as before the delete (I5).
+14. ShellCheck is clean; no GNU-only flags (existing `-l` run).
+15. End to end with real Claude Code (per CLAUDE.md): in a scratch project with an isolated
+    `CLAUDE_CONFIG_DIR`, `claude -p "what does the KB say about the hook budget?"` produces a
+    transcript where the `uws-kb` skill or `uws kb search` was called and the answer cites the
+    item ID.
+
+## 13. Later increments
+
+2: global KB + imports (7) + TASK.md injection + R4 usage counts. 3: `outcomes.tsv`, `learn`,
+proposals, `sdlc fail` reason capture. 4: claim ledger + paper lint. 5: optional embedding
+cache for `relevance` (rebuild-only; I5 still holds).
+
+## 14. Decisions needed from the PI
+
+- **D1 Where the project KB lives.** `.workflow/kb/` (tracked; the original recommendation) conflicted with the
+  open question in handoff.md about untracking `.workflow/`. The alternative is a top-level
+  `kb/` directory.
+- **D2 Auto-memory.** OK to trim your `MEMORY.md` (17.9 KB, loaded every session) to a short
+  index of preferences and move project facts into the KB? UWS will not touch it without
+  your OK.
+- **D3 Vector memory servers.** Remove `vector_memory_local/global` from `.mcp.json` after
+  import, or keep them installed but unused as a possible future cache?
+- **D4 Who may promote.** May an agent reviewer (different role from the author) promote
+  `observed`/`reported` project items, or must a human approve every promotion? Global items
+  are human-only in this design.
+- **D5 Thresholds.** Accept the starting values (30/30/14 days, n ≥ 5, 20 sessions), or set
+  your own.
+- **D6 Imported legacy items.** Triage the ~36 imported rows by hand, or let R5 retire
+  anything not re-verified within 30 days?
+
+### PI decisions (recorded 2026-09-26)
+
+Decided by the PI:
+- **D1:** the project KB lives in **`docs/kb/`**, tracked in git (not `.workflow/kb/`); the rest of this document uses `docs/kb/` throughout.
+- **D4:** **the PI approves every promotion** (project and global). Agents may capture and
+  check sources, and a reviewer agent may recommend promotion, but only the PI promotes.
+
+Defaults adopted until the PI says otherwise:
+- **D2:** `MEMORY.md` is not touched without the PI's explicit OK (still open).
+- **D3:** keep the vector-memory servers installed as an optional, rebuildable search cache;
+  they are never the source of truth.
+- **D5:** accept the starting thresholds; they are configurable (Section 9).
+- **D6:** imported legacy rows are triaged by hand (consistent with D4); nothing is
+  retired automatically until the PI has reviewed the import.
+
+## 15. Assumptions made
+
+- The first increment is Bash + awk to match the codebase; only the importer uses python3.
+- `git hash-object` is enough to detect a change; line-level anchoring is not needed at first.
+- No network access in hooks or `verify`, so URL sources expire by date only.
