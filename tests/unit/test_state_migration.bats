@@ -87,3 +87,20 @@ teardown() { teardown_test_environment; }
     assert_success
     [ -f .workflow/skills/enabled.yaml ]
 }
+
+@test "migration --clean removes the empty knowledge/patterns.yaml scaffold, keeps edited ones" {
+    mkdir -p .workflow/knowledge
+    printf '%s\n' '# Knowledge Base - Learned Patterns' \
+        '# This file accumulates patterns and solutions across sessions' '' \
+        'patterns: []' '' 'solutions: []' '' 'best_practices: []' > .workflow/knowledge/patterns.yaml
+    run "${SCRIPTS_DIR}/migrate_state.sh" --clean
+    assert_success
+    [ ! -e .workflow/knowledge/patterns.yaml ]
+    [ ! -e .workflow/knowledge ]
+    # a scaffold somebody wrote into is left alone
+    mkdir -p .workflow/knowledge
+    printf 'patterns:\n  - pattern: "keep me"\n' > .workflow/knowledge/patterns.yaml
+    run "${SCRIPTS_DIR}/migrate_state.sh" --clean
+    assert_success
+    grep -q 'keep me' .workflow/knowledge/patterns.yaml
+}

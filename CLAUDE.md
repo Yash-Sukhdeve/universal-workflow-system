@@ -51,6 +51,7 @@ analysis → peer_review → publication`. Once a goal is declared (`sdlc.sh goa
 - `agents/registry.yaml` - agent definitions and transition rules
 - `active_agent:` in `state.yaml` - last agent `orchestrate.sh` dispatched (`record_active_agent`)
 - `checkpoints/snapshots/<CP_ID>/` - state snapshots (gitignored)
+- Knowledge base: `docs/kb/` (tracked; `scripts/kb.sh` + `lib/kb_utils.sh`, `uws kb`); only the PI (`kb.pi` in `config.yaml`) promotes items to trusted
 
 ### Agents
 Seven roles (`researcher`, `architect`, `implementer`, `experimenter`, `optimizer`,

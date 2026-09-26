@@ -15,6 +15,7 @@
 - [Installation](#installation)
 - [CLI](#cli)
 - [Core Components](#core-components)
+- [Knowledge Base](#knowledge-base)
 - [Usage Guide](#usage-guide)
 - [Testing](#testing)
 - [Architecture](#architecture)
@@ -146,6 +147,7 @@ uws recover                  # Recover context after break
 uws sdlc [cmd]               # SDLC workflow (status|start|next|fail|reset)
 uws research [cmd]           # Research workflow (status|start|next|reject|reset)
 uws orchestrate dispatch "<task>"   # Hand the current phase to its subagent
+uws kb search <words>        # Project knowledge base (see Knowledge Base below)
 uws dashboard                # Serve the review/PM dashboard on http://localhost:8080
 uws help                     # Show all commands
 ```
@@ -283,6 +285,39 @@ requirements → design → implementation → verification → deployment → m
 ```
 hypothesis → literature_review → experiment_design → data_collection → analysis → peer_review → publication
 ```
+
+---
+
+## Knowledge Base
+
+`uws kb` keeps what a project has learned in `docs/kb/`, tracked in git: one Markdown file
+per claim, each with its source and, where possible, a command that re-checks it. Design:
+[`docs/design/knowledge-base.md`](docs/design/knowledge-base.md).
+
+```bash
+uws kb pi --set you@example.com          # once, in your own terminal: who may promote
+uws kb add --type fact --claim "The hook caps context at 1200 bytes" \
+  --evidence verified --source file:scripts/lib/hook_context.sh:31 \
+  --check "grep -q 'UWS_HOOK_MAX_BYTES:-1200' scripts/lib/hook_context.sh"
+uws kb verify <ID>                       # run the check (the item stays a candidate)
+uws kb approve <ID>                      # PI only: candidate -> trusted
+uws kb search hook budget                # at most 5 lines: ID [type|status|evidence|date] claim (source)
+uws kb verify --changed                  # re-check items whose watched files changed
+uws kb prune                             # dry run of the removal rules; --apply to act
+```
+
+- New items are `candidate`s. Only the PI promotes them to `trusted`: `approve` checks that
+  your `git config user.email` equals `kb.pi` in `.workflow/config.yaml` and refuses to run
+  inside an AI agent (Claude Code's `CLAUDECODE` environment). Agents can `add`, `verify` and
+  `recommend`; `uws kb review` lists what is waiting.
+- `add` refuses items without a resolvable source (exit 2), duplicates (3), undeclared
+  overlaps with trusted items (4) and anything that looks like a credential.
+- Items become `stale` or `disputed` when their watched files change or their check fails,
+  and `prune --apply` moves superseded, disproven, expired and never-promoted items to
+  `docs/kb/retired/` with `git mv` (`uws kb restore <ID>` undoes it). Every change is a line
+  in `docs/kb/events.tsv`; nothing is committed for you.
+- Session start adds one line (`KB: 12 trusted, 1 stale, ...`) inside the 1.2 KB context
+  budget. In Claude Code, the `uws-kb` skill and `/uws:kb` command wrap the CLI.
 
 ---
 

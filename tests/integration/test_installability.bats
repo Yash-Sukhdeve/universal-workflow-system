@@ -181,12 +181,23 @@ EOF
 
 @test "plugin: every command calls the plugin's own uws, never a PATH lookup" {
     local f
-    for f in "$PLUGIN_DIR"/commands/*.md; do
-        if grep -qE '(^|[`!( ])uws (init|status|checkpoint|recover|sdlc|research)' "$f"; then
+    for f in "$PLUGIN_DIR"/commands/*.md "$PLUGIN_DIR"/skills/*/SKILL.md; do
+        if grep -qE '(^|[`!( ])uws (init|status|checkpoint|recover|sdlc|research|kb)' "$f"; then
             echo "PATH-dependent uws call in $f" >&2
             return 1
         fi
     done
+}
+
+@test "plugin: ships the uws-kb skill and /uws:kb command, in step with the repo copy" {
+    [ -f "$PLUGIN_DIR/skills/uws-kb/SKILL.md" ]
+    grep -q '^name: uws-kb$' "$PLUGIN_DIR/skills/uws-kb/SKILL.md"
+    grep -q 'CLAUDE_PLUGIN_ROOT}/bin/uws kb stats' "$PLUGIN_DIR/skills/uws-kb/SKILL.md"
+    grep -q 'CLAUDE_PLUGIN_ROOT}/bin/uws kb' "$PLUGIN_DIR/commands/kb.md"
+    # .claude/skills/uws-kb is the same text with ./bin/uws (for work on UWS itself)
+    run diff <(sed -e 's|\${CLAUDE_PLUGIN_ROOT}/bin/uws|./bin/uws|g' "$PLUGIN_DIR/skills/uws-kb/SKILL.md" | grep -v 'never a bare') \
+             <(grep -v 'never a bare' "${PROJECT_ROOT}/.claude/skills/uws-kb/SKILL.md")
+    [ "$status" -eq 0 ]
 }
 
 @test "plugin: SessionStart hook is silent outside UWS projects" {

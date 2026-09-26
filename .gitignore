@@ -165,7 +165,6 @@ NOTIFICATIONS.md
 .workflow/agents/sessions.yaml
 .workflow/skills/definitions/
 .workflow/skills/enabled.yaml
-.workflow/knowledge/
 # Root convenience launcher (canonical CLI is tracked at bin/uws):
 /uws
 

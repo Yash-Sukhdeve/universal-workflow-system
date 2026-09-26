@@ -71,6 +71,8 @@ teardown() {
     [ -f "${TEST_TMP_DIR}/.workflow/state.yaml" ]
     [ ! -e "${TEST_TMP_DIR}/.workflow/skills" ]
     [ ! -e "${TEST_TMP_DIR}/.workflow/agents/active.yaml" ]
+    # the knowledge/patterns.yaml scaffold is retired: the KB is docs/kb/ (uws kb)
+    [ ! -e "${TEST_TMP_DIR}/.workflow/knowledge" ]
     run grep -E "skill_chains_enabled|auto_discover|auto_activate" "${TEST_TMP_DIR}/.workflow/config.yaml"
     [ "$status" -ne 0 ]
 }
