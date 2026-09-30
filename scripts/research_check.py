@@ -142,6 +142,18 @@ class Finding(object):
                 "level": self.level, "message": self.msg}
 
 
+def dedupe(findings):
+    """Drop repeats (a gate runs overlapping checks, e.g. ledger and numbers both check the
+    number-row schema), keeping the first of each."""
+    seen, out = set(), []
+    for f in findings:
+        key = (f.path, f.line, f.rule, f.msg, f.level)
+        if key not in seen:
+            seen.add(key)
+            out.append(f)
+    return out
+
+
 class EnvError(Exception):
     """The check could not run (missing file, bad config). Exit 2: gates fail closed."""
 
@@ -433,6 +445,12 @@ def _check_claim(project, claims, numbers, lineno, row):
     origin = row.get("data_origin")
     if origin is not None and origin not in DATA_ORIGINS:
         bad("LEDGER-SCHEMA", "data_origin %r is not one of %s" % (origin, ", ".join(DATA_ORIGINS)))
+    # Where the claim's labels come from (optional); "generator-rule" makes C6 block on any
+    # sentence the claim is attached to.
+    if row.get("labels") is not None and row.get("labels") not in LABEL_ORIGINS:
+        bad("LEDGER-SCHEMA", "labels %r is not one of %s" % (row.get("labels"), ", ".join(LABEL_ORIGINS)))
+    if row.get("where") is not None and not isinstance(row.get("where"), str):
+        bad("LEDGER-SCHEMA", "where must be a string such as \"paper/main.tex:12\"")
 
     verified_by = row.get("verified_by")
     # The core rule: the author of a claim can never be the one who verifies it (AT1).
@@ -503,39 +521,64 @@ def _check_claim(project, claims, numbers, lineno, row):
     return out
 
 
+NUMBER_REQUIRED = ("macro", "printed", "raw", "rounding", "metric", "output", "pointer",
+                   "output_sha256", "data_origin")
+
+
 def _check_number_shapes(numbers):
+    """Schema of the current revision of every number row, plus macro names used twice."""
     out = []
-    required = ("macro", "printed", "raw", "rounding", "metric", "output", "pointer",
-                "output_sha256", "data_origin")
+    owners = {}
     for nid in sorted(numbers.latest):
         lineno, row = numbers.latest[nid]
-        for key in required:
-            if row.get(key) in (None, ""):
-                out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: missing '%s'" % (nid, key)))
-        if row.get("data_origin") not in (None, "") and row.get("data_origin") not in DATA_ORIGINS:
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: data_origin %r is not one of %s"
-                               % (nid, row.get("data_origin"), ", ".join(DATA_ORIGINS))))
-        macro = row.get("macro")
-        if macro and not re.match(r"^\\[A-Za-z]+$", str(macro)):
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: macro must look like \\\\Name" % nid))
-        # Optional fields (increment 2); their values are checked when present.
-        ev = row.get("evaluation")
-        if ev is not None and ev not in EVALUATIONS:
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: evaluation %r is not one of %s"
-                               % (nid, ev, ", ".join(EVALUATIONS))))
-        exp = row.get("exp")
-        if exp is not None and exp != EXPLORATORY and not EXP_RE.match(str(exp)):
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: exp must be EXP-<name> or %r (got %r)"
-                               % (nid, EXPLORATORY, exp)))
-        inputs = row.get("inputs")
-        if inputs is not None and (not isinstance(inputs, list) or not all(isinstance(i, str) for i in inputs)):
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: inputs must be a list of project paths" % nid))
-        if row.get("formula") is not None and not isinstance(row.get("formula"), str):
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: formula must be a string such as "
-                               "\"N-0002/(N-0002+N-0003)\"" % nid))
-        tol_err = tolerance_error(row.get("tolerance"))
-        if tol_err:
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: %s" % (nid, tol_err)))
+        out.extend(_number_shape(numbers.rel, nid, lineno, row))
+        if isinstance(row.get("macro"), str) and row.get("macro"):
+            owners.setdefault(row["macro"], []).append((nid, lineno))
+    for macro, rows in sorted(owners.items()):
+        if len(rows) > 1:
+            for nid, lineno in rows[1:]:
+                out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: macro %s is also used by %s; each number "
+                                   "needs its own macro" % (nid, macro, rows[0][0])))
+    return out
+
+
+def _number_shape(rel, nid, lineno, row):
+    """Schema of one number row (design 6.4, increment 2 and the field-test fields)."""
+    out = []
+
+    def bad(msg):
+        out.append(Finding(rel, lineno, "NUM-SCHEMA", "%s: %s" % (nid, msg)))
+
+    for key in NUMBER_REQUIRED:
+        if row.get(key) in (None, ""):
+            bad("missing '%s'" % key)
+    if row.get("data_origin") not in (None, "") and row.get("data_origin") not in DATA_ORIGINS:
+        bad("data_origin %r is not one of %s" % (row.get("data_origin"), ", ".join(DATA_ORIGINS)))
+    macro = row.get("macro")
+    if macro and not re.match(r"^\\[A-Za-z]+$", str(macro)):
+        bad("macro must look like \\\\Name")
+    # Optional fields; their values are checked when present.
+    ev = row.get("evaluation")
+    if ev is not None and ev not in EVALUATIONS:
+        bad("evaluation %r is not one of %s" % (ev, ", ".join(EVALUATIONS)))
+    exp = row.get("exp")
+    if exp is not None and exp != EXPLORATORY and not EXP_RE.match(str(exp)):
+        bad("exp must be EXP-<name> or %r (got %r)" % (EXPLORATORY, exp))
+    inputs = row.get("inputs")
+    if inputs is not None and (not isinstance(inputs, list) or not all(isinstance(i, str) for i in inputs)):
+        bad("inputs must be a list of project paths")
+    if row.get("formula") is not None and not isinstance(row.get("formula"), str):
+        bad("formula must be a string such as \"N-0002/(N-0002+N-0003)\"")
+    tol_err = tolerance_error(row.get("tolerance"))
+    if tol_err:
+        bad(tol_err)
+    where = row.get("where")
+    if where is not None and not isinstance(where, str):
+        bad("where must be a string such as \"paper/main.tex:12; paper/results.tex#tab:auc\"")
+    unr = row.get("unrounded")
+    if unr is not None and (not isinstance(unr, dict) or not all(isinstance(unr.get(k), str) and unr.get(k)
+                                                                 for k in ("run", "output", "pointer"))):
+        bad("unrounded must be {\"run\": RUN-ID, \"output\": path, \"pointer\": \"/json/pointer\"}")
     return out
 
 
@@ -968,9 +1011,23 @@ def check_bib(project):
         findings.append(Finding(project.rel(refs) if refs else "references.bib", 1, "BIB-REFS",
                                 "references.bib is missing; build it with `uws research bib build`"))
 
+    # A key that references.bib does not define prints as [?]: that is a different problem
+    # (a citation to nothing) from a defined entry that was not fetched (BIB-MISSING).
+    ref_keys = None
+    if refs and os.path.isfile(refs):
+        try:
+            ref_keys = set(e.key for e in parse_bib(read_text(refs))[0] if e.key)
+        except BibError:
+            ref_keys = None   # BIB-REFS reports the parse error
+    refs_rel = project.rel(refs) if refs else "references.bib"
     for rel, lineno, key in cites:
-        if key not in stems:
+        if key in stems:
+            continue
+        if ref_keys is not None and key in ref_keys:
             findings.append(Finding(rel, lineno, "BIB-MISSING", "\\cite{%s} has no bib_sources/%s.bib" % (key, key)))
+        else:
+            findings.append(Finding(rel, lineno, "BIB-UNDEFINED", "\\cite{%s} is not defined in %s and has no "
+                                    "bib_sources/%s.bib: it cites nothing and prints as [?]" % (key, refs_rel, key)))
     claims = project.claims()
     for cid in sorted(claims.latest):
         lineno, row = claims.latest[cid]
@@ -2461,12 +2518,15 @@ def _c3_measured_random(project):
         if run_path and os.path.isfile(run_path):
             try:
                 with open(run_path, encoding="utf-8") as fh:
-                    cmd = json.load(fh).get("command") or ""
+                    rec = json.load(fh)
             except (OSError, ValueError):
-                cmd = ""
+                rec = {}
+            rec = rec if isinstance(rec, dict) else {}
+            cmd = rec.get("command") or ""
             if isinstance(cmd, list):
                 cmd = " ".join(cmd)
             scripts.extend(re.findall(r"[\w./-]+\.py\b", str(cmd)))
+            scripts.extend(p for p in run_code_paths(rec) if p.endswith(".py") and p not in scripts)
         for script in scripts:
             spath = project.path(script)
             if not os.path.isfile(spath):
@@ -3037,12 +3097,27 @@ def number_inputs(project, row):
                 paths.append((safe_rel(project, inp["path"]) or inp["path"], inp.get("sha256")))
             elif isinstance(inp, str):
                 paths.append((safe_rel(project, inp) or inp, None))
-    # One entry per path; a recorded hash (from the run) wins over a bare path.
+    # One entry per path; a recorded hash (from the run) wins over a bare path. Code is not
+    # data: a run's commit versions it (run records written before `--code` existed list
+    # scripts among their inputs, so code is recognised by its extension too).
     merged = {}
     for p, sha in paths:
+        if is_code_path(p):
+            continue
         if p not in merged or (sha and not merged[p]):
             merged[p] = sha
     return sorted(merged.items())
+
+
+def run_code_paths(rec):
+    """Code files of a run record: its `code` list, plus code-extension paths among its
+    inputs (records written before `--code` existed)."""
+    out = []
+    for item, declared in [(i, True) for i in rec.get("code") or []] + [(i, False) for i in rec.get("inputs") or []]:
+        p = item.get("path") if isinstance(item, dict) else item
+        if isinstance(p, str) and p and (declared or is_code_path(p)) and p not in out:
+            out.append(p)
+    return out
 
 
 def check_data(project):
@@ -3164,11 +3239,20 @@ def check_data(project):
         for key in RUN_REQUIRED:
             if key not in rec:
                 out.append(Finding(rel, 1, "RUN-SCHEMA", "%s: missing '%s' (record runs with `uws research check run`)" % (run_id, key)))
-        for key in ("inputs", "outputs"):
+        for key in ("inputs", "outputs", "code"):
             items = rec.get(key)
             if key in rec and (not isinstance(items, list) or
                                not all(isinstance(i, dict) and i.get("path") and "sha256" in i for i in items)):
                 out.append(Finding(rel, 1, "RUN-SCHEMA", "%s: %s must be a list of {path, sha256}" % (run_id, key)))
+        # The code a run executed must be in the commit it records, or no re-run can use it.
+        commit = rec.get("git_commit")
+        if commit and in_git(project) and _git_rc(project, ["cat-file", "-e", "%s^{commit}" % commit]) == 0:
+            for p in run_code_paths(rec):
+                p_rel = safe_rel(project, p)
+                if p_rel and _git_rc(project, ["cat-file", "-e", "%s:./%s" % (commit, p_rel)]) != 0:
+                    out.append(Finding(rel, 1, "RUN-CODE", "%s: code %s is not in commit %s (the run's git_commit), "
+                                       "so a re-run cannot use it; commit it and record the run again"
+                                       % (run_id, p_rel, str(commit)[:12])))
     return out
 
 
@@ -3260,13 +3344,149 @@ def _project_rel_arg(project, value, must_exist=True):
     return None
 
 
+# Files that are code, not data: a run's `--input` with one of these extensions is recorded
+# under `code` (it is versioned by the run's git commit, not by the data manifest).
+CODE_EXTS = (".py", ".pyw", ".ipynb", ".sh", ".bash", ".zsh", ".R", ".r", ".Rmd", ".jl", ".m", ".js", ".mjs",
+             ".ts", ".java", ".scala", ".c", ".cc", ".cpp", ".h", ".hpp", ".go", ".rs", ".pl", ".rb", ".lua",
+             ".do", ".sas")
+# Environment locks recorded by hash when present (design 6.1: research/env/requirements.lock).
+ENV_LOCK_CANDIDATES = ("research/env/requirements.lock", "requirements.lock", "poetry.lock", "Pipfile.lock",
+                       "uv.lock", "pdm.lock", "conda-lock.yml", "environment.lock.yml", "renv.lock", "Manifest.toml")
+GLOB_CHARS = ("*", "?", "[")
+_PY_PROBE = ("import json, platform, sys; print(json.dumps({'version': platform.python_version(), "
+             "'implementation': platform.python_implementation(), 'executable': sys.executable, "
+             "'prefix': sys.prefix, 'base_prefix': getattr(sys, 'base_prefix', sys.prefix)}))")
+# Interpreters asked for `--version`; any other program is recorded by path only, because
+# running an unknown program with `--version` could do anything.
+_VERSION_INTERPRETERS = ("Rscript", "R", "julia", "node", "perl", "ruby", "bash", "sh", "zsh")
+
+
+def is_code_path(path):
+    return str(path).endswith(CODE_EXTS)
+
+
+def _which(name, env):
+    if os.sep in name or (os.altsep and os.altsep in name):
+        return None
+    return shutil.which(name, path=env.get("PATH"))
+
+
+def command_interpreter(project, cmd, env):
+    """The interpreter a recorded command runs under (design 8: the environment of a run).
+
+    The first word of the command is resolved the way the shell would (a path is taken from
+    the project root, where the command runs; a name is looked up on PATH; `env A=B prog`
+    is skipped over). A script with a `#!` line is followed to its interpreter. Python is
+    asked for its version, executable and prefix (a venv shows up there); a few other known
+    interpreters are asked for `--version`; anything else is recorded by path only."""
+    words = list(cmd)
+    if words and os.path.basename(words[0]) == "env":
+        words = words[1:]
+        while words and (words[0].startswith("-") or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])):
+            words = words[1:]
+    if not words:
+        return {"command": None, "error": "no command"}
+    first = words[0]
+    rec = {"command": first}
+    path = os.path.join(project.root, first) if os.sep in first else _which(first, env)
+    if not path or not os.path.isfile(path):
+        rec["error"] = "not found"
+        return rec
+    path = os.path.realpath(path)
+    rec["path"] = path
+    name = os.path.basename(path)
+    if not re.match(r"^(python|pypy)", name, re.I) and name not in _VERSION_INTERPRETERS:
+        try:
+            with open(path, "rb") as fh:
+                head = fh.readline(256).decode("utf-8", "replace")
+        except OSError:
+            head = ""
+        if head.startswith("#!"):
+            parts = head[2:].split()
+            if parts and os.path.basename(parts[0]) == "env" and len(parts) > 1:
+                parts = [p for p in parts[1:] if not p.startswith("-")]
+                interp = _which(parts[0], env) if parts else None
+            else:
+                interp = parts[0] if parts else None
+            if interp and os.path.isfile(interp):
+                rec["script"] = path
+                path = os.path.realpath(interp)
+                rec["path"] = path
+                name = os.path.basename(path)
+    if re.match(r"^(python|pypy)", name, re.I):
+        rec["kind"] = "python"
+        try:
+            proc = subprocess.run([path, "-c", _PY_PROBE], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  env=env, timeout=30)
+            info = json.loads(proc.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
+            rec.update(info)
+        except (OSError, subprocess.TimeoutExpired, ValueError, IndexError) as exc:
+            rec["error"] = "could not ask the interpreter for its version: %s" % exc
+    elif name in _VERSION_INTERPRETERS:
+        rec["kind"] = name
+        try:
+            proc = subprocess.run([path, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  env=env, timeout=30)
+            lines = proc.stdout.decode("utf-8", "replace").strip().splitlines()
+            rec["version"] = lines[0] if lines else ""
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            rec["error"] = "could not ask for --version: %s" % exc
+    else:
+        rec["kind"] = "program"
+    return rec
+
+
+def env_locks(project, named):
+    """[{path, sha256}] of the environment lock files: the ones named with --env-lock, else
+    the usual lock files that exist in the project."""
+    cands = named or [c for c in ENV_LOCK_CANDIDATES if os.path.isfile(project.path(c))]
+    if not named:
+        env_dir = project.path("research/env")
+        if os.path.isdir(env_dir):
+            for f in sorted(os.listdir(env_dir)):
+                rel = "research/env/%s" % f
+                if f.endswith(".lock") and rel not in cands:
+                    cands.append(rel)
+    out = []
+    for c in cands:
+        rel = _project_rel_arg(project, c)
+        if not rel:
+            raise EnvError("--env-lock %s is not a file inside the project" % c)
+        out.append({"path": rel, "sha256": sha256_file(project.path(rel))})
+    return sorted(out, key=lambda x: x["path"])
+
+
+def _stat_key(path):
+    st = os.stat(path)
+    return (st.st_mtime_ns, st.st_size)
+
+
+def _glob_rel(project, pattern):
+    """Project paths of the files a glob pattern (relative to the project root) matches."""
+    out = []
+    for f in sorted(glob.glob(os.path.join(project.root, pattern), recursive=True)):
+        rel = safe_rel(project, os.path.relpath(f, project.root))
+        if rel and os.path.isfile(f):
+            out.append(rel)
+    return out
+
+
+def _git_tracked_clean(project, rel):
+    """None when `rel` is committed unchanged at HEAD, else why not."""
+    if _git_rc(project, ["ls-files", "--error-unmatch", "--", rel]) != 0:
+        return "is not committed (git does not track it)"
+    if _git_rc(project, ["diff", "--quiet", "HEAD", "--", rel]) != 0:
+        return "has uncommitted changes"
+    return None
+
+
 def cmd_run(project, args):
     """Run a command from the project root and write research/runs/<RUN-ID>/run.json (section 8)."""
     cmd = list(args.command or [])
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
     if not cmd:
-        raise EnvError("usage: run [--exp EXP-ID|exploratory] [--input P]... [--output P]... -- <command> [args]")
+        raise EnvError("usage: run [--exp EXP-ID|exploratory] [--input P]... [--code P]... [--output P|GLOB]... -- <command> [args]")
     runs_dir = project.path("research/runs")
     run_id = args.id
     if not run_id:
@@ -3292,22 +3512,30 @@ def cmd_run(project, args):
         if in_git(project) and (_git(project, ["status", "--porcelain", "--", PLANS_REL]) or "").strip():
             print("warning: %s has uncommitted changes; commit the freeze before recording results, "
                   "or the plan check reports PLAN-ORDER" % PLANS_REL, file=sys.stderr)
-    inputs = []
-    for p in args.input or []:
+    inputs, code = [], []
+    for p, as_code in [(p, False) for p in args.input or []] + [(p, True) for p in args.code or []]:
         rel = _project_rel_arg(project, p)
         if not rel or not os.path.isfile(project.path(rel)):
-            print("refused: input %s is not a file inside the project" % p, file=sys.stderr)
+            print("refused: %s %s is not a file inside the project" % ("code" if as_code else "input", p), file=sys.stderr)
             return EXIT_FINDINGS
-        inputs.append({"path": rel, "sha256": sha256_file(project.path(rel)), "size": os.path.getsize(project.path(rel))})
-    outputs = []
+        item = {"path": rel, "sha256": sha256_file(project.path(rel)), "size": os.path.getsize(project.path(rel))}
+        if as_code or is_code_path(rel):
+            if not as_code:
+                print("note: %s is code (by its extension), recorded under `code`, not as data; use --code for code "
+                      "and --input for data" % rel, file=sys.stderr)
+            code.append(item)
+        else:
+            inputs.append(item)
+    outputs, patterns = [], []
     for p in args.output or []:
         # Outputs may not exist yet; the command runs in the project root, so a relative
-        # output path is relative to it.
+        # output path is relative to it. A glob (for names with a timestamp) is resolved
+        # after the run to the files the command wrote.
         rel = _project_rel_arg(project, p, must_exist=False)
         if not rel:
             print("refused: output %s is not inside the project" % p, file=sys.stderr)
             return EXIT_FINDINGS
-        outputs.append(rel)
+        (patterns if any(ch in rel for ch in GLOB_CHARS) else outputs).append(rel)
     env_vars = {}
     for item in args.env or []:
         if "=" not in item or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", item):
@@ -3321,6 +3549,7 @@ def cmd_run(project, args):
         if not v:
             k, v = "seed", item
         seeds[k] = v
+    locks = env_locks(project, args.env_lock or [])
 
     commit = git_head(project) if in_git(project) else None
     dirty = None
@@ -3330,6 +3559,12 @@ def cmd_run(project, args):
         if dirty:
             print("warning: the working tree has uncommitted changes; this run cannot be reproduced from commit %s "
                   "and `repro` will report it" % commit[:12], file=sys.stderr)
+        for item in code:
+            why = _git_tracked_clean(project, item["path"])
+            if why:
+                print("warning: code %s %s, so a re-run from commit %s cannot use it; commit it and run again"
+                      % (item["path"], why.replace("is not committed (git does not track it)", "is not committed"),
+                         commit[:12]), file=sys.stderr)
     else:
         print("warning: not a git repository; the run cannot be tied to a commit", file=sys.stderr)
     man = project.manifest()
@@ -3337,11 +3572,14 @@ def cmd_run(project, args):
     for rel in outputs:
         path = project.path(rel)
         if os.path.isfile(path):
-            st = os.stat(path)
-            before[rel] = (st.st_mtime_ns, st.st_size)
+            before[rel] = _stat_key(path)
+    before_glob = {}
+    for pat in patterns:
+        before_glob[pat] = dict((rel, _stat_key(project.path(rel))) for rel in _glob_rel(project, pat))
     os.makedirs(run_dir)
     env = dict(os.environ)
     env.update(env_vars)
+    interpreter = command_interpreter(project, cmd, env)
     started = utc_now()
     out_path, err_path = os.path.join(run_dir, "stdout.txt"), os.path.join(run_dir, "stderr.txt")
     rc = None
@@ -3356,13 +3594,12 @@ def cmd_run(project, args):
     except subprocess.TimeoutExpired:
         rc, note = 124, "timed out after %s s" % args.timeout
     ended = utc_now()
-    out_records, missing, untouched = [], [], []
+    out_records, missing, untouched, unmatched = [], [], [], []
     for rel in outputs:
         path = project.path(rel)
         if os.path.isfile(path):
             item = {"path": rel, "sha256": sha256_file(path), "size": os.path.getsize(path)}
-            st = os.stat(path)
-            if before.get(rel) == (st.st_mtime_ns, st.st_size):
+            if before.get(rel) == _stat_key(path):
                 # The file existed and was not rewritten: the command may not produce it.
                 item["written_by_run"] = False
                 untouched.append(rel)
@@ -3370,13 +3607,26 @@ def cmd_run(project, args):
         else:
             out_records.append({"path": rel, "sha256": None, "size": None})
             missing.append(rel)
+    for pat in patterns:
+        written = [rel for rel in _glob_rel(project, pat)
+                   if before_glob[pat].get(rel) != _stat_key(project.path(rel))]
+        if not written:
+            unmatched.append(pat)
+            missing.append("%s matched no file the command wrote" % pat)
+        for rel in written:
+            out_records.append({"path": rel, "pattern": pat, "sha256": sha256_file(project.path(rel)),
+                                "size": os.path.getsize(project.path(rel))})
     rec = {
         "id": run_id, "exp": exp, "command": cmd, "cwd": ".",
         "git_commit": commit, "git_dirty": dirty,
         "started_at": started, "ended_at": ended, "exit_code": rc,
-        "inputs": inputs, "outputs": out_records, "seeds": seeds, "env_vars": env_vars,
+        "inputs": inputs, "code": code, "outputs": out_records, "seeds": seeds, "env_vars": env_vars,
+        # `environment` is the machine; `interpreter` is what the command ran under (the
+        # recorder's own Python can differ, e.g. when the command names a venv).
         "environment": {"python": platform.python_version(), "platform": platform.platform(),
                         "machine": platform.machine(), "cpu_count": os.cpu_count()},
+        "interpreter": interpreter,
+        "env_lock": locks,
         "manifest_sha256": sha256_file(man.path) if os.path.isfile(man.path) else None,
         "stdout": {"path": project.rel(out_path).replace(os.sep, "/"), "sha256": sha256_file(out_path)},
         "stderr": {"path": project.rel(err_path).replace(os.sep, "/"), "sha256": sha256_file(err_path)},
@@ -3384,9 +3634,15 @@ def cmd_run(project, args):
     }
     if note:
         rec["note"] = note
+    if unmatched:
+        rec["unmatched_output_patterns"] = unmatched
     _atomic_write(os.path.join(run_dir, "run.json"), json.dumps(rec, indent=2, sort_keys=True) + "\n")
-    print("research/runs/%s/run.json: exit %s, %d input(s), %d output(s)%s"
-          % (run_id, rc, len(inputs), len(out_records), " (%s)" % note if note else ""))
+    print("research/runs/%s/run.json: exit %s, %d input(s), %d code file(s), %d output(s)%s"
+          % (run_id, rc, len(inputs), len(code), len([o for o in out_records if o.get("path")]),
+             " (%s)" % note if note else ""))
+    if not locks:
+        print("note: no environment lock found (research/env/requirements.lock or --env-lock); the run records "
+              "no environment hash", file=sys.stderr)
     if untouched:
         print("warning: output(s) existed before the run and were not rewritten: %s; `repro` deletes outputs "
               "before re-running, so a command that does not write them fails there" % ", ".join(untouched),
@@ -3560,12 +3816,21 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
             root = _extract_commit(project, rec["git_commit"], os.path.join(scratch, "src"))
         except ValueError as exc:
             return {nid: {"status": "fail", "message": str(exc)} for nid, _r in members}
+        # Code comes from the recorded commit only: a script that is not in it was never
+        # committed, and a re-run with the current copy would not be the recorded run.
+        for p in run_code_paths(rec):
+            p_rel = safe_rel(project, p)
+            if not p_rel or not os.path.isfile(os.path.join(root, p_rel)):
+                return {nid: {"status": "fail", "message": "code %s is not in commit %s, so it cannot be re-run"
+                              % (p, str(rec["git_commit"])[:12])} for nid, _r in members}
         # Inputs: the version the run recorded, from the commit or the project's archive.
         for inp in rec.get("inputs") or []:
             p = safe_rel(project, inp.get("path")) if isinstance(inp, dict) else None
             want = inp.get("sha256") if isinstance(inp, dict) else None
             if not p:
                 return {nid: {"status": "fail", "message": "%s has an invalid input entry %r" % (run_id, inp)} for nid, _r in members}
+            if is_code_path(p):
+                continue
             dest = os.path.join(root, p)
             if os.path.isfile(dest) and (want is None or sha256_file(dest) == want):
                 continue
@@ -3578,10 +3843,17 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
             shutil.copyfile(src, dest)
         # Outputs are deleted first, so a command that does not write them cannot pass on a
         # committed copy.
+        pattern_of = {}
         for out in rec.get("outputs") or []:
             p = safe_rel(project, out.get("path")) if isinstance(out, dict) else None
             if p and os.path.isfile(os.path.join(root, p)):
                 os.unlink(os.path.join(root, p))
+            if p and out.get("pattern"):
+                pattern_of[p] = str(out["pattern"])
+        # Outputs recorded through a glob (timestamped names): the re-run writes new names,
+        # found as the files matching the pattern that the re-run created or rewrote.
+        before = dict((pat, dict((r, _stat_key(os.path.join(root, r))) for r in _glob_under(root, pat)))
+                      for pat in set(pattern_of.values()))
         cmd = rec["command"] if isinstance(rec["command"], list) else shlex.split(str(rec["command"]))
         env = dict(os.environ)
         env.update({k: str(v) for k, v in (rec.get("env_vars") or {}).items()})
@@ -3597,9 +3869,20 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
         if proc.returncode != 0:
             return {nid: {"status": "fail", "message": "re-run of %s exited %d: %s" % (run_id, proc.returncode, " | ".join(tail))}
                     for nid, _r in members}
+        written = dict((pat, [r for r in _glob_under(root, pat) if before[pat].get(r) != _stat_key(os.path.join(root, r))])
+                       for pat in before)
         for nid, row in members:
             out_rel = safe_rel(project, row.get("output") or "")
             path = os.path.join(root, out_rel) if out_rel else None
+            pat = pattern_of.get(out_rel)
+            if pat:
+                recorded = sorted(r for r, q in pattern_of.items() if q == pat)
+                if len(written[pat]) != len(recorded):
+                    info[nid] = {"status": "fail", "message": "the re-run wrote %d file(s) matching %s; the recorded run "
+                                 "wrote %d" % (len(written[pat]), pat, len(recorded))}
+                    continue
+                # Files of one pattern pair up in name order (timestamps sort by time).
+                path = os.path.join(root, written[pat][recorded.index(out_rel)])
             if not path or not os.path.isfile(path):
                 info[nid] = {"status": "fail", "message": "the re-run did not write %s" % row.get("output")}
                 continue
@@ -3620,6 +3903,15 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
             print("scratch copy kept at %s" % scratch, file=sys.stderr)
         else:
             _rmtree(scratch)
+
+
+def _glob_under(base, pattern):
+    """Paths relative to `base` of the files `pattern` matches under it."""
+    out = []
+    for f in sorted(glob.glob(os.path.join(base, pattern), recursive=True)):
+        if os.path.isfile(f):
+            out.append(os.path.relpath(f, base).replace(os.sep, "/"))
+    return out
 
 
 def _rmtree(path):
@@ -4181,6 +4473,7 @@ def run_gate(project, phase, allow_missing_cache=None):
         findings.extend(check_review_hash(project))
     if phase == "publication":
         findings.extend(check_pi_approval(project))
+    findings = dedupe(findings)
     notes = []
     if idx >= PHASES.index("analysis"):
         notes.append("not checked yet: " + NOT_CHECKED)
@@ -4395,8 +4688,14 @@ def build_parser():
     s = sub.add_parser("run", help="run a command and record research/runs/RUN-*/run.json")
     s.add_argument("--id", help="run ID (default: next RUN-<nnnn>)")
     s.add_argument("--exp", help="experiment the run belongs to (EXP-<name>, or exploratory)")
-    s.add_argument("--input", action="append", help="input file (repeatable; hashed before the run)")
-    s.add_argument("--output", action="append", help="output file (repeatable; hashed after the run)")
+    s.add_argument("--input", action="append", help="data file the command reads (repeatable; hashed before the "
+                   "run; code files given here are recorded as code)")
+    s.add_argument("--code", action="append", help="code file the command runs (repeatable; versioned by the "
+                   "run's commit, not by the data manifest)")
+    s.add_argument("--output", action="append", help="output file, or a glob such as 'out/results_*.json' for "
+                   "timestamped names (repeatable; resolved and hashed after the run)")
+    s.add_argument("--env-lock", action="append", help="environment lock file to record by hash (repeatable; "
+                   "default: research/env/*.lock and common lock files that exist)")
     s.add_argument("--seed", action="append", help="seed the command uses, NAME=VALUE (repeatable; recorded)")
     s.add_argument("--env", action="append", help="environment variable NAME=VALUE set for the run and its re-runs")
     s.add_argument("--timeout", type=int, help="seconds before the command is stopped")
@@ -4524,6 +4823,7 @@ def main(argv=None):
     except (OSError, UnicodeDecodeError) as exc:
         print("research_check: error: %s" % exc, file=sys.stderr)
         return EXIT_ENV
+    findings = dedupe(findings)
     findings.sort(key=lambda f: (f.path, f.line, f.rule))
     emit(findings, args.json, notes)
     blocking = [f for f in findings if f.level == "block"]
