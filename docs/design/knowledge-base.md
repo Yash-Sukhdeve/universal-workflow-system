@@ -1,6 +1,7 @@
 # UWS Knowledge Base and Meta-Learning: Design
 
-- Status: increment 1 implemented (see section 16 for what was built and where it differs)
+- Status: increments 1 and 3 implemented (sections 16 and 17 say what was built and where it
+  differs)
 - Author role: uws-architect subagent, 2026-09-24
 - Repo state read: `chore/cleanup`, started at `ad6ff7a`, rechecked at `8c2372f` (only Company OS
   removal in between; no cited file changed except `.gitignore` line numbers, updated here)
@@ -572,6 +573,9 @@ Each test runs in `setup_test_environment` with a git repo and `UWS_KB_NOW` fixe
 proposals, `sdlc fail` reason capture. 4: claim ledger + paper lint. 5: optional embedding
 cache for `relevance` (rebuild-only; I5 still holds).
 
+Note (2026-09-30): increment 3 (meta-learning) was implemented before increment 2 (global KB
+and imports) because the PI gave it priority. Section 17 records what was built.
+
 ## 14. Decisions needed from the PI
 
 - **D1 Where the project KB lives.** `.workflow/kb/` (tracked; the original recommendation) conflicted with the
@@ -660,3 +664,82 @@ an item is ready; `review` lists the queue.
 `outcomes.tsv`, R4, R6, `purge --secret`, vector cache, claim ledger, TASK.md injection,
 `verify --changed` inside `checkpoint.sh create`, and removal of the vector-memory SessionStart
 hook (kept per D3).
+
+## 17. Increment 3 as built: meta-learning (2026-09-30)
+
+Code: `kb_outcome` and the recording helpers in `scripts/lib/kb_utils.sh`; `learn`,
+`proposals` and the proposal handling of `approve` in `scripts/kb.sh`; one call each in
+`sdlc.sh`, `research.sh`, `review.sh` and `orchestrate.sh`. Tests:
+`tests/integration/test_kb_learn.bats`. Where the build differs from section 6, this section
+wins.
+
+**outcomes.tsv.** No header; 8 tab-separated columns as in 6.2. Every field is TSV-escaped
+(`\\`, `\t`, `\n`, `\r`; other control characters become spaces), capped at 500 bytes, and `-`
+when empty. Recording is best effort: a no-op when the KB directory does not exist, and a
+failed append prints one line on stderr and never changes the caller's exit code. Columns per
+event (`<m>` is `sdlc` or `research`; `ref` is the HEAD commit unless stated):
+
+| event | phase | role | model | subject | result | ref |
+|---|---|---|---|---|---|---|
+| `gate_fail` | `<m>:<failed phase>` | - | - | `<m>:<regression target>` or - | the reason | HEAD |
+| `gate_pass` | `<m>:<phase left>` | - | - | `<m>:<phase entered>` | `done/total`, plus ` forced` or ` ungated` (no goal) | HEAD |
+| `cr_decision` | current phase | CR agent | model recorded at collect | CR summary | `approved`, `rejected[: reason]` | CR ID |
+| `dispatch` | `<m>:<phase>` | agent | `model:` of `uws-<agent>.md` | target artifact | `dispatched` / `collected` | HEAD / CR ID |
+| `escape` | `<m>:<phase>` | item author | - | lesson ID | the lesson's claim | HEAD |
+| `kb_retire` | - | item author | - | retired ID | `<code> evidence=E captured_by=C from=S type=T` | related item or - |
+
+`gate_pass` is written by `next` only (not `goto`). Reason codes: `superseded-by`,
+`disproven-by`, `disproven`, `expired`, `unpromoted`, `rejected`, `graduated`, `manual`.
+`review.sh reject <CR-ID> ["reason"]` gained the optional reason.
+
+**Metrics as built** (each over the last `UWS_KB_LEARN_WINDOW` = 10 samples, proposing only
+with n >= `UWS_KB_LEARN_MIN_N` = 5; thresholds from 6.3, configurable):
+
+| Metric (key) | Sample | Proposes when | Proposed change (as a unified diff when the target is found) |
+|---|---|---|---|
+| `gate-escape-rate` (`phase=<m>:<p>`) | a `gate_pass` of the phase; k = approved escapes after the earliest pass in the window | k/n > 0.20 | a deliverable line naming the latest escaped lesson in `get_phase_deliverables` of `scripts/<m>.sh` |
+| `cr-first-pass-rejection` (`role=R,model=M`) | the first `cr_decision` of R after a `dispatched` row of R (model from that row) | k/n > 0.40 | a Quality Gate item from the most frequent rejection reason in `docs/personas/<R>.md`; with no reasons, `model:` of `uws-<R>.md` set to the next tier (via `UWS_AGENT_MODEL_<R>`) |
+| `disproven-rate` (`evidence=E`, `captured_by=C`) | a retirement of a formerly trusted (trusted, stale, disputed) fact, decision, lesson or anti-pattern with evidence verified, observed or reported | k/n > 0.25 | E: `trust["E"]` in `scripts/kb.sh` times (1 - rate); C: a "give two sources" line in the `uws-kb` skill |
+| `repeated-gate-fail` (`reason=<normalised>`) | a `gate_fail` row (any phase); normalised = lower case, spacing collapsed, trailing punctuation dropped | the same reason >= 3 times | a deliverable line in the phase the failures sent work back to |
+
+Targets are looked up in the project first, then in the UWS installation; when a file or
+anchor is missing, the proposal states the change in words instead of a diff.
+
+**Guards, as enforced.**
+- External signals only: `learn` reads `outcomes.tsv` plus the status of the items its rows
+  name; nothing else feeds a number.
+- Only trusted knowledge: an `escape` row counts only when its lesson is trusted or stale now
+  (or was retired later as superseded or graduated after a PI review) and its evidence is not
+  `inferred`; `kb_retire` rows of candidates, inferred items, hypotheses, questions and
+  proposals are skipped, and `learn` reports how many were skipped.
+- Human in the loop: proposals are written as `candidate` items (`author: kb-learn`,
+  `captured_by: script:kb-learn`, source `file:docs/kb/outcomes.tsv@<HEAD>`). Only the PI gate
+  of section 16 makes them trusted. `approve` on a proposal records `approved_ts` and prints
+  that nothing was changed; no code path applies a proposal's diff.
+- Honest statistics: every proposal body reports k of n, the window, the rows behind the count
+  (CR IDs, item IDs or phases), a small-n caveat (one event moves the rate by 1/n) and a
+  metric-specific confounding caveat, and says it reports counts, not causes.
+
+**Idempotence and tracking.** Samples count only after the latest decision point of any
+proposal on the same key (its `followup_ts`, else `approved_ts`, else `created_ts`), so a
+proposal the PI turned down is not repeated from the same rows. A key with an open proposal
+(a candidate, or an approved change still being measured) gets no second one; for CR proposals
+the block and the window apply to the whole role, because the change is measured per role (a
+new route changes the model). After approval, `learn` computes the same metric over the next
+10 samples: below the value at proposal time records `followup: improved ...`; otherwise it
+writes a revert proposal (`proposal_kind: revert`, `reverts: <id>`, the original diff reversed)
+and records `followup: revert-proposed:<id>`. A revert proposal is not itself tracked.
+
+**Surface.** `uws kb proposals` lists waiting and measured proposals. The SessionStart context
+and `uws kb stats --short` add `KB: N meta-learning proposal(s) await the PI (uws kb
+proposals).` while any wait; the hook stays inside its 1200-byte budget (tested).
+
+**Differences from section 6.**
+- The R4-unused-share metric is not built: R4 usage counts do not exist yet (increment 2), and
+  they would live in the machine-local `.cache/`, not in `outcomes.tsv`. `learn` prints that it
+  is not measured.
+- A repeated `gate_fail` reason produces one proposal (the checklist line); no separate lesson
+  item is written, so that `learn` creates only proposals.
+- `learn` needs the KB inside the project (proposals cite `outcomes.tsv` by a project path).
+- The alternative model (haiku -> sonnet -> opus, opus -> sonnet) and the trust-weight factor
+  are heuristics; the proposals say so.

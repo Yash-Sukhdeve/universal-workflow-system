@@ -1,6 +1,6 @@
 ---
 description: Search or update this project's knowledge base (docs/kb/)
-argument-hint: "<search <words>|show <ID>|links ...|add ...|verify ...|recommend <ID>|review|stats|lint|prune>"
+argument-hint: "<search <words>|show <ID>|links ...|add ...|verify ...|recommend <ID>|review|stats|lint|prune|learn [--dry-run]|proposals>"
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/uws kb:*)
 ---
 
@@ -20,4 +20,6 @@ Only the PI can promote an item to `trusted`, and `approve`, `reject` and `pi --
 refused inside Claude Code (exit 6). If the user asks for one of them, do not retry or work
 around it: give them the exact command to run in their own terminal, using the full path of
 this plugin's CLI (`${CLAUDE_PLUGIN_ROOT}/bin/uws kb approve <ID>`). You may run
-`recommend <ID> "<why>"` to record that an item looks ready. Summarise the result.
+`recommend <ID> "<why>"` to record that an item looks ready. `learn` writes meta-learning
+proposals (candidates) from `docs/kb/outcomes.tsv` and `proposals` lists them; approving a
+proposal is the PI's decision and never applies its change. Summarise the result.

@@ -353,6 +353,25 @@ uws kb prune                             # dry run of the removal rules; --apply
   variables and your git e-mail, and every promotion is recorded in `events.tsv`, where
   `uws kb lint` flags a trusted item without a PI approval event.
 
+### Meta-learning
+
+Once `docs/kb/` exists, UWS's own scripts append one row per process outcome to
+`docs/kb/outcomes.tsv`: `sdlc fail` / `research reject` (with the reason, which used to be
+lost), `next` (deliverables done/total), `review approve|reject` (with the reason),
+`orchestrate dispatch|collect` (role and the subagent's model), escaped bugs
+(`uws kb add --type lesson --escaped-from <phase>`) and KB retirements. `uws kb learn` counts
+them: the gate-escape rate per phase (proposes at > 20% of the last 10 passes), the first-pass
+change-request rejection rate per role and model (> 40%), the disproven rate per evidence level
+and capture channel (> 25%), and gate-failure reasons that repeat (3 or more). Only rows the
+scripts wrote count, never candidate or inferred items, and each metric needs n >= 5. When one
+crosses its threshold, `learn` writes a `proposal` candidate: the metric, n, the value, the
+target file, the exact change as a diff, small-n and confounding caveats, and a falsifier.
+`uws kb proposals` lists them, and the session-start line says when some are waiting.
+Nothing changes without the PI: `uws kb approve <ID>` records acceptance but never applies the
+change (that goes through a normal change request), and after approval `learn` watches the
+same metric for 10 events and proposes a revert if it did not improve. `uws kb learn --dry-run`
+shows what it would propose.
+
 ---
 
 ## Usage Guide
