@@ -1269,16 +1269,32 @@ function parse_retire(s,    n, a, i) {
         else if (substr(a[i], 1, 5) == "type=") RTYPE = substr(a[i], 6)
     }
 }
-function start_of(fam, key) { return ((fam SUBSEP key) in WSTART) ? WSTART[fam, key] : "" }
-function report(fam, key, n, k, val, crossed, d1, d2,    fk, st, ws) {
-    fk = fam SUBSEP key
-    if (n < MIN) st = "small-n"
-    else if (!crossed) st = "below"
-    else if (fk in BLOCK) st = "open:" BLOCK[fk]
-    else st = "propose"
-    ws = ((fk in WSTART) && WSTART[fk] != "") ? WSTART[fk] : "-"
-    printf "M\t%s\t%s\t%d\t%d\t%.4f\t%s\t%s\t%s\t%s\n", fam, key, n, k, val, st, ws, (d1 == "" ? "-" : d1), (d2 == "" ? "-" : d2)
+# A CR proposal is tracked per role (any model), so a role with an open or
+# tracked proposal gets no second one for another model meanwhile.
+function ckey_of(fam, key,    c) { c = key; if (fam == "cr-first-pass-rejection") sub(/,model=.*/, "", c); return c }
+# Samples count only after the latest decision point of a proposal on the key
+function start_of(fam, key,    s, t, c) {
+    s = ((fam SUBSEP key) in WSTART) ? WSTART[fam, key] : ""
+    c = ckey_of(fam, key)
+    t = ((fam SUBSEP c) in TWSTART) ? TWSTART[fam, c] : ""
+    return (t > s) ? t : s
 }
+function blocker(fam, key,    c) {
+    if ((fam SUBSEP key) in BLOCK) return BLOCK[fam, key]
+    c = ckey_of(fam, key)
+    if ((fam SUBSEP c) in TBLOCK) return TBLOCK[fam, c]
+    return ""
+}
+function report(fam, key, n, k, crossed, d1, d2,    st, ws, b) {
+    b = blocker(fam, key)
+    if (b != "") st = "open:" b
+    else if (n < MIN) st = "small-n"
+    else if (!crossed) st = "below"
+    else st = "propose"
+    ws = start_of(fam, key); if (ws == "") ws = "-"
+    printf "M\t%s\t%s\t%d\t%d\t%.4f\t%s\t%s\t%s\t%s\n", fam, key, n, k, (n > 0 ? k / n : 0), st, ws, (d1 == "" ? "-" : d1), (d2 == "" ? "-" : d2)
+}
+function nothing_new(fam, key) { if (blocker(fam, key) != "") report(fam, key, 0, 0, 0, "", "") }
 # Gate-escape rate of phase p: approved escapes after the earliest of the last
 # W passes, divided by those passes.
 function eval_escape(p,    fam, key, start, i, j, n, k, first, ids, last) {
@@ -1288,14 +1304,14 @@ function eval_escape(p,    fam, key, start, i, j, n, k, first, ids, last) {
         if (start != "" && PTS[p, i] <= start) continue
         n++; first = PIX[p, i]
     }
-    if (n == 0) return
+    if (n == 0) { nothing_new(fam, key); return }
     k = 0; ids = ""; last = ""
     for (j = 1; j <= EN[p]; j++) {
         if (EIX[p, j] <= first) continue
         if (start != "" && ETS[p, j] <= start) continue
         k++; ids = ids (ids == "" ? "" : ",") EID[p, j]; last = EID[p, j]
     }
-    report(fam, key, n, k, k / n, (k / n > THR[fam]), last, ids)
+    report(fam, key, n, k, (k / n > THR[fam]), last, ids)
 }
 # Share of bad samples among the last W; detail = most frequent note (latest on a tie).
 function eval_rate(fam, key,    start, i, n, k, refs, why, best, bestn, cnt, lastpos) {
@@ -1310,10 +1326,10 @@ function eval_rate(fam, key,    start, i, n, k, refs, why, best, bestn, cnt, las
             if (why != "") { cnt[why]++; if (!(why in lastpos)) lastpos[why] = i }
         }
     }
-    if (n == 0) return
+    if (n == 0) { nothing_new(fam, key); return }
     best = ""; bestn = 0
     for (why in cnt) if (cnt[why] > bestn || (cnt[why] == bestn && lastpos[why] > lastpos[best] + 0)) { best = why; bestn = cnt[why] }
-    report(fam, key, n, k, k / n, (k / n > THR[fam]), best, refs)
+    report(fam, key, n, k, (k / n > THR[fam]), best, refs)
 }
 # Reason r among the last W gate failures; detail = the phase the failures sent
 # work back to (the failing phase when there was no regression).
@@ -1328,10 +1344,10 @@ function eval_repeat(r,    fam, key, start, i, n, k, refs, t, tc, tl, best, best
             refs = FPH[i] (refs == "" ? "" : "," refs)
         }
     }
-    if (n == 0 || k == 0) return
+    if (n == 0 || k == 0) { nothing_new(fam, key); return }
     best = ""; bestn = 0
     for (t in tc) if (tc[t] > bestn || (tc[t] == bestn && tl[t] > tl[best] + 0)) { best = t; bestn = tc[t] }
-    report(fam, key, n, k, k / n, (k >= REP), best, refs)
+    report(fam, key, n, k, (k >= REP), best, refs)
 }
 # An approved change: the same metric over the first W samples after approval.
 function track(t,    fam, key, A, i, j, n, k, p, r, first, lastidx, tf, after, verdict) {
@@ -1365,10 +1381,11 @@ BEGIN {
 FILENAME == SIDE {
     if ($1 == "C") CONF[$2] = 1
     else if ($1 == "P") {
-        fk = $4 SUBSEP $5
+        fk = $4 SUBSEP $5; tk = $4 SUBSEP (($11 != "-") ? $11 : $5)
         t = ($8 != "-") ? $8 : (($7 != "-") ? $7 : $6); if (t == "-") t = ""
         if (!(fk in WSTART) || t > WSTART[fk]) WSTART[fk] = t
-        if ($3 == "1") BLOCK[fk] = $2
+        if (!(tk in TWSTART) || t > TWSTART[tk]) TWSTART[tk] = t
+        if ($3 == "1") { BLOCK[fk] = $2; TBLOCK[tk] = $2 }
         if ($12 == "1") { NT++; T_id[NT] = $2; T_metric[NT] = $4; T_key[NT] = ($11 != "-" ? $11 : $5); T_ts[NT] = $7; T_before[NT] = $10 }
     }
     next
@@ -1829,11 +1846,14 @@ learn_metric_line() {
 $1
 EOF
     [[ "$tag" == "M" ]] || return 0
+    if [[ "$st" == open:* ]]; then
+        printf '  %s %s: already proposed (%s); %s new sample(s) since\n' "$fam" "$(safe_text "$key" 90)" "${st#open:}" "$n"
+        return 0
+    fi
     printf '  %s %s: %s of %s (%s) -> ' "$fam" "$(safe_text "$key" 90)" "$k" "$n" "$(pct "$val")"
     case "$st" in
         small-n) echo "n < ${UWS_KB_LEARN_MIN_N}: no proposal" ;;
         below) echo "within the threshold" ;;
-        open:*) echo "over the threshold; already proposed (${st#open:})" ;;
         propose)
             echo "over the threshold"
             P_WSTART="$ws"
