@@ -371,6 +371,20 @@ EOF
     [[ "$output" == *"main.tex:28 S6"* ]]
 }
 
+@test "slop: S4 flags a blank value in a row of numbers" {
+    printf '\n\\begin{tabular}{lcc}\nModel & MAE & AUC \\\\\nGB & 1.10 &  \\\\\n\\end{tabular}\n' >> "$P/paper/main.tex"
+    run check slop
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"S4 empty cell in a row of numbers"* ]]
+}
+
+@test "slop: S4 ignores blanks in a qualitative comparison table and the header corner" {
+    printf '\n\\begin{tabular}{lcc}\n & Git-Native & Checkpoints \\\\\nUWS & \\checkmark & \\checkmark \\\\\nAirflow & & \\checkmark \\\\\n\\end{tabular}\n' >> "$P/paper/main.tex"
+    run check slop
+    # no S4 finding of any wording on these rows (the base fixture has no S4 findings)
+    [[ "$output" != *" S4 "* ]]
+}
+
 @test "slop: C1 placeholders and C5 mtime-selected inputs in research code are blocked" {
     cat > "$P/research/code/train.py" << 'EOF'
 import glob

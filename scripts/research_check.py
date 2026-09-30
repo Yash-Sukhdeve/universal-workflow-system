@@ -1509,6 +1509,10 @@ def _slop_prose(project, doc):
     return out
 
 
+# A table cell that holds a number (optionally in math mode, with sign, %, or \pm).
+_NUMERIC_CELL_RE = re.compile(r"^\$?[-+]?\d+(?:[.,]\d+)?\s*(?:\\%|%|\$)?")
+
+
 def _empty_cells(doc):
     out = []
     multirow_seen = False
@@ -1522,10 +1526,14 @@ def _empty_cells(doc):
             continue
         row = code.split("\\\\")[0]
         cells = re.split(r"(?<!\\)&", row)
-        if any(not c.strip() for c in cells):
+        # A blank only signals a missing value in a row of numbers. The first cell is the row
+        # label (or the empty corner of a header row), and blanks in qualitative tables
+        # (e.g. checkmark feature comparisons) are meaningful, so neither is flagged.
+        data = [c.strip() for c in cells[1:]]
+        if any(not c for c in data) and any(_NUMERIC_CELL_RE.search(c) for c in data if c):
             if LITERAL_RE.search(doc.comment[idx]):
                 continue
-            out.append(Finding(doc.rel, idx + 1, "S4", "empty table cell"))
+            out.append(Finding(doc.rel, idx + 1, "S4", "empty cell in a row of numbers (missing value?)"))
     return out
 
 
