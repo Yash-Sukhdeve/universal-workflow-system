@@ -53,6 +53,7 @@ analysis → peer_review → publication`. Once a goal is declared (`sdlc.sh goa
 - `checkpoints/snapshots/<CP_ID>/` - state snapshots (gitignored)
 - Knowledge base: `docs/kb/` (tracked; `scripts/kb.sh` + `lib/kb_utils.sh`, `uws kb`); only the PI (`kb.pi` in `config.yaml`) promotes items to trusted
 - Meta-learning: scripts append outcomes to `docs/kb/outcomes.tsv` via `kb_outcome` (best effort, no-op without `docs/kb`); `uws kb learn` turns them into `proposal` candidates that only the PI approves and nothing applies automatically
+- Global KB `<global memory dir>/kb` (its own git repo, `uws kb init --global`; `--global`/`global:K-...`), read-only imports (`uws kb import`, `scripts/kb_import.py`), TASK.md leads and the per-machine usage log `docs/kb/.cache/usage.tsv` (R4): design section 18. Tests: `test_helper.bash` sets `UWS_KB_GUARD_ROOT`, so no KB write lands in this checkout unless a test sets `UWS_KB_ALLOW_GUARDED_WRITE=1`
 
 ### Agents
 Seven roles (`researcher`, `architect`, `implementer`, `experimenter`, `optimizer`,

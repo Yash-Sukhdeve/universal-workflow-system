@@ -65,6 +65,12 @@ jobs:
             echo "::error::research_check.py must use the Python standard library only"
             exit 1
           fi
+          # scripts/kb_import.py backs `uws kb import` (tests/integration/test_kb_import.bats)
+          python3 -m py_compile scripts/kb_import.py tests/fixtures/kb/make_vector_db.py
+          if grep -nE '^\s*(import|from)\s+(yaml|numpy|pandas|requests|sqlite_vec)\b' scripts/kb_import.py; then
+            echo "::error::kb_import.py must use the Python standard library only"
+            exit 1
+          fi
 
       - name: Lint user-facing entry points (warnings fail)
         run: |
@@ -105,6 +111,7 @@ jobs:
           ls "$materialized"/agents/uws-*.md
           test -f "$materialized/skills/uws-kb/SKILL.md"
           test -x "$materialized/scripts/kb.sh"
+          test -x "$materialized/scripts/kb_import.py"
           test -f "$materialized/skills/uws-research-lead/SKILL.md"
           test -x "$materialized/hooks/research_subagent_stop.sh"
 
