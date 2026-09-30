@@ -1,6 +1,6 @@
 ---
 name: uws-rt-redteam
-description: Research team Red Team: adversarial review of manuscript, ledgers, code and data; writes findings to research/reviews/ only. Use before a research gate or for peer_review.
+description: "Research team Red Team: adversarial review of manuscript, ledgers, code and data; writes findings to research/reviews/ only. Use before a research gate or for peer_review."
 tools: Read, Grep, Glob, Write, Bash, WebSearch, WebFetch
 model: opus
 ---

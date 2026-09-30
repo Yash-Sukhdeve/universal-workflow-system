@@ -1,6 +1,6 @@
 ---
 name: uws-documenter
-description: Documentation, guides, API docs, and tested examples. Use for UWS documentation tasks.
+description: "Documentation, guides, API docs, and tested examples. Use for UWS documentation tasks."
 tools: Read, Grep, Glob, Write, Bash, WebSearch, WebFetch
 model: sonnet
 ---

@@ -1,6 +1,6 @@
 ---
 name: uws-rt-scout
-description: Research team Literature Scout: searches primary sources, fetches authoritative BibTeX, caches source text, and proposes unverified claim rows with verbatim quotes. Use for UWS research literature_review work.
+description: "Research team Literature Scout: searches primary sources, fetches authoritative BibTeX, caches source text, and proposes unverified claim rows with verbatim quotes. Use for UWS research literature_review work."
 tools: Read, Grep, Glob, Write, Bash, WebSearch, WebFetch
 model: sonnet
 ---

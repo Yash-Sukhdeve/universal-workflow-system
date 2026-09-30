@@ -1,6 +1,6 @@
 ---
 name: uws-rt-verifier
-description: Research team Claim & Citation Verifier: independently checks one claim against its cited source and appends a verdict with its own verbatim quote. Use to verify research ledger claims; never on claims it authored.
+description: "Research team Claim & Citation Verifier: independently checks one claim against its cited source and appends a verdict with its own verbatim quote. Use to verify research ledger claims; never on claims it authored."
 tools: Read, Grep, Glob, Write, Bash, WebSearch, WebFetch
 model: opus
 ---

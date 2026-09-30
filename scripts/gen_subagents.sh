@@ -82,6 +82,16 @@ model_is_valid() {
 }
 
 # Environment-variable form of a role name: upper case, '-' -> '_'.
+# yaml_dq <text>: a YAML double-quoted scalar. Plain scalars break on ": " and
+# other indicators (e.g. "Scout: searches ..."), and Claude Code then loads the
+# agent with its whole frontmatter silently dropped; quoting is always safe.
+yaml_dq() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    printf '"%s"' "$s"
+}
+
 role_upper() {
     printf '%s' "$1" | tr '[:lower:]-' '[:upper:]_'
 }
@@ -190,7 +200,7 @@ generate() {
     {
         echo "---"
         echo "name: uws-${role}"
-        echo "description: ${desc}"
+        echo "description: $(yaml_dq "$desc")"
         echo "tools: ${tools}"
         echo "model: ${model}"
         echo "---"

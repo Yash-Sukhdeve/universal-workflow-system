@@ -1,6 +1,6 @@
 ---
 name: uws-deployer
-description: Deployment, CI/CD, health checks, monitoring, and runbooks. Use for UWS delivery-phase tasks.
+description: "Deployment, CI/CD, health checks, monitoring, and runbooks. Use for UWS delivery-phase tasks."
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 ---

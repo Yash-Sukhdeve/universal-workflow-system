@@ -1,6 +1,6 @@
 ---
 name: uws-implementer
-description: Production-grade code implementation with tests and zero stubs. Use for UWS implementation-phase coding tasks.
+description: "Production-grade code implementation with tests and zero stubs. Use for UWS implementation-phase coding tasks."
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 ---

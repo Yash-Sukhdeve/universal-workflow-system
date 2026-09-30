@@ -1,6 +1,6 @@
 ---
 name: uws-optimizer
-description: Performance profiling and hypothesis-driven optimization with before/after evidence. Use for UWS optimization tasks.
+description: "Performance profiling and hypothesis-driven optimization with before/after evidence. Use for UWS optimization tasks."
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 ---

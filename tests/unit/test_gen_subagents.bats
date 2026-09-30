@@ -164,3 +164,29 @@ expected_default() {
         cmp -s "${AGENTS}/uws-${role}.md" "${PROJECT_ROOT}/.claude/agents/uws-${role}.md"
     done
 }
+
+@test "gen_subagents: every generated frontmatter is valid YAML (descriptions contain ': ')" {
+    # Claude Code loads an agent whose frontmatter fails to parse with ALL fields dropped
+    # (model, tools, description), so an unquoted "Scout: searches ..." silently breaks it.
+    run "${GEN_ROOT}/scripts/gen_subagents.sh"
+    assert_success
+    local f
+    for f in "${AGENTS}"/uws-*.md; do
+        # Dependency-free: every description is a double-quoted scalar
+        grep -qE '^description: ".*"$' "$f"
+    done
+    python3 -c 'import yaml' 2>/dev/null || skip "PyYAML not installed; quoting checked above"
+    for f in "${AGENTS}"/uws-*.md; do
+        run python3 -c 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1]).read().split("---")[1]); assert d["name"] and d["description"] and d["model"] and d["tools"], d' "$f"
+        [ "$status" -eq 0 ]
+    done
+}
+
+@test "gen_subagents: quoting round-trips colons, quotes and backslashes" {
+    source <(sed -n '/^yaml_dq()/,/^}/p' "${GEN_ROOT}/scripts/gen_subagents.sh")
+    python3 -c 'import yaml' 2>/dev/null || skip "PyYAML not installed"
+    local raw='Scout: finds "primary" sources \ caches text'
+    run python3 -c 'import sys, yaml; print(yaml.safe_load("d: " + sys.argv[1])["d"])' "$(yaml_dq "$raw")"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$raw" ]
+}

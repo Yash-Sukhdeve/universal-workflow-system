@@ -1,6 +1,6 @@
 ---
 name: uws-researcher
-description: Requirements deep-dive, gap analysis, failure-mode inventory, and prior-art review. Use for UWS planning/requirements-phase research tasks.
+description: "Requirements deep-dive, gap analysis, failure-mode inventory, and prior-art review. Use for UWS planning/requirements-phase research tasks."
 tools: Read, Grep, Glob, Write, Bash, WebSearch, WebFetch
 model: opus
 ---
