@@ -40,10 +40,12 @@ changes from those counts; only the PI accepts them and nothing is applied autom
   never applies the diff. `learn` then measures the same metric over the next 10 events and
   either records `followup: improved ...` or writes a revert proposal (the diff reversed)
 - `uws kb proposals` lists proposals waiting for the PI and adopted ones being measured; the
-  SessionStart context and `uws kb stats --short` add one line while proposals wait
-- `tests/integration/test_kb_learn.bats` (22 tests: each writer, the no-KB and failure
+  SessionStart context, `uws kb stats --short` and `uws status -v` add one line while
+  proposals wait. `restore` of a proposal drops its old approval, so it waits for a new decision
+- `tests/integration/test_kb_learn.bats` (23 tests: each writer, the no-KB and failure
   guards, every threshold, n < 5, idempotence and dry run, the candidate/inferred guard,
-  approve leaving the target file untouched, revert and improvement tracking, the session line)
+  approve leaving the target file untouched, restore, revert and improvement tracking, the
+  session line)
 
 #### Not built
 - The R4-unused-share metric: it needs R4 usage counts, which are not built, and would not
