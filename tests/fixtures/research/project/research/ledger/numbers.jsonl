@@ -1,0 +1,1 @@
+{"id":"N-0001","rev":1,"supersedes":null,"macro":"\\GbAucCv","printed":"0.912","raw":0.9125,"rounding":"floor:3","metric":"5-fold CV mean ROC-AUC, training split","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/cv_auc_mean","output_sha256":"0af8552eab0b9e97772b2a9f49689c79e10855534df02b76fa39cbc4901b460c","data_origin":"synthetic-generated"}

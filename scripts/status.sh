@@ -299,14 +299,16 @@ if [ "$VERBOSE" = true ]; then
     echo -e "${BLUE}│ ${BOLD}KNOWLEDGE BASE${NC}                                                             ${BLUE}│${NC}"
     echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
     
-    if [ -d ${WORKFLOW_DIR}/knowledge ]; then
-        PATTERN_COUNT=$(cat ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null | grep -c "pattern:" || true)
-        SOLUTION_COUNT=$(cat ${WORKFLOW_DIR}/knowledge/*.yaml 2>/dev/null | grep -c "solution:" || true)
-        
-        echo -e "  ${CYAN}Patterns Learned:${NC}  ${GREEN}${PATTERN_COUNT}${NC}"
-        echo -e "  ${CYAN}Solutions Stored:${NC}  ${GREEN}${SOLUTION_COUNT}${NC}"
+    # Project KB (docs/kb/, `uws kb`); the old .workflow/knowledge/patterns.yaml is retired
+    KB_LINE=""
+    if [[ -f "${SCRIPT_DIR}/lib/kb_utils.sh" ]]; then
+        source "${SCRIPT_DIR}/lib/kb_utils.sh"
+        KB_LINE="$(kb_summary_line "$(cd "${WORKFLOW_DIR}/.." && pwd)" 2>/dev/null || true)"
+    fi
+    if [[ -n "$KB_LINE" ]]; then
+        echo -e "  ${CYAN}${KB_LINE}${NC}"
     else
-        echo -e "  ${DIM}Knowledge base empty${NC}"
+        echo -e "  ${DIM}No knowledge base yet (uws kb add ...)${NC}"
     fi
     echo ""
 fi

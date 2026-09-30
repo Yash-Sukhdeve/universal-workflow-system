@@ -146,7 +146,8 @@ create_workflow_structure() {
     echo "🏗️  Creating workflow structure..."
     
     # Create directories
-    mkdir -p .workflow/{agents,knowledge,scripts,templates}
+    # The knowledge base is docs/kb/, created by the first `uws kb add`
+    mkdir -p .workflow/{agents,scripts,templates}
     mkdir -p phases/{phase_1_planning,phase_2_implementation,phase_3_validation,phase_4_delivery,phase_5_maintenance}
     mkdir -p {artifacts,workspace,archive}
     
@@ -393,24 +394,6 @@ EOF
     echo "  ✓ Configuration created"
 }
 
-# Initialize knowledge base
-initialize_knowledge_base() {
-    echo "🧠 Initializing knowledge base..."
-
-    cat > .workflow/knowledge/patterns.yaml << EOF
-# Knowledge Base - Learned Patterns
-# This file accumulates patterns and solutions across sessions
-
-patterns: []
-
-solutions: []
-
-best_practices: []
-EOF
-
-    echo "  ✓ Knowledge base initialized"
-}
-
 # Initialize agent registry
 initialize_agent_registry() {
     echo "🤖 Initializing agent registry..."
@@ -606,7 +589,6 @@ main() {
     setup_git_integration
     validate_workflow_scripts
     create_project_config
-    initialize_knowledge_base
     initialize_agent_registry
 
     # Create uws CLI wrapper (the Claude Code plugin sets UWS_NO_WRAPPER: its

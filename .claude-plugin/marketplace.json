@@ -11,7 +11,7 @@
     {
       "name": "uws",
       "source": "./plugins/uws",
-      "description": "Phase-gated SDLC and research workflows, checkpoints, and context recovery across sessions, with seven role subagents.",
+      "description": "Phase-gated SDLC and research workflows, checkpoints, and context recovery across sessions, with seven role subagents and an evidence-checked research team.",
       "category": "productivity",
       "keywords": ["workflow", "context-recovery", "checkpoints", "sdlc", "research"]
     }

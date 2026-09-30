@@ -1,6 +1,6 @@
 ---
 name: uws-architect
-description: System and API design, data models, component diagrams, and cross-cutting concerns. Use for UWS design-phase tasks.
+description: "System and API design, data models, component diagrams, and cross-cutting concerns. Use for UWS design-phase tasks."
 tools: Read, Grep, Glob, Write, Bash, WebSearch, WebFetch
 model: opus
 ---

@@ -1,0 +1,8 @@
+Excerpt cached for the UWS research-team test fixture.
+Source: Sandve GK, Nekrutenko A, Taylor J, Hovig E (2013) Ten Simple Rules for Reproducible
+Computational Research. PLoS Comput Biol 9(10): e1003285. https://doi.org/10.1371/journal.pcbi.1003285
+License: Creative Commons Attribution License (CC BY), as stated in the article.
+Retrieved from https://journals.plos.org/ploscompbiol/article/file?id=10.1371/journal.pcbi.1003285&type=manuscript
+
+Rule 1: For Every Result, Keep Track of How It Was Produced
+Whenever a result may be of potential interest, keep track of how it was produced. When doing this, one will frequently find that getting from raw data to the final result involves many interrelated steps (single commands, scripts, programs). We refer to such a sequence of steps, whether it is automated or performed manually, as an analysis workflow. While the essential part of an analysis is often represented by only one of the steps, the full sequence of pre- and post-processing steps are often critical in order to reach the achieved result. For every involved step, you should ensure that every detail that may influence the execution of the step is recorded. If the step is performed by a computer program, the critical details include the name and version of the program, as well as the exact parameters and inputs that were used.

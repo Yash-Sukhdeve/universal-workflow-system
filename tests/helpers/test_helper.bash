@@ -49,7 +49,7 @@ setup_test_environment() {
     export WORKFLOW_DIR
 
     # Create a minimal project structure
-    mkdir -p "${TEST_TMP_DIR}/.workflow"/{agents,knowledge,templates}
+    mkdir -p "${TEST_TMP_DIR}/.workflow"/{agents,templates}
     mkdir -p "${TEST_TMP_DIR}/workspace"
     mkdir -p "${TEST_TMP_DIR}/phases"
     mkdir -p "${TEST_TMP_DIR}/artifacts"

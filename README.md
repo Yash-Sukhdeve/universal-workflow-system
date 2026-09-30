@@ -15,6 +15,7 @@
 - [Installation](#installation)
 - [CLI](#cli)
 - [Core Components](#core-components)
+- [Knowledge Base](#knowledge-base)
 - [Usage Guide](#usage-guide)
 - [Testing](#testing)
 - [Architecture](#architecture)
@@ -51,7 +52,8 @@ Then, in any project:
 
 Workflow context is injected automatically at session start, and a checkpoint is taken
 before every context compaction. The plugin also adds seven role subagents
-(`uws:uws-researcher`, `uws:uws-architect`, `uws:uws-implementer`, …).
+(`uws:uws-researcher`, `uws:uws-architect`, `uws:uws-implementer`, …) and a research
+team (see [Research team](#research-team)).
 
 ### Option 2: Per-project installer (commit UWS into the repo)
 
@@ -146,6 +148,7 @@ uws recover                  # Recover context after break
 uws sdlc [cmd]               # SDLC workflow (status|start|next|fail|reset)
 uws research [cmd]           # Research workflow (status|start|next|reject|reset)
 uws orchestrate dispatch "<task>"   # Hand the current phase to its subagent
+uws kb search <words>        # Project knowledge base (see Knowledge Base below)
 uws dashboard                # Serve the review/PM dashboard on http://localhost:8080
 uws help                     # Show all commands
 ```
@@ -283,6 +286,72 @@ requirements → design → implementation → verification → deployment → m
 ```
 hypothesis → literature_review → experiment_design → data_collection → analysis → peer_review → publication
 ```
+
+#### Research team
+
+For work that has to hold up to review, UWS provides a research team led by the
+`uws-research-lead` skill in your session. The team follows the Apocalypt persona
+(`docs/personas/apocalypt.md`) and has three subagents: `uws-rt-scout` (finds sources and
+proposes claims), `uws-rt-verifier` (checks each claim against its source, independently)
+and `uws-rt-redteam` (adversarial review). Their work is recorded in plain-text ledgers
+under `research/`, and a deterministic checker (Python 3 standard library) checks those
+ledgers at every phase gate:
+
+```bash
+uws research check init              # scaffold research/ and bib_sources/
+uws research bib fetch doi:10.1371/journal.pcbi.1003285 --key sandve2013
+uws research bib build               # references.bib only from bib_sources/
+uws research check gate literature_review   # file:line findings; exit 1 blocks
+uws research next                    # runs the gate; --force "<reason>" is logged,
+                                     # and refused at publication
+```
+
+The checks enforce that no claim is verified by its own author, that ledgers are
+append-only, that BibTeX is downloaded (never hand-written), that quotes appear verbatim in
+the cached source, that every number in the paper comes from a generated macro traced to
+an output file and its hash, and a set of "slop" rules (unsupported novelty, vague
+attribution, placeholders, overclaimed causality, undisclosed simulated data). The plugin
+command is `/uws:research-check`. Design: `docs/design/research-team.md`.
+
+---
+
+## Knowledge Base
+
+`uws kb` keeps what a project has learned in `docs/kb/`, tracked in git: one Markdown file
+per claim, each with its source and, where possible, a command that re-checks it. Design:
+[`docs/design/knowledge-base.md`](docs/design/knowledge-base.md).
+
+```bash
+uws kb pi --set you@example.com          # once, in your own terminal: who may promote
+uws kb add --type fact --claim "The hook caps context at 1200 bytes" \
+  --evidence verified --source file:scripts/lib/hook_context.sh:31 \
+  --check "grep -q 'UWS_HOOK_MAX_BYTES:-1200' scripts/lib/hook_context.sh"
+uws kb verify <ID>                       # run the check (the item stays a candidate)
+uws kb approve <ID>                      # PI only: candidate -> trusted
+uws kb search hook budget                # at most 5 lines: ID [type|status|evidence|date] claim (source)
+uws kb verify --changed                  # re-check items whose watched files changed
+uws kb prune                             # dry run of the removal rules; --apply to act
+```
+
+- New items are `candidate`s. Only the PI promotes them to `trusted`: `approve` checks that
+  your `git config user.email` equals `kb.pi` in `.workflow/config.yaml` and refuses to run
+  inside an AI agent (Claude Code's `CLAUDECODE` environment). Agents can `add`, `verify` and
+  `recommend`; `uws kb review` lists what is waiting.
+- `add` refuses items without a resolvable source (exit 2), duplicates (3), undeclared
+  overlaps with trusted items (4) and anything that looks like a credential.
+- Items become `stale` or `disputed` when their watched files change or their check fails,
+  and `prune --apply` moves superseded, disproven, expired and never-promoted items to
+  `docs/kb/retired/` with `git mv` (`uws kb restore <ID>` undoes it). Every change is a line
+  in `docs/kb/events.tsv`; nothing is committed for you.
+- Session start adds one line (`KB: 12 trusted, 1 stale, ...`) inside the 1.2 KB context
+  budget. In Claude Code, the `uws-kb` skill and `/uws:kb` command wrap the CLI.
+  `/uws:kb search …` runs without a prompt. When Claude consults the knowledge base on its
+  own, Claude Code asks once before running the plugin's `uws kb` command; approve it (or add
+  it to your permission allow list). In non-interactive `claude -p` runs that request is
+  denied, so allow it with `--allowedTools`.
+- The approval gate is a process safeguard, not a security boundary: it keys on environment
+  variables and your git e-mail, and every promotion is recorded in `events.tsv`, where
+  `uws kb lint` flags a trusted item without a PI approval event.
 
 ---
 

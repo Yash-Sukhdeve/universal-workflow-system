@@ -63,10 +63,17 @@ Workflow Commands:
   recover                  Recover context after session break
   orchestrate <cmd> [args] Route the current phase to its subagent
                            (dispatch "<task>" | collect "<summary>" | status)
+  kb <verb> [args]         Project knowledge base in docs/kb/ (add|search|links|
+                           show|verify|recommend|review|approve|reject|pi|prune|
+                           retire|restore|lint|stats); 'uws kb help' for details
 
 Methodology Commands:
   sdlc [cmd]               SDLC workflow (status|start|next|fail|reset)
   research [cmd]           Research workflow (status|start|next|reject|reset)
+  research check <name>    Research team evidence checks: init | ledger | bib |
+                           quotes | numbers | slop | gate <phase>
+  research bib fetch|build Download authoritative BibTeX into bib_sources/;
+                           build references.bib from bib_sources/ only
   spiral [args]            Spiral SDLC workflow
 
 Project Management:
@@ -176,6 +183,9 @@ main() {
             ;;
         orchestrate)
             "$scripts_dir/orchestrate.sh" "$@"
+            ;;
+        kb)
+            "$scripts_dir/kb.sh" "$@"
             ;;
         sdlc)
             "$scripts_dir/sdlc.sh" "$@"

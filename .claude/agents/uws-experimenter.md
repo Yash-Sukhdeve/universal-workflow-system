@@ -1,6 +1,6 @@
 ---
 name: uws-experimenter
-description: Verification, end-to-end testing, failure injection, and benchmarking. Use for UWS validation-phase tasks.
+description: "Verification, end-to-end testing, failure injection, and benchmarking. Use for UWS validation-phase tasks."
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 ---
