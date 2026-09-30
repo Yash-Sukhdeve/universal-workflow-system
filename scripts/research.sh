@@ -39,6 +39,7 @@ source_lib() {
     local lib="$1"
     if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
         # Suppress yq warning noise
+        # shellcheck source=/dev/null
         YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/${lib}"
         return 0
     fi
@@ -57,6 +58,7 @@ source_lib "validation_utils.sh" || true
 source_lib "logging_utils.sh" || true
 source_lib "workflow_routing.sh" || true
 source_lib "decision_utils.sh" || true
+source_lib "kb_utils.sh" || true   # meta-learning outcomes (docs/kb/outcomes.tsv)
 
 PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
@@ -509,6 +511,9 @@ main() {
             if next_phase=$(get_next_phase "$current_phase"); then
                 set_phase "$next_phase"
                 echo -e "${GREEN}✅ Advancing to: ${next_phase}${NC}"
+                # Meta-learning: record the gate pass (best effort; no-op without docs/kb)
+                declare -f kb_record_gate_pass > /dev/null 2>&1 && kb_record_gate_pass research "$current_phase" "$next_phase" \
+                    "$(get_phase_deliverables "$current_phase" | wc -l)" "${details:-}" || true
 
                 # Point at the subagent that owns the new phase. Agents are real
                 # Claude Code subagents now, dispatched on demand by
@@ -588,6 +593,8 @@ main() {
 
             local refinement_phase
             refinement_phase=$(get_refinement_phase "$current_phase")
+            # Meta-learning: keep the reason (docs/kb/outcomes.tsv; best effort, no-op without docs/kb)
+            declare -f kb_record_gate_fail > /dev/null 2>&1 && kb_record_gate_fail research "$current_phase" "$refinement_phase" "$details" || true
 
             if [[ -n "$refinement_phase" ]]; then
                 set_phase "$refinement_phase"

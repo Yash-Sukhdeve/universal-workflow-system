@@ -65,7 +65,8 @@ Workflow Commands:
                            (dispatch "<task>" | collect "<summary>" | status)
   kb <verb> [args]         Project knowledge base in docs/kb/ (add|search|links|
                            show|verify|recommend|review|approve|reject|pi|prune|
-                           retire|restore|lint|stats); 'uws kb help' for details
+                           retire|restore|lint|stats|learn|proposals);
+                           'uws kb help' for details
 
 Methodology Commands:
   sdlc [cmd]               SDLC workflow (status|start|next|fail|reset)

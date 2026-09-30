@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Meta-learning
+
+Increment 3 of `docs/design/knowledge-base.md` (section 6), built before the global KB and
+imports at the PI's priority: UWS records what happens to its own process and proposes rule
+changes from those counts; only the PI accepts them and nothing is applied automatically.
+
+#### Added
+- `docs/kb/outcomes.tsv` (tracked, append-only, `merge=union`): one TSV row per outcome,
+  columns `ts event phase role model subject result ref`, written only by scripts through
+  `kb_outcome` (`scripts/lib/kb_utils.sh`). Fields are TSV-escaped (tab, newline, CR,
+  backslash) and capped at 500 bytes. Recording is best effort: a no-op when `docs/kb` does
+  not exist, and a failure prints one line on stderr without changing the caller's exit code
+- Writers: `sdlc.sh fail` / `research.sh reject` (`gate_fail`: the reason is now kept),
+  `sdlc/research next` (`gate_pass`: deliverables done/total, `forced`, `ungated`),
+  `review.sh approve|reject` (`cr_decision`; `reject <CR-ID> "<reason>"` now takes a reason),
+  `orchestrate.sh dispatch|collect` (`dispatch`: role, the subagent's `model:`, target, CR ID),
+  `uws kb add --type lesson --escaped-from <phase>` (`escape`), and every KB retirement
+  (`kb_retire`: reason code, the item's evidence, captured_by, prior status and type)
+- `uws kb learn [--dry-run]`: gate-escape rate per phase (> 20% of the last 10 passes),
+  first-pass CR rejection rate per role and model (> 40%), disproven rate per evidence level and
+  per captured_by (> 25%), and repeated gate-failure reasons (>= 3), each over the last 10
+  samples and only with n >= 5 (all configurable, `UWS_KB_LEARN_*`). Escapes count only once the
+  PI has approved the lesson; retirements of candidates, inferred items, hypotheses, questions
+  and proposals are not counted. A crossing writes a `proposal` candidate with the metric, n,
+  the value, the target file, the exact change as a unified diff (a checklist line in
+  `scripts/<m>.sh`, a persona Quality Gate item, a model route, a trust weight, or a line in
+  the `uws-kb` skill), a falsifier and small-n/confounding caveats. Idempotent: a key (for CR
+  proposals, the role) with an open or tracked proposal gets no second one, and only samples
+  after the latest proposal count
+- `uws kb approve` on a proposal records `approved_ts` and says that nothing was changed; it
+  never applies the diff. `learn` then measures the same metric over the next 10 events and
+  either records `followup: improved ...` or writes a revert proposal (the diff reversed)
+- `uws kb proposals` lists proposals waiting for the PI and adopted ones being measured; the
+  SessionStart context, `uws kb stats --short` and `uws status -v` add one line while
+  proposals wait. `restore` of a proposal drops its old approval, so it waits for a new decision
+- `tests/integration/test_kb_learn.bats` (23 tests: each writer, the no-KB and failure
+  guards, every threshold, n < 5, idempotence and dry run, the candidate/inferred guard,
+  approve leaving the target file untouched, restore, revert and improvement tracking, the
+  session line)
+
+#### Not built
+- The R4-unused-share metric: it needs R4 usage counts, which are not built, and would not
+  come from `outcomes.tsv`; `learn` says it is not measured
+
+#### Fixed
+- `review.sh reject` no longer stops under `set -e` when `NOTIFICATIONS.md` is missing
+- `review.sh list` reads the agent with `grep -F` (the pattern was a regex by accident)
+
 ### Knowledge base
 
 Increment 1 of `docs/design/knowledge-base.md`: a project knowledge base in `docs/kb/`,

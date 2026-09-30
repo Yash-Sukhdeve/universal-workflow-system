@@ -17,12 +17,16 @@
 #   kb_bytes, kb_quote, kb_fm_get, kb_fm_raw, kb_fm_set, kb_fm_del
 #   kb_list_parse, kb_list_format, kb_normalize_claim, kb_hash6
 #   kb_agent_context, kb_git_email, kb_actor, kb_pi_identity, kb_event
-#   kb_item_path, kb_counts, kb_summary_line
+#   kb_item_path, kb_counts, kb_summary_line, kb_open_proposals, kb_proposals_line
+#   Meta-learning outcomes (design section 6.2): kb_outcome, kb_outcomes_enabled, kb_head_ref,
+#   kb_agent_model, kb_current_phase, kb_cr_model, kb_record_gate_fail,
+#   kb_record_gate_pass
 
 if [[ "${_UWS_KB_UTILS_LOADED:-}" == "true" ]]; then
     return 0 2>/dev/null || true
 fi
 _UWS_KB_UTILS_LOADED="true"
+_KB_UTILS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 UWS_KB_ITEM_BYTES="${UWS_KB_ITEM_BYTES:-200}"
 UWS_KB_BRIEF_BYTES="${UWS_KB_BRIEF_BYTES:-1000}"
@@ -395,4 +399,212 @@ $(kb_counts "$d")
 EOF
     printf 'KB: %s trusted, %s stale, %s disputed, %s to review. Search: uws kb search <words> (skill uws-kb)\n' \
         "$t" "$s" "$x" "$c"
+}
+
+# Number of proposals (type proposal, status candidate) waiting for the PI.
+# Read-only: safe for the SessionStart hook.
+kb_open_proposals() {
+    local d="$1"
+    [[ -d "${d}/items" ]] || { echo 0; return 0; }
+    set -- "${d}"/items/*.md
+    [[ -f "$1" ]] || { echo 0; return 0; }
+    awk '
+        function tally() { if (ty == "proposal" && st == "candidate") n++ }
+        FNR == 1 { if (seen) tally(); seen = 1; ty = ""; st = ""; infm = ($0 == "---"); next }
+        infm && $0 == "---" { infm = 0; next }
+        infm && /^type:/ { ty = $0; sub(/^type:[ \t]*/, "", ty); gsub(/["\047 \t]/, "", ty) }
+        infm && /^status:/ { st = $0; sub(/^status:[ \t]*/, "", st); gsub(/["\047 \t]/, "", st) }
+        END { if (seen) tally(); print n + 0 }
+    ' "$@" 2>/dev/null || echo 0
+}
+
+# Second tier-0 line, printed only when meta-learning proposals wait for the
+# PI (nothing otherwise). Read-only. Arguments: $1 - project root
+kb_proposals_line() {
+    local d n
+    d="$(kb_dir "$1")"
+    n="$(kb_open_proposals "$d")"
+    [[ "$n" =~ ^[0-9]+$ ]] || return 0
+    (( n > 0 )) || return 0
+    if (( n == 1 )); then
+        printf 'KB: 1 meta-learning proposal awaits the PI (uws kb proposals).\n'
+    else
+        printf 'KB: %s meta-learning proposals await the PI (uws kb proposals).\n' "$n"
+    fi
+}
+
+# ── Meta-learning outcomes (design section 6.2) ─────────────────────────────
+#
+# <kb>/outcomes.tsv is an append-only, tracked log of what happened to UWS's
+# own process. Only scripts write it, through kb_outcome. One row per event,
+# no header, 8 tab-separated columns:
+#
+#   ts  event  phase  role  model  subject  result  ref
+#
+#   event        phase          role    model  subject          result                          ref
+#   gate_fail    <m>:<failed>   -       -      <m>:<target>|-   reason text (- if none)          HEAD
+#   gate_pass    <m>:<left>     -       -      <m>:<entered>    <done>/<total>[ forced|ungated]  HEAD
+#   cr_decision  <m>:<phase>|-  agent   model  CR summary       approved | rejected[: reason]    CR ID
+#   dispatch     <m>:<phase>    agent   model  target artifact  dispatched | collected          HEAD | CR ID
+#   escape       <m>:<phase>    author  -      lesson item ID   the lesson's claim              HEAD
+#   kb_retire    -              author  -      retired item ID  <code> evidence=E captured_by=C from=S type=T  related item | -
+#
+# <m> is sdlc or research; model is the agent file's `model:` front matter.
+# Fields are TSV-escaped (backslash, tab, newline and CR become \\ \t \n \r;
+# other control characters become spaces), an empty field is "-", and free
+# text is capped at UWS_KB_OUTCOME_FIELD_BYTES (500) bytes.
+# `uws kb learn` (scripts/kb.sh) is the only reader.
+
+KB_OUTCOME_EVENTS=" gate_fail gate_pass cr_decision dispatch escape kb_retire "
+
+# Succeeds when the project has a KB directory, i.e. outcomes are recorded.
+# Callers check it first so projects without a KB pay for nothing else.
+kb_outcomes_enabled() {
+    local root d
+    root="$(kb_project_root 2>/dev/null)" || return 1
+    [[ -n "$root" ]] || return 1
+    d="$(kb_dir "$root" 2>/dev/null)" || return 1
+    [[ -n "$d" && -d "$d" ]]
+}
+
+# kb_outcome <event> <phase> <role> <model> <subject> <result> <ref>
+# Append one row. Best effort by design: a no-op when the project has no KB
+# directory, and a failure prints one line on stderr and still returns 0, so
+# a caller under `set -e` never stops or changes its exit code because of it.
+# One awk process writes the whole row with a single printf to an O_APPEND file.
+kb_outcome() {
+    local ev="${1:-}" root d
+    root="$(kb_project_root 2>/dev/null)" || root=""
+    [[ -n "$root" ]] || return 0
+    d="$(kb_dir "$root" 2>/dev/null)" || d=""
+    [[ -n "$d" && -d "$d" ]] || return 0
+    case "$KB_OUTCOME_EVENTS" in
+        *" ${ev} "*) ;;
+        *) echo "uws: not recording unknown outcome event '${ev}'" >&2; return 0 ;;
+    esac
+    if ! KBO1="$(kb_timestamp)" KBO2="$ev" KBO3="${2:-}" KBO4="${3:-}" KBO5="${4:-}" \
+         KBO6="${5:-}" KBO7="${6:-}" KBO8="${7:-}" KBMAX="${UWS_KB_OUTCOME_FIELD_BYTES:-500}" \
+         LC_ALL=C awk '
+        function utf8_whole(s,    n, i, c, need) {   # drop a cut-off UTF-8 sequence at the end
+            n = length(s)
+            for (i = n; i > 0 && i > n - 4; i--) {
+                c = substr(s, i, 1)
+                if (c < "\200") return s
+                if (c >= "\300") {
+                    need = (c >= "\360") ? 4 : ((c >= "\340") ? 3 : 2)
+                    return (n - i + 1 < need) ? substr(s, 1, i - 1) : s
+                }
+            }
+            return s
+        }
+        function esc(s,    out, i, n, c, cut) {
+            out = ""; n = length(s); cut = 0
+            for (i = 1; i <= n; i++) {
+                if (i > max) { cut = 1; break }
+                c = substr(s, i, 1)
+                if (c == "\\") c = "\\\\"
+                else if (c == "\t") c = "\\t"
+                else if (c == "\n") c = "\\n"
+                else if (c == "\r") c = "\\r"
+                else if (c < " " || c == "\177") c = " "
+                out = out c
+            }
+            if (cut) out = utf8_whole(out) "..."
+            return (out == "" ? "-" : out)
+        }
+        BEGIN {
+            max = ENVIRON["KBMAX"] + 0; if (max < 16) max = 16
+            row = ENVIRON["KBO1"]
+            for (k = 2; k <= 8; k++) row = row "\t" esc(ENVIRON["KBO" k])
+            printf "%s\n", row
+        }' >> "${d}/outcomes.tsv"; then
+        echo "uws: could not record the '${ev}' outcome in ${d}/outcomes.tsv (continuing)" >&2
+    fi
+    return 0
+}
+
+# Short HEAD commit of a repository, or "-" (no repository or no commit yet).
+kb_head_ref() {
+    local h
+    h="$(git -C "${1:-.}" rev-parse --short HEAD 2>/dev/null || true)"
+    printf '%s\n' "${h:--}"
+}
+
+# Model of a UWS subagent, from the `model:` front matter of uws-<role>.md:
+# the project's .claude/agents first, then the UWS installation (the repo's
+# .claude/agents, or the plugin's agents/). Prints "unknown" when not found.
+# Arguments: $1 - role (e.g. implementer), $2 - project root (optional)
+kb_agent_model() {
+    local role="${1:-}" root="${2:-}" f m=""
+    if [[ ! "$role" =~ ^[A-Za-z0-9._-]+$ ]]; then echo unknown; return 0; fi
+    [[ -n "$root" ]] || root="$(kb_project_root)"
+    for f in "${root}/.claude/agents/uws-${role}.md" \
+             "${_KB_UTILS_DIR}/../../.claude/agents/uws-${role}.md" \
+             "${_KB_UTILS_DIR}/../../agents/uws-${role}.md"; do
+        [[ -f "$f" ]] || continue
+        m="$(kb_fm_get "$f" model 2>/dev/null || true)"
+        [[ -n "$m" ]] && break
+    done
+    printf '%s\n' "${m:-unknown}"
+}
+
+# The active methodology phase as "<m>:<phase>" (sdlc first, as orchestrate.sh
+# resolves it), or "-". Reads $WORKFLOW_DIR/state.yaml; quoted (sed) and
+# unquoted (yq) scalars both work.
+kb_current_phase() {
+    local state m v
+    state="${WORKFLOW_DIR:-$(kb_project_root)/.workflow}/state.yaml"
+    [[ -f "$state" ]] || { echo "-"; return 0; }
+    for m in sdlc research; do
+        v="$(KBK="${m}_phase" awk '
+            index($0, ENVIRON["KBK"] ":") == 1 {
+                v = substr($0, length(ENVIRON["KBK"]) + 2); gsub(/^[ \t]+|[ \t]+$/, "", v)
+                gsub(/^["\047]|["\047]$/, "", v); print v; exit
+            }' "$state" 2>/dev/null || true)"
+        if [[ -n "$v" && "$v" != "null" ]]; then printf '%s:%s\n' "$m" "$v"; return 0; fi
+    done
+    echo "-"
+}
+
+# Model recorded when a change request was collected (the `dispatch` row with
+# result `collected` and ref <CR ID>); falls back to the agent file's model.
+# Arguments: $1 - CR ID, $2 - role
+kb_cr_model() {
+    local cr="$1" role="$2" d m=""
+    d="$(kb_dir "$(kb_project_root)")"
+    if [[ -f "${d}/outcomes.tsv" ]]; then
+        m="$(KBCR="$cr" awk -F '\t' '$2 == "dispatch" && $7 == "collected" && $8 == ENVIRON["KBCR"] { m = $5 } END { print m }' \
+            "${d}/outcomes.tsv" 2>/dev/null || true)"
+    fi
+    [[ -n "$m" && "$m" != "-" ]] || m="$(kb_agent_model "$role")"
+    printf '%s\n' "$m"
+}
+
+# kb_record_gate_fail <methodology> <failed-phase> <target-phase|""> <reason>
+# Called by `sdlc.sh fail` and `research.sh reject`.
+kb_record_gate_fail() {
+    local m="$1" from="$2" to="${3:-}" reason="${4:-}"
+    kb_outcomes_enabled || return 0
+    kb_outcome gate_fail "${m}:${from}" - - "${to:+${m}:${to}}" "$reason" "$(kb_head_ref "$(kb_project_root)")"
+}
+
+# kb_record_gate_pass <methodology> <left-phase> <entered-phase> <total> [--force]
+# Called by `sdlc.sh next` / `research.sh next` after a transition. done comes
+# from the methodology_progress ledger (workflow_routing.sh); "ungated" marks a
+# pass with no goal declared (the deliverable gate was not active).
+kb_record_gate_pass() {
+    local m="$1" from="$2" to="$3" total="${4:-0}" force="${5:-}" done="-" result
+    kb_outcomes_enabled || return 0
+    total="$(printf '%s' "$total" | tr -d '[:space:]')"
+    if declare -f _mp_done_count >/dev/null 2>&1; then
+        done="$(_mp_done_count "$m" "$from" 2>/dev/null || true)"
+        [[ "$done" =~ ^[0-9]+$ ]] || done="-"
+    fi
+    result="${done}/${total:-0}"
+    if [[ "$force" == "--force" ]]; then
+        result+=" forced"
+    elif declare -f gate_enabled >/dev/null 2>&1 && ! gate_enabled 2>/dev/null; then
+        result+=" ungated"
+    fi
+    kb_outcome gate_pass "${m}:${from}" - - "${m}:${to}" "$result" "$(kb_head_ref "$(kb_project_root)")"
 }

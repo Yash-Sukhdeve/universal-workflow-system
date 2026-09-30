@@ -7,8 +7,10 @@
 #   add --type T --claim "..." [--evidence E] [--source S]... [--check CMD]
 #       [--watch PATH]... [--author A] [--tags a,b] [--supersedes ID]...
 #       [--contradicts ID]... [--no-conflict] [--falsifier TEXT]
-#       [--body TEXT] [--quote TEXT]
+#       [--body TEXT] [--quote TEXT] [--escaped-from PHASE]
 #                              create a candidate; prints its ID on stdout
+#                              (--escaped-from, lessons only: a bug found after
+#                              PHASE's gate passed; recorded as an `escape` outcome)
 #   search <words> [--type T] [--status S] [--include-stale] [--all] [--limit N]
 #   links [--type contradicts|supersedes|supports] <ID | words>
 #   show <ID>                  print one item
@@ -24,6 +26,9 @@
 #   restore <ID>               bring a retired item back as a candidate
 #   lint                       check invariants I1-I4, I6, I7
 #   stats [--short]            counts; rebuilds .cache/stats
+#   learn [--dry-run]          meta-learning: compute metrics from outcomes.tsv and
+#                              write proposal candidates (never applies a change)
+#   proposals                  list proposals waiting for the PI and those being tracked
 #
 # Exit codes: 0 ok; 1 not found / no match / lint violation; 2 invalid or
 # unprovenanced; 3 duplicate; 4 undeclared conflict; 5 a check failed;
@@ -36,6 +41,11 @@
 # UWS_KB_STALE_GRACE_DAYS (30), UWS_KB_DISPUTE_DAYS (14),
 # UWS_KB_REVIEW_DAYS_<TYPE> (fact 180, lesson/anti-pattern 365, question 30,
 # hypothesis 90, proposal 30; decision never expires).
+# Meta-learning (design 6.3; each metric needs n >= UWS_KB_LEARN_MIN_N):
+# UWS_KB_LEARN_MIN_N (5), UWS_KB_LEARN_WINDOW (10 samples per metric, and the
+# events tracked after an approval), UWS_KB_LEARN_ESCAPE_RATE (0.20),
+# UWS_KB_LEARN_CR_REJECT_RATE (0.40), UWS_KB_LEARN_DISPROVEN_RATE (0.25),
+# UWS_KB_LEARN_REPEAT_FAILS (3), UWS_KB_OUTCOME_FIELD_BYTES (500).
 
 set -euo pipefail
 
@@ -53,9 +63,20 @@ UWS_KB_VERIFY_BUDGET="${UWS_KB_VERIFY_BUDGET:-60}"
 UWS_KB_CANDIDATE_TTL_DAYS="${UWS_KB_CANDIDATE_TTL_DAYS:-30}"
 UWS_KB_STALE_GRACE_DAYS="${UWS_KB_STALE_GRACE_DAYS:-30}"
 UWS_KB_DISPUTE_DAYS="${UWS_KB_DISPUTE_DAYS:-14}"
+UWS_KB_LEARN_MIN_N="${UWS_KB_LEARN_MIN_N:-5}"
+UWS_KB_LEARN_WINDOW="${UWS_KB_LEARN_WINDOW:-10}"
+UWS_KB_LEARN_ESCAPE_RATE="${UWS_KB_LEARN_ESCAPE_RATE:-0.20}"
+UWS_KB_LEARN_CR_REJECT_RATE="${UWS_KB_LEARN_CR_REJECT_RATE:-0.40}"
+UWS_KB_LEARN_DISPROVEN_RATE="${UWS_KB_LEARN_DISPROVEN_RATE:-0.25}"
+UWS_KB_LEARN_REPEAT_FAILS="${UWS_KB_LEARN_REPEAT_FAILS:-3}"
+# UWS installation (scripts/..): where proposal targets such as scripts/sdlc.sh
+# or docs/personas/ live when they are not part of the project itself
+UWS_HOME="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 TYPES="fact decision lesson anti-pattern question hypothesis proposal"
 EVIDENCES="verified observed reported inferred"
+SDLC_PHASE_NAMES="requirements design implementation verification deployment maintenance"
+RESEARCH_PHASE_NAMES="hypothesis literature_review experiment_design data_collection analysis peer_review publication"
 
 die() {
     local code="$1"; shift
@@ -154,17 +175,40 @@ set_status() {  # set_status <file> <new-status> <reason>
     kb_event "$KB" "$id" "$from" "$to" "$reason" "$(kb_actor "$ROOT")"
 }
 
-# Retire an active item: move to retired/, set status and reason, log.
+# Reason code of a retirement for outcomes.tsv, and the item it points to:
+# prints "<code><TAB><related item or ->".
+retire_code() {
+    local r="$1"
+    case "$r" in
+        superseded-by:*) printf 'superseded-by\t%s\n' "${r#superseded-by:}" ;;
+        disproven-by:*)  printf 'disproven-by\t%s\n' "${r#disproven-by:}" ;;
+        disproven|expired|unpromoted) printf '%s\t-\n' "$r" ;;
+        rejected|rejected:*) printf 'rejected\t-\n' ;;
+        graduated:*)     printf 'graduated\t-\n' ;;
+        *)               printf 'manual\t-\n' ;;
+    esac
+}
+
+# Retire an active item: move to retired/, set status and reason, log, and
+# record a kb_retire outcome (reason code, evidence, captured_by, prior status).
 retire_item() {  # retire_item <id> <reason>
-    local id="$1" reason="$2" src dst
+    local id="$1" reason="$2" src dst ev cb au ty from code rel
     src="${KB}/items/${id}.md"
     [[ -f "$src" ]] || die 1 "not an active item: $id"
     dst="${KB}/retired/${id}.md"
     [[ -e "$dst" ]] && die 2 "retired/${id}.md already exists"
+    ev="$(kb_fm_get "$src" evidence)"; cb="$(kb_fm_get "$src" captured_by)"
+    au="$(kb_fm_get "$src" author)"; ty="$(kb_fm_get "$src" type)"; from="$(kb_fm_get "$src" status)"
     move_file "$src" "$dst"
     kb_fm_set "$dst" retired_at "$TODAY"
     kb_fm_set "$dst" retired_reason "$(kb_quote "$(kb_oneline "$reason")")"
     set_status "$dst" retired "$reason"
+    IFS="$TAB" read -r code rel <<EOF
+$(retire_code "$reason")
+EOF
+    cb="$(printf '%s' "${cb:--}" | tr -s '[:space:]' '_')"
+    kb_outcome kb_retire - "${au:--}" - "$id" \
+        "${code} evidence=${ev:--} captured_by=${cb} from=${from:--} type=${ty:--}" "${rel:--}"
 }
 
 # ── Source resolution (R8) ──────────────────────────────────────────────────
@@ -531,9 +575,24 @@ EOF
     done
 }
 
+# Normalise a phase name for --escaped-from to "<methodology>:<phase>".
+# Accepts "sdlc:verification" or a bare phase name (the SDLC and research
+# phase names do not overlap). Prints nothing when the name is unknown.
+normalize_phase() {
+    local p="$1" m=""
+    case "$p" in
+        sdlc:*|research:*) m="${p%%:*}"; p="${p#*:}" ;;
+    esac
+    if word_in "$p" "$SDLC_PHASE_NAMES" && [[ -z "$m" || "$m" == "sdlc" ]]; then
+        printf 'sdlc:%s\n' "$p"
+    elif word_in "$p" "$RESEARCH_PHASE_NAMES" && [[ -z "$m" || "$m" == "research" ]]; then
+        printf 'research:%s\n' "$p"
+    fi
+}
+
 cmd_add() {
     local type="" claim="" evidence="" check="" author="" tags_raw="" falsifier="" body="" quote=""
-    local scope="project" no_conflict=false
+    local scope="project" no_conflict=false escaped_from=""
     local -a sources=() watches=() supersedes=() contradicts=()
     while [[ $# -gt 0 ]]; do
         [[ "$1" == --* && "$1" != "--no-conflict" && $# -lt 2 ]] && die 2 "add: $1 needs a value"
@@ -553,6 +612,7 @@ cmd_add() {
             --body) body="$2"; shift 2 ;;
             --quote) quote="$2"; shift 2 ;;
             --scope) scope="$2"; shift 2 ;;
+            --escaped-from) escaped_from="$2"; shift 2 ;;
             --reviewer) die 2 "add: --reviewer is not accepted; the reviewer is recorded by 'approve' (PI only)" ;;
             *) die 2 "add: unknown argument '$1'" ;;
         esac
@@ -576,6 +636,13 @@ cmd_add() {
         [[ -n "$check" ]] || die 2 "add: --evidence verified needs --check <command>"
     fi
     [[ "$type" != "hypothesis" || -n "$falsifier" ]] || die 2 "add: a hypothesis needs --falsifier (the observation that would refute it)"
+    if [[ -n "$escaped_from" ]]; then
+        [[ "$type" == "lesson" ]] || die 2 "add: --escaped-from is for --type lesson (a bug found after that phase's gate passed)"
+        local ef
+        ef="$(normalize_phase "$escaped_from")"
+        [[ -n "$ef" ]] || die 2 "add: --escaped-from: unknown phase '${escaped_from}' (e.g. verification, sdlc:verification, research:analysis)"
+        escaped_from="$ef"
+    fi
     if [[ -n "$check" ]]; then
         case "$check" in *$'\n'*) die 2 "add: --check must be one line" ;; esac
         if check_denied "$check"; then die 2 "add: --check looks destructive (rm/sudo/git push/curl|...); refused"; fi
@@ -735,12 +802,18 @@ EOF
         echo "contradicts: $(kb_list_format ${contradicts[@]+"${contradicts[@]}"})"
         echo "supports: []"
         echo "tags: $(kb_list_format ${tags[@]+"${tags[@]}"})"
+        [[ -n "$escaped_from" ]] && echo "escaped_from: ${escaped_from}"
         echo "---"
         [[ -n "$quote" ]] && printf '> %s\n\n' "$quote"
         [[ -n "$body" ]] && printf '%s\n' "$body"
     } > "$tmp"
     mv "$tmp" "$file"
     kb_event "$KB" "$id" "-" candidate "add" "$author"
+    # Meta-learning: a bug that escaped this phase's gate. It counts in
+    # `learn` only once the PI has approved the lesson (design 6.4).
+    if [[ -n "$escaped_from" ]]; then
+        kb_outcome escape "$escaped_from" "$author" - "$id" "$claim" "$(kb_head_ref "$ROOT")"
+    fi
 
     # Reciprocal contradicts link, so the old item shows the dispute
     for l in ${contradicts[@]+"${contradicts[@]}"}; do
@@ -927,9 +1000,26 @@ EOF
     kb_fm_set "$f" reviewer "$pi"
     kb_fm_set "$f" verified_at "$TODAY"
     kb_fm_set "$f" review_by "$(review_by_for "$(kb_fm_get "$f" type)" "$TODAY")"
+    # A meta-learning proposal: approval records the PI's acceptance and the
+    # moment `learn` starts measuring the metric again. It never applies the
+    # proposed change (design 6.4): the change goes through a normal CR.
+    local is_proposal=false
+    if [[ "$(kb_fm_get "$f" type)" == "proposal" ]]; then
+        is_proposal=true
+        kb_fm_set "$f" approved_ts "$(kb_timestamp)"
+    fi
     set_status "$f" trusted "approved-by-pi"
     rebuild_stats_cache
     echo "${id}: ${st} -> trusted (approved by ${pi})"
+    if [[ "$is_proposal" == "true" ]]; then
+        local tgt
+        tgt="$(kb_fm_get "$f" target)"
+        echo "Acceptance recorded; nothing was changed${tgt:+ in ${tgt}}."
+        echo "Apply the change in the item's body through a change request (uws kb show ${id})."
+        if [[ "$(kb_fm_get "$f" proposal_kind)" == "change" ]]; then
+            echo "uws kb learn will measure $(kb_fm_get "$f" metric) over the next ${UWS_KB_LEARN_WINDOW:-10} events and propose a revert if it does not improve."
+        fi
+    fi
 }
 
 cmd_reject() {
@@ -1031,6 +1121,8 @@ cmd_restore() {
     by="$(kb_fm_get "$dst" superseded_by)"
     kb_fm_set "$dst" superseded_by ""
     kb_fm_set "$dst" reviewer ""
+    # A restored proposal waits for a new decision: its old approval no longer counts
+    kb_fm_del "$dst" approved_ts
     # Undo the supersession link so prune (R1) does not retire it again
     for g in "${KB}"/items/*.md "${KB}"/retired/*.md; do
         [[ -f "$g" && "$g" != "$dst" ]] || continue
@@ -1110,6 +1202,794 @@ EOF
     else
         echo "(dry run: nothing changed; run 'uws kb prune --apply', then review and commit)"
     fi
+}
+
+# ── learn / proposals (meta-learning, design section 6) ─────────────────────
+#
+# `learn` reads only outcomes.tsv rows (written by scripts from exit codes and
+# review decisions) plus the status of the items those rows name, so that
+# candidate and inferred items never feed a metric (design 6.4). A metric is
+# computed per key over the last UWS_KB_LEARN_WINDOW samples recorded after the
+# key's latest proposal (so a proposal the PI turned down is not repeated from
+# the same rows) and proposes only with n >= UWS_KB_LEARN_MIN_N. It writes
+# `proposal` candidates; nothing it does edits a rule, persona or route.
+
+# awk helper: drop a cut-off UTF-8 sequence at the end of a string (C locale)
+# shellcheck disable=SC2016
+KB_AWK_UTF8='
+function whole(s,    n, i, c, need) {
+    n = length(s)
+    for (i = n; i > 0 && i > n - 4; i--) {
+        c = substr(s, i, 1)
+        if (c < "\200") return s
+        if (c >= "\300") { need = (c >= "\360") ? 4 : ((c >= "\340") ? 3 : 2); return (n - i + 1 < need) ? substr(s, 1, i - 1) : s }
+    }
+    return s
+}
+'
+
+# Metrics from outcomes.tsv. Input: the side table (KBSIDE) then outcomes.tsv.
+# Side table lines: "C<TAB>id" for items the PI approved (not inferred), and
+# "P<TAB>id<TAB>open<TAB>metric<TAB>key<TAB>created_ts<TAB>approved_ts<TAB>
+# followup_ts<TAB>kind<TAB>before<TAB>track_key<TAB>tracking" per proposal.
+# Output lines (sorted by the caller, so notes come first; empty values are "-"):
+#   A note
+#   M fam key n k value status window-start detail refs
+#       status: small-n | below | open:<id> | propose
+#   T id pending|improved|not-improved n after before k
+# shellcheck disable=SC2016
+KB_AWK_LEARN='
+function unesc(s,    out, i, n, c) {
+    out = ""; n = length(s)
+    for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (c == "\\" && i < n) {
+            i++; c = substr(s, i, 1)
+            if (c == "t") c = "\t"; else if (c == "n") c = "\n"; else if (c == "r") c = "\r"
+        }
+        out = out c
+    }
+    return out
+}
+function norm(s) {   # same normalised text: case, spacing and trailing punctuation ignored
+    if (s == "-") return ""
+    s = tolower(unesc(s)); gsub(/[ \t\r\n]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s); sub(/[.!?;:,]+$/, "", s)
+    if (length(s) > 160) s = whole(substr(s, 1, 160))
+    return s
+}
+function add(fam, key, ts, idx, bad, ref, note,    n) {
+    n = ++SN[fam, key]; KEYS[fam, key] = 1
+    STS[fam, key, n] = ts; SBAD[fam, key, n] = bad; SREF[fam, key, n] = ref; SNOTE[fam, key, n] = note
+}
+function parse_retire(s,    n, a, i) {
+    RC = ""; REV = ""; RCB = ""; RFROM = ""; RTYPE = ""
+    n = split(s, a, " "); RC = a[1]
+    for (i = 2; i <= n; i++) {
+        if (substr(a[i], 1, 9) == "evidence=") REV = substr(a[i], 10)
+        else if (substr(a[i], 1, 12) == "captured_by=") RCB = substr(a[i], 13)
+        else if (substr(a[i], 1, 5) == "from=") RFROM = substr(a[i], 6)
+        else if (substr(a[i], 1, 5) == "type=") RTYPE = substr(a[i], 6)
+    }
+}
+# A CR proposal is tracked per role (any model), so a role with an open or
+# tracked proposal gets no second one for another model meanwhile.
+function ckey_of(fam, key,    c) { c = key; if (fam == "cr-first-pass-rejection") sub(/,model=.*/, "", c); return c }
+# Samples count only after the latest decision point of a proposal on the key
+function start_of(fam, key,    s, t, c) {
+    s = ((fam SUBSEP key) in WSTART) ? WSTART[fam, key] : ""
+    c = ckey_of(fam, key)
+    t = ((fam SUBSEP c) in TWSTART) ? TWSTART[fam, c] : ""
+    return (t > s) ? t : s
+}
+function blocker(fam, key,    c) {
+    if ((fam SUBSEP key) in BLOCK) return BLOCK[fam, key]
+    c = ckey_of(fam, key)
+    if ((fam SUBSEP c) in TBLOCK) return TBLOCK[fam, c]
+    return ""
+}
+function report(fam, key, n, k, crossed, d1, d2,    st, ws, b) {
+    b = blocker(fam, key)
+    if (b != "") st = "open:" b
+    else if (n < MIN) st = "small-n"
+    else if (!crossed) st = "below"
+    else st = "propose"
+    ws = start_of(fam, key); if (ws == "") ws = "-"
+    printf "M\t%s\t%s\t%d\t%d\t%.4f\t%s\t%s\t%s\t%s\n", fam, key, n, k, (n > 0 ? k / n : 0), st, ws, (d1 == "" ? "-" : d1), (d2 == "" ? "-" : d2)
+}
+function nothing_new(fam, key) { if (blocker(fam, key) != "") report(fam, key, 0, 0, 0, "", "") }
+# Gate-escape rate of phase p: approved escapes after the earliest of the last
+# W passes, divided by those passes.
+function eval_escape(p,    fam, key, start, i, j, n, k, first, ids, last) {
+    fam = "gate-escape-rate"; key = "phase=" p; start = start_of(fam, key)
+    n = 0; first = 0
+    for (i = PN[p]; i >= 1 && n < W; i--) {
+        if (start != "" && PTS[p, i] <= start) continue
+        n++; first = PIX[p, i]
+    }
+    if (n == 0) { nothing_new(fam, key); return }
+    k = 0; ids = ""; last = ""
+    for (j = 1; j <= EN[p]; j++) {
+        if (EIX[p, j] <= first) continue
+        if (start != "" && ETS[p, j] <= start) continue
+        k++; ids = ids (ids == "" ? "" : ",") EID[p, j]; last = EID[p, j]
+    }
+    report(fam, key, n, k, (k / n > THR[fam]), last, ids)
+}
+# Share of bad samples among the last W; detail = most frequent note (latest on a tie).
+function eval_rate(fam, key,    start, i, n, k, refs, why, best, bestn, cnt, lastpos) {
+    start = start_of(fam, key)
+    n = 0; k = 0; refs = ""; split("", cnt); split("", lastpos)
+    for (i = SN[fam, key]; i >= 1 && n < W; i--) {
+        if (start != "" && STS[fam, key, i] <= start) continue
+        n++
+        if (SBAD[fam, key, i]) {
+            k++; refs = SREF[fam, key, i] (refs == "" ? "" : "," refs)
+            why = SNOTE[fam, key, i]
+            if (why != "") { cnt[why]++; if (!(why in lastpos)) lastpos[why] = i }
+        }
+    }
+    if (n == 0) { nothing_new(fam, key); return }
+    best = ""; bestn = 0
+    for (why in cnt) if (cnt[why] > bestn || (cnt[why] == bestn && lastpos[why] > lastpos[best] + 0)) { best = why; bestn = cnt[why] }
+    report(fam, key, n, k, (k / n > THR[fam]), best, refs)
+}
+# Reason r among the last W gate failures; detail = the phase the failures sent
+# work back to (the failing phase when there was no regression).
+function eval_repeat(r,    fam, key, start, i, n, k, refs, t, tc, tl, best, bestn) {
+    fam = "repeated-gate-fail"; key = "reason=" r; start = start_of(fam, key)
+    n = 0; k = 0; refs = ""; split("", tc); split("", tl)
+    for (i = FN; i >= 1 && n < W; i--) {
+        if (start != "" && FTS[i] <= start) continue
+        n++
+        if (FR[i] == r) {
+            k++; t = (FTO[i] != "-" ? FTO[i] : FPH[i]); tc[t]++; if (!(t in tl)) tl[t] = i
+            refs = FPH[i] (refs == "" ? "" : "," refs)
+        }
+    }
+    if (n == 0 || k == 0) { nothing_new(fam, key); return }
+    best = ""; bestn = 0
+    for (t in tc) if (tc[t] > bestn || (tc[t] == bestn && tl[t] > tl[best] + 0)) { best = t; bestn = tc[t] }
+    report(fam, key, n, k, (k >= REP), best, refs)
+}
+# An approved change: the same metric over the first W samples after approval.
+function track(t,    fam, key, A, i, j, n, k, p, r, first, lastidx, tf, after, verdict) {
+    fam = T_metric[t]; key = T_key[t]; A = T_ts[t]; n = 0; k = 0
+    if (fam == "gate-escape-rate") {
+        p = substr(key, 7); first = 0; lastidx = 0
+        for (i = 1; i <= PN[p] && n < W; i++) {
+            if (PTS[p, i] <= A) continue
+            n++; if (!first) first = PIX[p, i]; lastidx = PIX[p, i]
+        }
+        if (n >= W) for (j = 1; j <= EN[p]; j++) if (EIX[p, j] > first && EIX[p, j] <= lastidx && ETS[p, j] > A) k++
+    } else if (fam == "repeated-gate-fail") {
+        r = substr(key, 8)
+        for (i = 1; i <= FN && n < W; i++) { if (FTS[i] <= A) continue; n++; if (FR[i] == r) k++ }
+    } else {
+        tf = (fam == "cr-first-pass-rejection") ? "cr-role" : fam
+        for (i = 1; i <= SN[tf, key] && n < W; i++) { if (STS[tf, key, i] <= A) continue; n++; if (SBAD[tf, key, i]) k++ }
+    }
+    if (n < W) { printf "T\t%s\tpending\t%d\t-\t%s\t%d\n", T_id[t], n, T_before[t], k; return }
+    after = k / n
+    verdict = ((sprintf("%.2f", after) + 0) < (sprintf("%.2f", T_before[t]) + 0)) ? "improved" : "not-improved"
+    printf "T\t%s\t%s\t%d\t%.4f\t%s\t%d\n", T_id[t], verdict, n, after, T_before[t], k
+}
+BEGIN {
+    FS = "\t"; SIDE = ENVIRON["KBSIDE"]
+    W = ENVIRON["KBW"] + 0; MIN = ENVIRON["KBMIN"] + 0; REP = ENVIRON["KBREP"] + 0
+    THR["gate-escape-rate"] = ENVIRON["KBTESC"] + 0
+    THR["cr-first-pass-rejection"] = ENVIRON["KBTCR"] + 0
+    THR["disproven-rate"] = ENVIRON["KBTDIS"] + 0
+}
+FILENAME == SIDE {
+    if ($1 == "C") CONF[$2] = 1
+    else if ($1 == "P") {
+        fk = $4 SUBSEP $5; tk = $4 SUBSEP (($11 != "-") ? $11 : $5)
+        t = ($8 != "-") ? $8 : (($7 != "-") ? $7 : $6); if (t == "-") t = ""
+        if (!(fk in WSTART) || t > WSTART[fk]) WSTART[fk] = t
+        if (!(tk in TWSTART) || t > TWSTART[tk]) TWSTART[tk] = t
+        if ($3 == "1") { BLOCK[fk] = $2; TBLOCK[tk] = $2 }
+        if ($12 == "1") { NT++; T_id[NT] = $2; T_metric[NT] = $4; T_key[NT] = ($11 != "-" ? $11 : $5); T_ts[NT] = $7; T_before[NT] = $10 }
+    }
+    next
+}
+NF != 8 { BAD++; next }
+{
+    R++; ts = $1; ev = $2
+    if (ev == "gate_pass") { n = ++PN[$3]; PTS[$3, n] = ts; PIX[$3, n] = R; PH[$3] = 1 }
+    else if (ev == "escape") {
+        if ($6 in CONF) { n = ++EN[$3]; ETS[$3, n] = ts; EIX[$3, n] = R; EID[$3, n] = $6; PH[$3] = 1 }
+        else UNCONF++
+    }
+    else if (ev == "gate_fail") { n = ++FN; FTS[n] = ts; FR[n] = norm($7); FPH[n] = $3; FTO[n] = $6 }
+    else if (ev == "dispatch") { if ($7 == "dispatched") { PEND[$4] = 1; PMOD[$4] = $5 } }
+    else if (ev == "cr_decision") {
+        role = $4
+        if (role != "-" && PEND[role] == 1) {   # first decision since the role was dispatched
+            PEND[role] = 0
+            bad = (substr($7, 1, 8) == "rejected"); why = ""
+            if (bad) { why = $7; sub(/^rejected:?[ ]*/, "", why); why = norm(why) }
+            add("cr-first-pass-rejection", "role=" role ",model=" PMOD[role], ts, R, bad, $8, why)
+            add("cr-role", "role=" role, ts, R, bad, $8, why)
+        }
+    }
+    else if (ev == "kb_retire") {
+        parse_retire($7)
+        if ((RFROM == "trusted" || RFROM == "stale" || RFROM == "disputed") \
+            && (REV == "verified" || REV == "observed" || REV == "reported") \
+            && RTYPE != "proposal" && RTYPE != "hypothesis" && RTYPE != "question") {
+            bad = (RC == "disproven" || RC == "disproven-by")
+            add("disproven-rate", "evidence=" REV, ts, R, bad, $6, "")
+            add("disproven-rate", "captured_by=" RCB, ts, R, bad, $6, "")
+        } else RSKIP++
+    }
+}
+END {
+    if (BAD) printf "A\t%d malformed row(s) in outcomes.tsv skipped (want 8 tab-separated columns)\n", BAD
+    if (UNCONF) printf "A\t%d escape row(s) not counted: the lesson is not approved by the PI yet, or is inferred\n", UNCONF
+    if (RSKIP) printf "A\t%d retirement(s) not counted: candidates, inferred items, hypotheses, questions and proposals do not feed metrics\n", RSKIP
+    for (p in PH) eval_escape(p)
+    for (fk in KEYS) { split(fk, a, SUBSEP); if (a[1] != "cr-role") eval_rate(a[1], a[2]) }
+    for (i = 1; i <= FN; i++) if (FR[i] != "") RSN[FR[i]] = 1
+    for (r in RSN) eval_repeat(r)
+    for (t = 1; t <= NT; t++) track(t)
+}
+'
+
+# Side table for KB_AWK_LEARN from every item file (active and retired).
+learn_side_table() {
+    local -a files=()
+    local f
+    for f in "${KB}"/items/*.md "${KB}"/retired/*.md; do [[ -f "$f" ]] && files+=("$f"); done
+    [[ ${#files[@]} -gt 0 ]] || return 0
+    awk "${KB_AWK_VALUES}"'
+        function fmv(k,    x) { x = kb_unq(F[k]); return (x == "" ? "-" : x) }
+        function kb_emit(    id, st, ev, dir, kind, appr, fu, open, tracking, rr) {
+            if ("_invalid" in F) return
+            id = kb_unq(F["id"]); st = kb_unq(F["status"]); ev = kb_unq(F["evidence"])
+            dir = (index(FILE, "/retired/") > 0) ? "retired" : "items"
+            rr = kb_unq(F["retired_reason"])
+            # Approved by the PI and not inferred (design 6.4): trusted or stale
+            # now, or retired later as superseded or graduated.
+            if (ev != "" && ev != "inferred") {
+                if (dir == "items" && (st == "trusted" || st == "stale")) print "C\t" id
+                else if (dir == "retired" && kb_unq(F["reviewer"]) != "" && rr ~ /^(superseded-by|graduated):/) print "C\t" id
+            }
+            if (kb_unq(F["type"]) != "proposal" || kb_unq(F["metric"]) == "") return
+            kind = kb_unq(F["proposal_kind"]); if (kind == "") kind = "change"
+            appr = kb_unq(F["approved_ts"]); fu = kb_unq(F["followup_ts"])
+            tracking = (kind == "change" && appr != "" && fu == "" && st != "candidate" && rr !~ /^rejected/) ? 1 : 0
+            open = ((dir == "items" && st == "candidate") || tracking) ? 1 : 0
+            printf "P\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", id, open, fmv("metric"), fmv("metric_key"), \
+                fmv("created_ts"), fmv("approved_ts"), fmv("followup_ts"), kind, fmv("metric_before"), fmv("track_key"), tracking
+        }
+    '"${KB_AWK_ITEMS}" "${files[@]}"
+}
+
+pct() { awk -v v="$1" 'BEGIN { printf "%d%%", int(v * 100 + 0.5) }'; }
+fmt2() { awk -v v="$1" 'BEGIN { printf "%.2f", v }'; }
+
+# One line of text that is safe inside a double-quoted shell string and in a
+# claim: no quotes, $, backquotes or backslashes; at most N bytes.
+safe_text() {
+    KBV="$1" KBN="${2:-120}" LC_ALL=C awk "${KB_AWK_UTF8}"'
+        BEGIN {
+            s = ENVIRON["KBV"]; n = ENVIRON["KBN"] + 0
+            gsub(/["$`\\]/, "", s); gsub(/[[:space:][:cntrl:]]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s)
+            if (length(s) > n) s = whole(substr(s, 1, n - 3)) "..."
+            printf "%s", s
+        }'
+}
+
+# find_target <rel-path>...: the first candidate that exists in the project,
+# else in the UWS installation. Sets TARGET_REL, TARGET_ABS, TARGET_WHERE.
+find_target() {
+    local rel
+    TARGET_REL="$1"; TARGET_ABS=""; TARGET_WHERE="the UWS installation"
+    for rel in "$@"; do
+        if [[ -f "${ROOT}/${rel}" ]]; then TARGET_REL="$rel"; TARGET_ABS="${ROOT}/${rel}"; TARGET_WHERE="this project"; return 0; fi
+    done
+    for rel in "$@"; do
+        if [[ -f "${UWS_HOME}/${rel}" ]]; then TARGET_REL="$rel"; TARGET_ABS="${UWS_HOME}/${rel}"; return 0; fi
+    done
+    return 1
+}
+
+# diff_insert <file> <rel> <after-line> <new-line>: unified diff adding a line
+diff_insert() {
+    KBREL="$2" KBL="$3" KBADD="$4" awk '
+        { line[NR] = $0 }
+        END {
+            L = ENVIRON["KBL"] + 0; s = L - 2; if (s < 1) s = 1; e = L + 3; if (e > NR) e = NR
+            printf "--- a/%s\n+++ b/%s\n@@ -%d,%d +%d,%d @@\n", ENVIRON["KBREL"], ENVIRON["KBREL"], s, e - s + 1, s, e - s + 2
+            for (i = s; i <= e; i++) { printf " %s\n", line[i]; if (i == L) printf "+%s\n", ENVIRON["KBADD"] }
+        }' "$1"
+}
+
+# diff_replace <file> <rel> <line> <new-line>: unified diff replacing one line
+diff_replace() {
+    KBREL="$2" KBL="$3" KBNEW="$4" awk '
+        { line[NR] = $0 }
+        END {
+            L = ENVIRON["KBL"] + 0; s = L - 2; if (s < 1) s = 1; e = L + 2; if (e > NR) e = NR
+            printf "--- a/%s\n+++ b/%s\n@@ -%d,%d +%d,%d @@\n", ENVIRON["KBREL"], ENVIRON["KBREL"], s, e - s + 1, s, e - s + 1
+            for (i = s; i <= e; i++) {
+                if (i == L) printf "-%s\n+%s\n", line[i], ENVIRON["KBNEW"]
+                else printf " %s\n", line[i]
+            }
+        }' "$1"
+}
+
+# Line number of the last `echo "- ..."` deliverable of <phase> in
+# get_phase_deliverables of scripts/sdlc.sh or scripts/research.sh
+deliverable_anchor() {
+    KBP="$2" awk '
+        /^get_phase_deliverables\(\)/ { infn = 1; next }
+        infn && /^}/ { exit }
+        infn && index($0, "\"" ENVIRON["KBP"] "\")") > 0 { incase = 1; next }
+        incase && /;;/ { exit }
+        incase && /^[[:space:]]*echo "- / { last = NR }
+        END { if (last) print last }
+    ' "$1"
+}
+
+# Line number of the last "- [ ]" item under a persona's "## Quality Gate" heading
+quality_gate_anchor() {
+    awk '/^## Quality Gate/ { inq = 1; next } inq && /^## / { exit } inq && /^- \[ \]/ { last = NR } END { if (last) print last }' "$1"
+}
+
+# The ```diff block of a proposal with its + and - lines swapped
+reverse_diff() {
+    awk '/^```diff$/ { f = 1; next } f && /^```$/ { exit } f { print }' "$1" | awk '
+        /^--- / || /^\+\+\+ / { print; next }
+        /^@@ / { a = $2; c = $3; sub(/^-/, "", a); sub(/^\+/, "", c); printf "@@ -%s +%s @@\n", c, a; next }
+        /^\+/ { print "-" substr($0, 2); next }
+        /^-/ { print "+" substr($0, 2); next }
+        { print }'
+}
+
+# Another model for a role whose first-pass CRs are often rejected. A
+# heuristic (the next larger tier; opus goes to sonnet), not evidence that the
+# other model does better: the proposal says so.
+alt_model() {
+    case "$1" in
+        haiku) echo sonnet ;;
+        sonnet) echo opus ;;
+        opus) echo sonnet ;;
+        *) echo opus ;;
+    esac
+}
+
+# Add a deliverable line to <phase> of scripts/<m>.sh (sets P_TARGET, P_WHERE,
+# P_DIFF or P_TEXT)
+plan_deliverable_line() {
+    local m="$1" p="$2" text="$3" L="" indent
+    if [[ "$m" == "sdlc" || "$m" == "research" ]] && find_target "scripts/${m}.sh"; then
+        L="$(deliverable_anchor "$TARGET_ABS" "$p")"
+    fi
+    P_TARGET="scripts/${m}.sh"; P_WHERE="${TARGET_WHERE:-the UWS installation}"
+    if [[ -n "$L" ]]; then
+        indent="$(sed -n "${L}p" "$TARGET_ABS" | sed 's/[^[:space:]].*//')"
+        P_DIFF="$(diff_insert "$TARGET_ABS" "$TARGET_REL" "$L" "${indent}echo \"- ${text}\"")"
+    else
+        P_TEXT="In scripts/${m}.sh, get_phase_deliverables, case \"${p}\", add the line: echo \"- ${text}\""
+    fi
+}
+
+# plan_proposal <fam> <key> <n> <k> <value> <detail> <refs>: fill the P_*
+# globals for a new change proposal. Returns 1 when the metric is unknown.
+plan_proposal() {
+    local fam="$1" key="$2" n="$3" k="$4" val="$5" d1="$6" refs="$7"
+    local vp ph m p f eclaim text L role model alt persona lvl old new line cb reason
+    P_FAM="$fam"; P_KEY="$key"; P_TRACK="$key"; P_N="$n"; P_K="$k"; P_BEFORE="$(fmt2 "$val")"; P_AFTER=""
+    P_REFS="$refs"; P_KIND="change"; P_REVERTS=""; P_DIFF=""; P_TEXT=""; P_NOTE=""; P_TARGET=""; P_WHERE=""
+    vp="$(pct "$val")"
+    case "$fam" in
+        gate-escape-rate)
+            ph="${key#phase=}"; m="${ph%%:*}"; p="${ph#*:}"
+            P_THR="$UWS_KB_LEARN_ESCAPE_RATE"
+            P_SUBJECT="passes of the ${ph} gate followed by an escaped bug"
+            eclaim=""
+            if [[ "$d1" != "-" ]] && f="$(kb_item_path "$KB" "$d1")"; then eclaim="$(kb_fm_get "$f" claim)"; fi
+            plan_deliverable_line "$m" "$p" "Escape check (${d1}): $(safe_text "$eclaim" 110)"
+            P_CLAIM="Gate escapes after ${ph}: ${k} escaped bug(s) followed the last ${n} passes (${vp}), above $(pct "$P_THR"); proposal: add the escaped check to its exit checklist."
+            P_FALSIFIER="Revert if the escape rate after ${ph} does not fall below ${vp} over the next ${UWS_KB_LEARN_WINDOW} passes of that gate."
+            P_CONFOUND="an escape counts only when someone records a lesson with --escaped-from and the PI approves it, so escapes are probably under-counted; phases differ in how much work passes through them, and a pass may be forced or ungated (see the result column)."
+            ;;
+        cr-first-pass-rejection)
+            role="${key#role=}"; role="${role%%,model=*}"; model="${key##*,model=}"
+            P_THR="$UWS_KB_LEARN_CR_REJECT_RATE"; P_TRACK="role=${role}"
+            P_SUBJECT="first-pass CR decisions for ${role} (model ${model}) that were rejections"
+            P_FALSIFIER="Revert if the first-pass CR rejection rate of ${role} (any model) does not fall below ${vp} over its next ${UWS_KB_LEARN_WINDOW} first-pass CR decisions."
+            P_CONFOUND="roles and models are given different tasks and reviewers differ, so the rate is an association, not the effect of the model or the persona."
+            if [[ "$d1" != "-" ]]; then
+                persona="$role"; [[ "$role" == rt-* ]] && persona="research-${role#rt-}"
+                text="- [ ] Not a repeat of a first-pass CR rejection (${k} of ${n} recent CRs): $(safe_text "$d1" 120)"
+                P_CLAIM="First-pass CR rejections for ${role} (model ${model}): ${k} of ${n} (${vp}), above $(pct "$P_THR"); proposal: add the most frequent rejection reason to its Quality Gate."
+                P_TARGET="docs/personas/${persona}.md"; P_WHERE="the UWS installation"
+                if find_target "docs/personas/${persona}.md"; then
+                    P_WHERE="$TARGET_WHERE"
+                    L="$(quality_gate_anchor "$TARGET_ABS")"
+                    [[ -z "$L" ]] || P_DIFF="$(diff_insert "$TARGET_ABS" "$TARGET_REL" "$L" "$text")"
+                fi
+                [[ -n "$P_DIFF" ]] || P_TEXT="In docs/personas/${persona}.md, add to the Quality Gate list: ${text}"
+                P_NOTE="Then regenerate the subagent: ./scripts/gen_subagents.sh"
+            else
+                alt="$(alt_model "$model")"
+                P_CLAIM="First-pass CR rejections for ${role} (model ${model}): ${k} of ${n} (${vp}), above $(pct "$P_THR"); no reasons were recorded; proposal: route ${role} to ${alt}."
+                P_TARGET=".claude/agents/uws-${role}.md"; P_WHERE="the UWS installation"
+                if find_target ".claude/agents/uws-${role}.md" "agents/uws-${role}.md"; then
+                    P_TARGET="$TARGET_REL"; P_WHERE="$TARGET_WHERE"
+                    L="$(awk 'NR > 1 && /^---$/ { exit } /^model:/ { print NR; exit }' "$TARGET_ABS")"
+                    [[ -z "$L" ]] || P_DIFF="$(diff_replace "$TARGET_ABS" "$TARGET_REL" "$L" "model: ${alt}")"
+                fi
+                [[ -n "$P_DIFF" ]] || P_TEXT="Set model: ${alt} in the front matter of .claude/agents/uws-${role}.md."
+                P_NOTE="The agent file is generated: make the change with UWS_AGENT_MODEL_$(printf '%s' "$role" | tr 'a-z-' 'A-Z_')=${alt} ./scripts/gen_subagents.sh. The other model is a heuristic choice (the next tier), not evidence that it does better."
+            fi
+            ;;
+        disproven-rate)
+            P_THR="$UWS_KB_LEARN_DISPROVEN_RATE"
+            P_SUBJECT="retirements of formerly trusted items with ${key} that were disproven"
+            P_FALSIFIER="Revert if the disproven rate for ${key} does not fall below ${vp} over the next ${UWS_KB_LEARN_WINDOW} retirements of trusted items with ${key}."
+            P_CONFOUND="the denominator is retirements recorded in outcomes.tsv, not every item with ${key}: items still trusted are not counted, and a level or source used for harder claims will look worse."
+            case "$key" in
+                evidence=*)
+                    lvl="${key#evidence=}"
+                    P_TARGET="scripts/kb.sh"; P_WHERE="the UWS installation"; old=""
+                    if find_target "scripts/kb.sh"; then
+                        P_WHERE="$TARGET_WHERE"
+                        line="$(KBL="$lvl" awk '{ k = "trust[\"" ENVIRON["KBL"] "\"] = "; i = index($0, k)
+                            if (i) { v = substr($0, i + length(k)); sub(/[^0-9.].*/, "", v); print NR "\t" v; exit } }' "$TARGET_ABS")"
+                        IFS="$TAB" read -r L old <<< "$line"
+                    fi
+                    if [[ -n "$L" && -n "$old" ]]; then
+                        new="$(awk -v o="$old" -v r="$val" 'BEGIN { printf "%.2f", o * (1 - r) }')"
+                        line="$(KBL="$lvl" KBOLD="$old" KBNEW="$new" awk -v L="$L" 'NR == L {
+                            k = "trust[\"" ENVIRON["KBL"] "\"] = "; i = index($0, k) + length(k)
+                            print substr($0, 1, i - 1) ENVIRON["KBNEW"] substr($0, i + length(ENVIRON["KBOLD"])); exit }' "$TARGET_ABS")"
+                        P_DIFF="$(diff_replace "$TARGET_ABS" "$TARGET_REL" "$L" "$line")"
+                        P_CLAIM="Disproven rate for ${lvl} evidence: ${k} of the last ${n} retired trusted items (${vp}), above $(pct "$P_THR"); proposal: lower its search trust weight ${old} -> ${new}."
+                    else
+                        P_CLAIM="Disproven rate for ${lvl} evidence: ${k} of the last ${n} retired trusted items (${vp}), above $(pct "$P_THR"); proposal: lower its search trust weight."
+                        P_TEXT="In scripts/kb.sh (KB_AWK_SEARCH), multiply trust[\"${lvl}\"] by $(awk -v r="$val" 'BEGIN { printf "%.2f", 1 - r }')."
+                    fi
+                    P_NOTE="The new weight is the old one times the share not disproven (1 - ${P_BEFORE}); that factor is a heuristic, not a fitted value."
+                    ;;
+                captured_by=*)
+                    cb="${key#captured_by=}"
+                    text="- Items captured via \`$(safe_text "$cb" 40)\` were disproven in ${k} of the last ${n} retirements of trusted items: give two independent sources before you recommend one."
+                    P_CLAIM="Disproven rate for items captured by $(safe_text "$cb" 40): ${k} of the last ${n} retired trusted items (${vp}), above $(pct "$P_THR"); proposal: ask for two independent sources in the uws-kb skill."
+                    P_TARGET=".claude/skills/uws-kb/SKILL.md"; P_WHERE="the UWS installation"
+                    if find_target ".claude/skills/uws-kb/SKILL.md" "skills/uws-kb/SKILL.md"; then
+                        P_TARGET="$TARGET_REL"; P_WHERE="$TARGET_WHERE"
+                        L="$(grep -n -F 'Never put credentials' "$TARGET_ABS" | head -1 | cut -d: -f1 || true)"
+                        [[ -z "$L" ]] || P_DIFF="$(diff_insert "$TARGET_ABS" "$TARGET_REL" "$L" "$text")"
+                    fi
+                    [[ -n "$P_DIFF" ]] || P_TEXT="In the uws-kb skill (SKILL.md, section 'Add what you learned'), add: ${text}"
+                    P_NOTE="The plugin ships a second copy of the skill (plugins/uws/skills/uws-kb/SKILL.md); change both."
+                    ;;
+                *) return 1 ;;
+            esac
+            ;;
+        repeated-gate-fail)
+            reason="${key#reason=}"; ph="$d1"; m="${ph%%:*}"; p="${ph#*:}"
+            P_THR="$UWS_KB_LEARN_REPEAT_FAILS"
+            P_SUBJECT="gate failures (all phases) that gave this reason"
+            plan_deliverable_line "$m" "$p" "Checked that this gate failure does not recur (${k} of ${n} recent failures): $(safe_text "$reason" 100)"
+            P_CLAIM="Gate failure reason repeated ${k} times in the last ${n} gate failures: '$(safe_text "$reason" 70)'; proposal: add a check for it to the ${p} exit checklist."
+            P_FALSIFIER="Revert if this reason's share of gate failures does not fall below ${vp} over the next ${UWS_KB_LEARN_WINDOW} gate failures."
+            P_CONFOUND="reasons are free text compared after normalisation (case, spacing, trailing punctuation), so one problem worded two ways counts twice; the check goes to ${ph}, the phase the failures sent work back to (or the failing phase when there was no regression)."
+            ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+# plan_revert <proposal-file> <n> <k> <after>: fill P_* for a revert proposal
+plan_revert() {
+    local f="$1" n="$2" k="$3" after="$4" oid shown
+    oid="$(kb_fm_get "$f" id)"
+    P_FAM="$(kb_fm_get "$f" metric)"; P_KEY="$(kb_fm_get "$f" metric_key)"; P_TRACK="$(kb_fm_get "$f" track_key)"
+    [[ -n "$P_TRACK" ]] || P_TRACK="$P_KEY"
+    P_N="$n"; P_K="$k"; P_BEFORE="$(kb_fm_get "$f" metric_before)"; P_AFTER="$(fmt2 "$after")"
+    P_THR="$(kb_fm_get "$f" threshold)"; P_KIND="revert"; P_REVERTS="$oid"; P_REFS="-"
+    P_TARGET="$(kb_fm_get "$f" target)"; P_WHERE="where ${oid} was applied"
+    P_DIFF="$(reverse_diff "$f")"; P_TEXT=""; P_NOTE=""
+    [[ -n "$P_DIFF" ]] || P_TEXT="Undo the change described in ${oid} (uws kb show ${oid})."
+    shown="$(safe_text "$P_TRACK" 60)"
+    P_SUBJECT="events after the approval of ${oid} (${P_FAM}, ${shown})"
+    P_CLAIM="Revert ${oid}: ${P_FAM} for ${shown} went $(pct "$P_BEFORE") -> $(pct "$after") over the ${n} events after its approval (no improvement)."
+    P_FALSIFIER="Keep ${oid} instead if ${P_FAM} for ${shown} gets worse over the next ${UWS_KB_LEARN_WINDOW} events once this revert is applied (a revert is not tracked automatically)."
+    P_CONFOUND="the metric can move for reasons unrelated to ${oid} (other changes, different tasks); this reports that it did not improve, not that ${oid} made it worse."
+}
+
+# Markdown body of the proposal described by the P_* globals
+proposal_body() {
+    local thr
+    if [[ "$P_FAM" == "repeated-gate-fail" ]]; then thr=">= ${P_THR} times"; else thr="> $(pct "$P_THR")"; fi
+    printf 'Written by `uws kb learn` from %s/outcomes.tsv. It reports counts, not causes.\n' "$KB_REL"
+    printf 'Approving it (PI only) records acceptance; it changes no file.\n\n'
+    printf '## Metric\n\n'
+    if [[ "$P_KIND" == "revert" ]]; then
+        printf -- '- %s for %s: %s when %s was proposed; %s of %s = %s (%s) over the %s events after its approval.\n' \
+            "$P_FAM" "$P_TRACK" "$(pct "$P_BEFORE")" "$P_REVERTS" "$P_K" "$P_N" "$P_AFTER" "$(pct "$P_AFTER")" "$P_N"
+        printf -- '- Did not improve: the value after approval is not below the value before.\n'
+    else
+        printf -- '- %s for %s: %s of %s %s = %s (%s); threshold %s, with n >= %s.\n' \
+            "$P_FAM" "$P_KEY" "$P_K" "$P_N" "$P_SUBJECT" "$P_BEFORE" "$(pct "$P_BEFORE")" "$thr" "$UWS_KB_LEARN_MIN_N"
+        printf -- '- Window: the last %s samples (at most %s) recorded after %s.\n' \
+            "$P_N" "$UWS_KB_LEARN_WINDOW" "$( [[ "${P_WSTART:--}" == "-" ]] && echo "the start of the log" || echo "the previous proposal on this key (${P_WSTART})")"
+        printf -- '- Rows behind the count: %s\n' "$(safe_text "$P_REFS" 400)"
+    fi
+    printf '\n## Proposed change (not applied)\n\n'
+    printf 'Target: `%s` (%s). Apply it, if you accept it, through a normal change request.\n\n' "$P_TARGET" "$P_WHERE"
+    if [[ -n "$P_DIFF" ]]; then
+        printf '```diff\n%s\n```\n' "$P_DIFF"
+    else
+        printf '%s\n' "$P_TEXT"
+    fi
+    [[ -z "$P_NOTE" ]] || printf '\n%s\n' "$P_NOTE"
+    printf '\n## Falsifier\n\n%s\n' "$P_FALSIFIER"
+    if [[ "$P_KIND" == "change" ]]; then
+        printf '`uws kb learn` measures this once the PI approves the proposal and proposes the revert if it does not improve.\n'
+    fi
+    printf '\n## Caveats\n\n'
+    printf -- '- Small n: %s samples; with n = %s one event moves the rate by %s percentage points, so this can be chance.\n' \
+        "$P_N" "$P_N" "$(awk -v n="$P_N" 'BEGIN { printf "%d", (n > 0 ? 100 / n + 0.5 : 100) }')"
+    printf -- '- Confounding: %s\n' "$P_CONFOUND"
+    printf -- '- Inputs: only rows that scripts wrote to outcomes.tsv; candidate and inferred items were not counted (design 6.4).\n'
+}
+
+# write_proposal <body>: create the proposal item from the P_* globals and set
+# NEW_ID. Returns 3 (NEW_ID = existing item) when an active item already has
+# the same claim, 1 on any other failure.
+write_proposal() {
+    local body="$1" norm f hex n=6 id tmp src head hit
+    NEW_ID=""
+    norm="$(kb_normalize_claim "$P_CLAIM")"
+    for f in "${KB}"/items/*.md; do
+        [[ -f "$f" ]] || continue
+        if [[ "$(kb_normalize_claim "$(kb_fm_get "$f" claim)")" == "$norm" ]]; then
+            NEW_ID="$(kb_fm_get "$f" id)"
+            return 3
+        fi
+    done
+    if hit="$(secret_scan "${P_CLAIM}"$'\n'"${body}")"; then
+        warn "learn: not writing a proposal whose text looks like a secret (${hit}); check outcomes.tsv"
+        return 1
+    fi
+    while :; do
+        hex="$(kb_hash6 "$norm" "$n")" || { warn "learn: cannot hash the claim (git missing?)"; return 1; }
+        id="K-$(printf '%s' "$TODAY" | tr -d '-')-${hex}"
+        [[ -e "${KB}/items/${id}.md" || -e "${KB}/retired/${id}.md" ]] || break
+        n=$((n + 2))
+        (( n <= 12 )) || { warn "learn: cannot mint a unique ID"; return 1; }
+    done
+    src="file:${KB_REL}/outcomes.tsv"
+    head="$(head_sha)"
+    [[ -z "$head" ]] || src+="@${head}"
+    ensure_kb
+    tmp="$(mktemp "${KB}/items/.new.XXXXXX")" || return 1
+    {
+        echo "---"
+        echo "id: ${id}"
+        echo "type: proposal"
+        echo "scope: project"
+        echo "status: candidate"
+        echo "claim: $(kb_quote "$P_CLAIM")"
+        echo "evidence: observed"
+        echo "source: $(kb_list_format --quote "$src")"
+        echo "watch: []"
+        echo "watch_blob: []"
+        echo "falsifier: $(kb_quote "$P_FALSIFIER")"
+        echo "author: kb-learn"
+        echo "reviewer:"
+        echo "captured_by: script:kb-learn"
+        echo "created: ${TODAY}"
+        echo "verified_at: ${TODAY}"
+        echo "status_since: ${TODAY}"
+        echo "review_by: $(review_by_for proposal "$TODAY")"
+        echo "supersedes: []"
+        echo "superseded_by:"
+        echo "contradicts: []"
+        echo "supports: []"
+        echo "tags: [meta-learning, ${P_FAM}]"
+        echo "proposal_kind: ${P_KIND}"
+        [[ -z "$P_REVERTS" ]] || echo "reverts: ${P_REVERTS}"
+        echo "metric: ${P_FAM}"
+        echo "metric_key: $(kb_quote "$P_KEY")"
+        echo "track_key: $(kb_quote "$P_TRACK")"
+        echo "metric_n: ${P_N}"
+        echo "metric_k: ${P_K}"
+        echo "metric_before: ${P_BEFORE}"
+        [[ -z "$P_AFTER" ]] || echo "metric_after: ${P_AFTER}"
+        echo "threshold: ${P_THR}"
+        echo "target: $(kb_quote "$P_TARGET")"
+        echo "created_ts: $(kb_timestamp)"
+        echo "---"
+        printf '%s\n' "$body"
+    } > "$tmp"
+    mv "$tmp" "${KB}/items/${id}.md"
+    kb_event "$KB" "$id" "-" candidate "learn:${P_FAM}" "$(kb_actor "$ROOT")"
+    NEW_ID="$id"
+    return 0
+}
+
+# set_followup <proposal-file> <text> <after>: close the tracking of an
+# adopted change, recording the value measured after approval
+set_followup() {
+    local f="$1" text="$2" after="$3" st
+    st="$(kb_fm_get "$f" status)"
+    kb_fm_set "$f" metric_after "$(fmt2 "$after")"
+    kb_fm_set "$f" followup "$(kb_quote "$(kb_oneline "$text")")"
+    kb_fm_set "$f" followup_ts "$(kb_timestamp)"
+    kb_event "$KB" "$(kb_fm_get "$f" id)" "$st" "$st" "followup:${text}" "$(kb_actor "$ROOT")"
+}
+
+# Print a planned proposal (dry run) or write it; LEARN_WRITES counts writes.
+emit_proposal() {
+    local body rc=0
+    body="$(proposal_body)"
+    if [[ "$LEARN_DRY" == "true" ]]; then
+        echo "    would propose: ${P_CLAIM}"
+        echo "      target: ${P_TARGET} (${P_WHERE})"
+        if [[ -n "$P_DIFF" ]]; then printf '%s\n' "$P_DIFF" | sed 's/^/      | /'; else echo "      | ${P_TEXT}"; fi
+        return 0
+    fi
+    write_proposal "$body" || rc=$?
+    case "$rc" in
+        0) LEARN_WRITES=$((LEARN_WRITES + 1)); echo "    proposed ${NEW_ID}: ${P_CLAIM}" ;;
+        3) echo "    already proposed as ${NEW_ID}" ;;
+        *) echo "    not proposed (see the message above)" ;;
+    esac
+    return "$rc"
+}
+
+learn_metric_line() {
+    local tag fam key n k val st ws d1 refs
+    IFS="$TAB" read -r tag fam key n k val st ws d1 refs <<EOF
+$1
+EOF
+    [[ "$tag" == "M" ]] || return 0
+    if [[ "$st" == open:* ]]; then
+        printf '  %s %s: already proposed (%s); %s new sample(s) since\n' "$fam" "$(safe_text "$key" 90)" "${st#open:}" "$n"
+        return 0
+    fi
+    printf '  %s %s: %s of %s (%s) -> ' "$fam" "$(safe_text "$key" 90)" "$k" "$n" "$(pct "$val")"
+    case "$st" in
+        small-n) echo "n < ${UWS_KB_LEARN_MIN_N}: no proposal" ;;
+        below) echo "within the threshold" ;;
+        propose)
+            echo "over the threshold"
+            P_WSTART="$ws"
+            if plan_proposal "$fam" "$key" "$n" "$k" "$val" "$d1" "$refs"; then
+                emit_proposal || true
+            else
+                echo "    (no proposal template for this metric)"
+            fi
+            ;;
+    esac
+}
+
+learn_track_line() {
+    local tag id state n after before k f rc=0
+    IFS="$TAB" read -r tag id state n after before k <<EOF
+$1
+EOF
+    f="$(kb_item_path "$KB" "$id" || true)"
+    [[ -n "$f" ]] || return 0
+    case "$state" in
+        pending)
+            echo "  tracking ${id} ($(kb_fm_get "$f" metric), $(safe_text "$(kb_fm_get "$f" track_key)" 60)): ${n} of ${UWS_KB_LEARN_WINDOW} events since approval"
+            ;;
+        improved)
+            if [[ "$LEARN_DRY" == "true" ]]; then
+                echo "  ${id}: would record an improvement ($(pct "$before") -> $(pct "$after") over ${n} events)"
+            else
+                set_followup "$f" "improved $(fmt2 "$before") -> $(fmt2 "$after") over ${n} events" "$after"
+                LEARN_WRITES=$((LEARN_WRITES + 1))
+                echo "  ${id}: improved ($(pct "$before") -> $(pct "$after") over ${n} events); tracking closed"
+            fi
+            ;;
+        not-improved)
+            echo "  ${id}: did not improve ($(pct "$before") -> $(pct "$after") over ${n} events)"
+            plan_revert "$f" "$n" "$k" "$after"
+            emit_proposal || rc=$?
+            if [[ "$LEARN_DRY" != "true" ]] && (( rc == 0 || rc == 3 )); then
+                set_followup "$f" "revert-proposed:${NEW_ID}" "$after"
+            fi
+            ;;
+    esac
+}
+
+cmd_learn() {
+    LEARN_DRY=false
+    LEARN_WRITES=0
+    case "$#:${1:-}" in
+        0:) ;;
+        1:--dry-run) LEARN_DRY=true ;;
+        *) die 2 "learn: use 'learn' or 'learn --dry-run'" ;;
+    esac
+    local v
+    for v in UWS_KB_LEARN_MIN_N UWS_KB_LEARN_WINDOW UWS_KB_LEARN_REPEAT_FAILS; do
+        if ! is_uint "${!v}" || (( ${!v} < 1 )); then die 2 "learn: ${v} must be a whole number >= 1"; fi
+    done
+    for v in UWS_KB_LEARN_ESCAPE_RATE UWS_KB_LEARN_CR_REJECT_RATE UWS_KB_LEARN_DISPROVEN_RATE; do
+        [[ "${!v}" =~ ^(0(\.[0-9]+)?|1(\.0+)?|\.[0-9]+)$ ]] || die 2 "learn: ${v} must be a number from 0 to 1"
+    done
+    if [[ ! -d "$KB" ]]; then echo "No KB at ${KB#"${ROOT}"/}; nothing to learn."; return 0; fi
+    case "$KB" in
+        "$ROOT"/*) KB_REL="${KB#"${ROOT}"/}" ;;
+        *) die 2 "learn: the KB (${KB}) must be inside the project so proposals can cite its outcomes.tsv" ;;
+    esac
+    local out="${KB}/outcomes.tsv"
+    if [[ ! -s "$out" ]]; then
+        echo "No outcomes recorded yet in ${KB_REL}/outcomes.tsv; nothing to learn."
+        return 0
+    fi
+    local side results rc=0
+    side="$(mktemp "${TMPDIR:-/tmp}/uws-kb-learn.XXXXXX")" || die 2 "learn: cannot create a temporary file"
+    learn_side_table > "$side" || rc=$?
+    if (( rc == 0 )); then
+        results="$(KBSIDE="$side" KBW="$UWS_KB_LEARN_WINDOW" KBMIN="$UWS_KB_LEARN_MIN_N" \
+            KBREP="$UWS_KB_LEARN_REPEAT_FAILS" KBTESC="$UWS_KB_LEARN_ESCAPE_RATE" \
+            KBTCR="$UWS_KB_LEARN_CR_REJECT_RATE" KBTDIS="$UWS_KB_LEARN_DISPROVEN_RATE" \
+            LC_ALL=C awk "${KB_AWK_UTF8}${KB_AWK_LEARN}" "$side" "$out" | LC_ALL=C sort)" || rc=$?
+    fi
+    rm -f "$side"
+    (( rc == 0 )) || die 2 "learn: could not compute the metrics from ${KB_REL}/outcomes.tsv"
+
+    echo "Meta-learning from ${KB_REL}/outcomes.tsv (counts, not causes; n >= ${UWS_KB_LEARN_MIN_N}; last ${UWS_KB_LEARN_WINDOW} samples)$([[ "$LEARN_DRY" == "true" ]] && echo ", dry run"):"
+    local line any=false
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        case "$line" in
+            A"$TAB"*) echo "  note: ${line#A"$TAB"}" ;;
+            M"$TAB"*) any=true; learn_metric_line "$line" ;;
+            T"$TAB"*) learn_track_line "$line" ;;
+        esac
+    done <<EOF
+$results
+EOF
+    [[ "$any" == "true" ]] || echo "  no metric has data yet"
+    echo "  r4-unused-share: not measured (R4 usage counts are not built yet; design section 17)"
+    if [[ "$LEARN_DRY" == "true" ]]; then
+        echo "(dry run: nothing written)"
+    elif (( LEARN_WRITES > 0 )); then
+        rebuild_stats_cache
+        echo "Proposals are candidates: only the PI decides (uws kb proposals; uws kb approve|reject <ID>)."
+    fi
+    return 0
+}
+
+cmd_proposals() {
+    [[ $# -eq 0 ]] || die 2 "proposals: takes no arguments"
+    local f id st kind metric appr fu rr open="" tracking=""
+    for f in "${KB}"/items/*.md "${KB}"/retired/*.md; do
+        [[ -f "$f" ]] || continue
+        [[ "$(kb_fm_get "$f" type)" == "proposal" ]] || continue
+        id="$(kb_fm_get "$f" id)"; st="$(kb_fm_get "$f" status)"
+        kind="$(kb_fm_get "$f" proposal_kind)"; kind="${kind:-change}"
+        metric="$(kb_fm_get "$f" metric)"; metric="${metric:-manual}"
+        appr="$(kb_fm_get "$f" approved_ts)"; fu="$(kb_fm_get "$f" followup_ts)"; rr="$(kb_fm_get "$f" retired_reason)"
+        if [[ "$f" == "${KB}/items/"* && "$st" == "candidate" ]]; then
+            open+="${id} [${metric}|${kind}] $(kb_fm_get "$f" claim)"$'\n'
+            open+="    target: $(kb_fm_get "$f" target); details: uws kb show ${id}"$'\n'
+        elif [[ "$kind" == "change" && "$metric" != "manual" && "$st" != "candidate" && -n "$appr" && -z "$fu" && "$rr" != rejected* ]]; then
+            tracking+="${id} [${metric}] approved ${appr%%T*}; uws kb learn checks it after ${UWS_KB_LEARN_WINDOW} events"$'\n'
+        fi
+    done
+    if [[ -z "$open" ]]; then
+        echo "No proposals waiting for the PI."
+    else
+        echo "Waiting for the PI (approving records acceptance and never applies the change):"
+        printf '%s' "$open"
+        echo "Decide in your own terminal: uws kb approve <ID> | uws kb reject <ID> \"<why>\""
+    fi
+    if [[ -n "$tracking" ]]; then
+        echo "Adopted, being measured:"
+        printf '%s' "$tracking"
+    fi
+    return 0
 }
 
 # ── lint / stats ────────────────────────────────────────────────────────────
@@ -1210,7 +2090,7 @@ cmd_stats() {
         return 0
     fi
     rebuild_stats_cache
-    if [[ "$short" == "true" ]]; then kb_summary_line "$ROOT"; return 0; fi
+    if [[ "$short" == "true" ]]; then kb_summary_line "$ROOT"; kb_proposals_line "$ROOT"; return 0; fi
     local t s x c r
     read -r t s x c r <<EOF
 $(kb_counts "$KB")
@@ -1255,6 +2135,8 @@ main() {
         restore) cmd_restore "$@" ;;
         lint) cmd_lint "$@" ;;
         stats) cmd_stats "$@" ;;
+        learn) cmd_learn "$@" ;;
+        proposals) cmd_proposals "$@" ;;
         help|-h|--help) usage ;;
         *) die 2 "unknown verb '${verb}' (run: uws kb help)" ;;
     esac
