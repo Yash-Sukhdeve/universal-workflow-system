@@ -726,9 +726,10 @@ proposal the PI turned down is not repeated from the same rows. A key with an op
 (a candidate, or an approved change still being measured) gets no second one; for CR proposals
 the block and the window apply to the whole role, because the change is measured per role (a
 new route changes the model). After approval, `learn` computes the same metric over the next
-10 samples: below the value at proposal time records `followup: improved ...`; otherwise it
-writes a revert proposal (`proposal_kind: revert`, `reverts: <id>`, the original diff reversed)
-and records `followup: revert-proposed:<id>`. A revert proposal is not itself tracked.
+10 samples and records it as `metric_after` next to `metric_before`: below the value at
+proposal time records `followup: improved ...`; otherwise it writes a revert proposal
+(`proposal_kind: revert`, `reverts: <id>`, the original diff reversed) and records
+`followup: revert-proposed:<id>`. A revert proposal is not itself tracked.
 
 **Surface.** `uws kb proposals` lists waiting and measured proposals. The SessionStart context
 and `uws kb stats --short` add `KB: N meta-learning proposal(s) await the PI (uws kb

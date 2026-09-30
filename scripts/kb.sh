@@ -1814,10 +1814,12 @@ write_proposal() {
     return 0
 }
 
-# set_followup <proposal-file> <text>: close the tracking of an adopted change
+# set_followup <proposal-file> <text> <after>: close the tracking of an
+# adopted change, recording the value measured after approval
 set_followup() {
-    local f="$1" text="$2" st
+    local f="$1" text="$2" after="$3" st
     st="$(kb_fm_get "$f" status)"
+    kb_fm_set "$f" metric_after "$(fmt2 "$after")"
     kb_fm_set "$f" followup "$(kb_quote "$(kb_oneline "$text")")"
     kb_fm_set "$f" followup_ts "$(kb_timestamp)"
     kb_event "$KB" "$(kb_fm_get "$f" id)" "$st" "$st" "followup:${text}" "$(kb_actor "$ROOT")"
@@ -1883,7 +1885,7 @@ EOF
             if [[ "$LEARN_DRY" == "true" ]]; then
                 echo "  ${id}: would record an improvement ($(pct "$before") -> $(pct "$after") over ${n} events)"
             else
-                set_followup "$f" "improved $(fmt2 "$before") -> $(fmt2 "$after") over ${n} events"
+                set_followup "$f" "improved $(fmt2 "$before") -> $(fmt2 "$after") over ${n} events" "$after"
                 LEARN_WRITES=$((LEARN_WRITES + 1))
                 echo "  ${id}: improved ($(pct "$before") -> $(pct "$after") over ${n} events); tracking closed"
             fi
@@ -1893,7 +1895,7 @@ EOF
             plan_revert "$f" "$n" "$k" "$after"
             emit_proposal || rc=$?
             if [[ "$LEARN_DRY" != "true" ]] && (( rc == 0 || rc == 3 )); then
-                set_followup "$f" "revert-proposed:${NEW_ID}"
+                set_followup "$f" "revert-proposed:${NEW_ID}" "$after"
             fi
             ;;
     esac

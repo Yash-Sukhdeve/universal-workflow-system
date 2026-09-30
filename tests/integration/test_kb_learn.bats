@@ -555,6 +555,8 @@ seed_cr_rejections() {
     grep -q '^@@ -87,7 +87,6 @@$' "$r"
     [ "$(field "$p" followup)" = "revert-proposed:${rid}" ]
     [ "$(field "$p" followup_ts)" = "$T1" ]
+    [ "$(field "$p" metric_before)" = "0.60" ]
+    [ "$(field "$p" metric_after)" = "0.70" ]
     # Idempotent: no second revert, no new change proposal for the same key
     run "$UWS" kb learn
     [ "$(proposal_count)" -eq 2 ]
@@ -580,6 +582,7 @@ seed_cr_rejections() {
     [[ "$output" == *"${id}: improved (60% -> 10% over 10 events); tracking closed"* ]]
     [ "$(proposal_count)" -eq 1 ]
     [ "$(field "$p" followup)" = "improved 0.60 -> 0.10 over 10 events" ]
+    [ "$(field "$p" metric_after)" = "0.10" ]
     grep -q "	${id}	trusted	trusted	followup:improved" "${KB}/events.tsv"
 }
 
