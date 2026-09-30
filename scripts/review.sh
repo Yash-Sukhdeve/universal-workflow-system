@@ -29,7 +29,8 @@ source "${SCRIPT_DIR}/lib/kb_utils.sh" 2>/dev/null || true
 # record_cr_decision <cr-dir> <cr-id> <result>: one cr_decision row with the
 # CR's agent, the model it was dispatched with, and its summary line.
 record_cr_decision() {
-    declare -f kb_outcome > /dev/null 2>&1 || return 0
+    declare -f kb_outcomes_enabled > /dev/null 2>&1 || return 0
+    kb_outcomes_enabled || return 0
     local dir="$1" id="$2" result="$3" agent summary
     agent="$(awk '/^\*\*Agent\*\*:/ { sub(/^\*\*Agent\*\*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit }' \
         "${dir}/summary.md" 2>/dev/null || true)"

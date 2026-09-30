@@ -18,7 +18,7 @@
 #   kb_list_parse, kb_list_format, kb_normalize_claim, kb_hash6
 #   kb_agent_context, kb_git_email, kb_actor, kb_pi_identity, kb_event
 #   kb_item_path, kb_counts, kb_summary_line, kb_open_proposals, kb_proposals_line
-#   Meta-learning outcomes (design section 6.2): kb_outcome, kb_head_ref,
+#   Meta-learning outcomes (design section 6.2): kb_outcome, kb_outcomes_enabled, kb_head_ref,
 #   kb_agent_model, kb_current_phase, kb_cr_model, kb_record_gate_fail,
 #   kb_record_gate_pass
 
@@ -457,6 +457,16 @@ kb_proposals_line() {
 
 KB_OUTCOME_EVENTS=" gate_fail gate_pass cr_decision dispatch escape kb_retire "
 
+# Succeeds when the project has a KB directory, i.e. outcomes are recorded.
+# Callers check it first so projects without a KB pay for nothing else.
+kb_outcomes_enabled() {
+    local root d
+    root="$(kb_project_root 2>/dev/null)" || return 1
+    [[ -n "$root" ]] || return 1
+    d="$(kb_dir "$root" 2>/dev/null)" || return 1
+    [[ -n "$d" && -d "$d" ]]
+}
+
 # kb_outcome <event> <phase> <role> <model> <subject> <result> <ref>
 # Append one row. Best effort by design: a no-op when the project has no KB
 # directory, and a failure prints one line on stderr and still returns 0, so
@@ -574,6 +584,7 @@ kb_cr_model() {
 # Called by `sdlc.sh fail` and `research.sh reject`.
 kb_record_gate_fail() {
     local m="$1" from="$2" to="${3:-}" reason="${4:-}"
+    kb_outcomes_enabled || return 0
     kb_outcome gate_fail "${m}:${from}" - - "${to:+${m}:${to}}" "$reason" "$(kb_head_ref "$(kb_project_root)")"
 }
 
@@ -583,6 +594,7 @@ kb_record_gate_fail() {
 # pass with no goal declared (the deliverable gate was not active).
 kb_record_gate_pass() {
     local m="$1" from="$2" to="$3" total="${4:-0}" force="${5:-}" done="-" result
+    kb_outcomes_enabled || return 0
     total="$(printf '%s' "$total" | tr -d '[:space:]')"
     if declare -f _mp_done_count >/dev/null 2>&1; then
         done="$(_mp_done_count "$m" "$from" 2>/dev/null || true)"

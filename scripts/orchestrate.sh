@@ -180,7 +180,7 @@ ${contract}
 EOF
 
     # Meta-learning: which role and model got this phase's work (best effort)
-    if declare -f kb_outcome >/dev/null 2>&1; then
+    if declare -f kb_outcomes_enabled >/dev/null 2>&1 && kb_outcomes_enabled; then
         kb_outcome dispatch "${M}:${PHASE}" "$AGENT" "$(kb_agent_model "$AGENT" "$PROJECT_ROOT")" \
             "$target" dispatched "$(kb_head_ref "$PROJECT_ROOT")" || true
     fi
@@ -222,7 +222,7 @@ cmd_collect() {
     # Meta-learning: the collected CR, so review decisions can be traced to the
     # role and model that produced it (best effort)
     cr="$(printf '%s\n' "$out" | sed -n 's/^CL ID: \(CR-[0-9A-Za-z_-]*\)$/\1/p' | tail -1)"
-    if declare -f kb_outcome >/dev/null 2>&1 && [[ -n "$cr" ]]; then
+    if [[ -n "$cr" ]] && declare -f kb_outcomes_enabled >/dev/null 2>&1 && kb_outcomes_enabled; then
         [[ -n "$phase" ]] || phase="$(kb_current_phase)"
         kb_outcome dispatch "$phase" "${active_agent:-unknown}" \
             "$(kb_agent_model "${active_agent:-unknown}" "$PROJECT_ROOT")" "${target:--}" collected "$cr" || true
