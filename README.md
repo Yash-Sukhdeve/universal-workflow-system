@@ -345,6 +345,13 @@ uws kb prune                             # dry run of the removal rules; --apply
   in `docs/kb/events.tsv`; nothing is committed for you.
 - Session start adds one line (`KB: 12 trusted, 1 stale, ...`) inside the 1.2 KB context
   budget. In Claude Code, the `uws-kb` skill and `/uws:kb` command wrap the CLI.
+  `/uws:kb search …` runs without a prompt. When Claude consults the knowledge base on its
+  own, Claude Code asks once before running the plugin's `uws kb` command; approve it (or add
+  it to your permission allow list). In non-interactive `claude -p` runs that request is
+  denied, so allow it with `--allowedTools`.
+- The approval gate is a process safeguard, not a security boundary: it keys on environment
+  variables and your git e-mail, and every promotion is recorded in `events.tsv`, where
+  `uws kb lint` flags a trusted item without a PI approval event.
 
 ---
 
