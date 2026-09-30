@@ -70,6 +70,10 @@ Workflow Commands:
 Methodology Commands:
   sdlc [cmd]               SDLC workflow (status|start|next|fail|reset)
   research [cmd]           Research workflow (status|start|next|reject|reset)
+  research check <name>    Research team evidence checks: init | ledger | bib |
+                           quotes | numbers | slop | gate <phase>
+  research bib fetch|build Download authoritative BibTeX into bib_sources/;
+                           build references.bib from bib_sources/ only
   spiral [args]            Spiral SDLC workflow
 
 Project Management:

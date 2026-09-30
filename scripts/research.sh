@@ -45,12 +45,24 @@ source_lib() {
     return 1
 }
 
+# decisions.log lives in the project's .workflow/logs (decision_utils.sh defaults to a
+# CWD-relative path, which is wrong when research.sh runs from a subdirectory).
+# shellcheck disable=SC2034  # read by decision_utils.sh
+DECISION_LOG_DIR="${WORKFLOW_DIR}/logs"
+
 # Source core utilities
 source_lib "yaml_utils.sh" || true
 source_lib "atomic_utils.sh" || true
 source_lib "validation_utils.sh" || true
 source_lib "logging_utils.sh" || true
 source_lib "workflow_routing.sh" || true
+source_lib "decision_utils.sh" || true
+
+PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
+RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
+# Subcommands of `research.sh check <name>` that run the evidence checker instead of
+# ticking a numbered deliverable (docs/design/research-team.md section 6.6).
+RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers slop gate init role-exit "
 
 #######################################
 # Validate workflow is initialized
@@ -305,6 +317,76 @@ _deliverable_gate() {
 }
 
 #######################################
+# The research team's evidence gate is active when the project keeps research ledgers.
+#######################################
+research_ledger_active() {
+    [[ -d "${PROJECT_ROOT}/research/ledger" ]]
+}
+
+#######################################
+# Record a gate override in .workflow/logs/decisions.log (design section 5: every
+# --force is logged and shown in the next PI brief).
+# Arguments: $1 - phase, $2 - reason
+#######################################
+_log_gate_force() {
+    local phase="$1" reason="$2" id
+    # decisions.log is YAML with double-quoted scalars: one line, no quotes or backslashes.
+    reason="$(printf '%s' "$reason" | tr '\n\r"\\' "  ''")"
+    declare -f log_decision > /dev/null 2>&1 || return 1
+    id=$(log_decision "Research evidence gate forced at ${phase}" "research-gate-force" "$reason") || return 1
+    echo -e "${YELLOW}⚠ Evidence gate overridden at '${phase}' (${id}): ${reason}${NC}"
+    echo -e "  Recorded in ${CYAN}.workflow/logs/decisions.log${NC}; the next PI brief must list it."
+    return 0
+}
+
+#######################################
+# Evidence gate for `next` (docs/design/research-team.md section 5). Runs
+# research_check.py gate <phase> when research/ledger exists. Fails closed: a missing
+# python3 or a checker error (exit 2) blocks. --force needs a reason, is logged, and is
+# always refused at publication (PI decision 4, recorded 2026-09-26).
+# Arguments: $1 - current phase, $2 - force flag, $3 - reason
+#######################################
+_evidence_gate() {
+    local phase="$1" force="${2:-}" reason="${3:-}"
+    research_ledger_active || return 0
+
+    if [[ "$force" == "--force" ]]; then
+        if [[ "$phase" == "publication" ]]; then
+            echo -e "${RED}✗ Refused: --force is never accepted at the publication gate (PI decision).${NC}" >&2
+            echo -e "  Fix the findings of: ${CYAN}$0 check gate publication${NC}" >&2
+            return 1
+        fi
+        if [[ -z "${reason// /}" ]]; then
+            echo -e "${RED}✗ --force needs a reason:${NC} $0 next --force \"<reason>\"" >&2
+            return 1
+        fi
+        if ! _log_gate_force "$phase" "$reason"; then
+            echo -e "${RED}✗ Could not record the override in decisions.log; refusing to advance.${NC}" >&2
+            return 1
+        fi
+        return 0
+    fi
+
+    if ! command -v python3 > /dev/null 2>&1; then
+        echo -e "${RED}✗ Blocked: the evidence gate needs python3, which was not found (the gate fails closed).${NC}" >&2
+        return 1
+    fi
+    local rc=0
+    python3 "$RESEARCH_CHECK" --root "$PROJECT_ROOT" gate "$phase" || rc=$?
+    case "$rc" in
+        0) return 0 ;;
+        1)
+            echo -e "${RED}✗ Blocked: the evidence gate for '${phase}' found problems (listed above).${NC}" >&2
+            echo -e "${YELLOW}Override (logged, shown to the PI):${NC} $0 next --force \"<reason>\"" >&2
+            ;;
+        *)
+            echo -e "${RED}✗ Blocked: the evidence gate could not run (exit ${rc}); it fails closed.${NC}" >&2
+            ;;
+    esac
+    return 1
+}
+
+#######################################
 # Show phase status with formatting
 #######################################
 show_status() {
@@ -367,6 +449,7 @@ show_status() {
 main() {
     local action="${1:-status}"
     local details="${2:-}"
+    local extra="${3:-}"
 
     # Validate workflow first
     validate_workflow
@@ -416,7 +499,10 @@ main() {
                 exit 1
             fi
 
-            # Hard deliverable gate (active once a goal is declared; --force overrides)
+            # Evidence gate (active when research/ledger exists; --force is logged, and
+            # refused at publication), then the deliverable gate (active once a goal is
+            # declared; --force overrides).
+            _evidence_gate "$current_phase" "${details:-}" "$extra" || exit 1
             _deliverable_gate "$current_phase" "${details:-}" || exit 1
 
             local next_phase
@@ -556,6 +642,15 @@ main() {
             ;;
 
         check)
+            # `check <name>` runs the evidence checker; `check <n>` ticks a deliverable.
+            if [[ -n "$details" && "$RESEARCH_CHECK_COMMANDS" == *" ${details} "* ]]; then
+                if ! command -v python3 > /dev/null 2>&1; then
+                    echo -e "${RED}Error: python3 is required for research checks.${NC}" >&2
+                    exit 2
+                fi
+                shift
+                exec python3 "$RESEARCH_CHECK" --root "$PROJECT_ROOT" "$@"
+            fi
             local current_phase
             current_phase=$(get_phase)
             if [[ "$current_phase" == "none" ]]; then
@@ -588,6 +683,11 @@ main() {
             fi
             ;;
 
+        bib)
+            shift
+            UWS_RESEARCH_ROOT="$PROJECT_ROOT" exec bash "${SCRIPT_DIR}/research_bib.sh" "$@"
+            ;;
+
         deliverables)
             local _p="${details:-}"
             [[ -z "$_p" ]] && _p="$(get_phase)"
@@ -604,6 +704,15 @@ main() {
             echo "  next    Advance to next phase"
             echo "  reject  Report rejected hypothesis or failed analysis"
             echo "  reset   Reset research state to start over"
+            echo "  check <n>                  Mark deliverable <n> of the current phase done"
+            echo ""
+            echo "Research team (active when research/ledger exists; docs/design/research-team.md):"
+            echo "  check init                 Scaffold research/ and bib_sources/"
+            echo "  check ledger|bib|quotes|numbers|slop   Run one evidence check"
+            echo "  check gate <phase>         Run a phase's evidence gate (next runs it too)"
+            echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
+            echo "  bib build                  Write references.bib from bib_sources/ only"
+            echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"
             echo ""
             echo "Research Phases (Scientific Method):"
             echo "  hypothesis → literature_review → experiment_design → data_collection"

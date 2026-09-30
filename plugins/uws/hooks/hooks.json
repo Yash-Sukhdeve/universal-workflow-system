@@ -21,6 +21,18 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "^(uws:)?uws-rt-[a-z]+$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/research_subagent_stop.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }
