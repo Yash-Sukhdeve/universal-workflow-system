@@ -56,6 +56,8 @@ UWS_KB_DISPUTE_DAYS="${UWS_KB_DISPUTE_DAYS:-14}"
 
 TYPES="fact decision lesson anti-pattern question hypothesis proposal"
 EVIDENCES="verified observed reported inferred"
+SDLC_PHASE_NAMES="requirements design implementation verification deployment maintenance"
+RESEARCH_PHASE_NAMES="hypothesis literature_review experiment_design data_collection analysis peer_review publication"
 
 die() {
     local code="$1"; shift
@@ -154,17 +156,40 @@ set_status() {  # set_status <file> <new-status> <reason>
     kb_event "$KB" "$id" "$from" "$to" "$reason" "$(kb_actor "$ROOT")"
 }
 
-# Retire an active item: move to retired/, set status and reason, log.
+# Reason code of a retirement for outcomes.tsv, and the item it points to:
+# prints "<code><TAB><related item or ->".
+retire_code() {
+    local r="$1"
+    case "$r" in
+        superseded-by:*) printf 'superseded-by\t%s\n' "${r#superseded-by:}" ;;
+        disproven-by:*)  printf 'disproven-by\t%s\n' "${r#disproven-by:}" ;;
+        disproven|expired|unpromoted) printf '%s\t-\n' "$r" ;;
+        rejected|rejected:*) printf 'rejected\t-\n' ;;
+        graduated:*)     printf 'graduated\t-\n' ;;
+        *)               printf 'manual\t-\n' ;;
+    esac
+}
+
+# Retire an active item: move to retired/, set status and reason, log, and
+# record a kb_retire outcome (reason code, evidence, captured_by, prior status).
 retire_item() {  # retire_item <id> <reason>
-    local id="$1" reason="$2" src dst
+    local id="$1" reason="$2" src dst ev cb au ty from code rel
     src="${KB}/items/${id}.md"
     [[ -f "$src" ]] || die 1 "not an active item: $id"
     dst="${KB}/retired/${id}.md"
     [[ -e "$dst" ]] && die 2 "retired/${id}.md already exists"
+    ev="$(kb_fm_get "$src" evidence)"; cb="$(kb_fm_get "$src" captured_by)"
+    au="$(kb_fm_get "$src" author)"; ty="$(kb_fm_get "$src" type)"; from="$(kb_fm_get "$src" status)"
     move_file "$src" "$dst"
     kb_fm_set "$dst" retired_at "$TODAY"
     kb_fm_set "$dst" retired_reason "$(kb_quote "$(kb_oneline "$reason")")"
     set_status "$dst" retired "$reason"
+    IFS="$TAB" read -r code rel <<EOF
+$(retire_code "$reason")
+EOF
+    cb="$(printf '%s' "${cb:--}" | tr -s '[:space:]' '_')"
+    kb_outcome kb_retire - "${au:--}" - "$id" \
+        "${code} evidence=${ev:--} captured_by=${cb} from=${from:--} type=${ty:--}" "${rel:--}"
 }
 
 # ── Source resolution (R8) ──────────────────────────────────────────────────
@@ -531,9 +556,24 @@ EOF
     done
 }
 
+# Normalise a phase name for --escaped-from to "<methodology>:<phase>".
+# Accepts "sdlc:verification" or a bare phase name (the SDLC and research
+# phase names do not overlap). Prints nothing when the name is unknown.
+normalize_phase() {
+    local p="$1" m=""
+    case "$p" in
+        sdlc:*|research:*) m="${p%%:*}"; p="${p#*:}" ;;
+    esac
+    if word_in "$p" "$SDLC_PHASE_NAMES" && [[ -z "$m" || "$m" == "sdlc" ]]; then
+        printf 'sdlc:%s\n' "$p"
+    elif word_in "$p" "$RESEARCH_PHASE_NAMES" && [[ -z "$m" || "$m" == "research" ]]; then
+        printf 'research:%s\n' "$p"
+    fi
+}
+
 cmd_add() {
     local type="" claim="" evidence="" check="" author="" tags_raw="" falsifier="" body="" quote=""
-    local scope="project" no_conflict=false
+    local scope="project" no_conflict=false escaped_from=""
     local -a sources=() watches=() supersedes=() contradicts=()
     while [[ $# -gt 0 ]]; do
         [[ "$1" == --* && "$1" != "--no-conflict" && $# -lt 2 ]] && die 2 "add: $1 needs a value"
@@ -553,6 +593,7 @@ cmd_add() {
             --body) body="$2"; shift 2 ;;
             --quote) quote="$2"; shift 2 ;;
             --scope) scope="$2"; shift 2 ;;
+            --escaped-from) escaped_from="$2"; shift 2 ;;
             --reviewer) die 2 "add: --reviewer is not accepted; the reviewer is recorded by 'approve' (PI only)" ;;
             *) die 2 "add: unknown argument '$1'" ;;
         esac
@@ -576,6 +617,13 @@ cmd_add() {
         [[ -n "$check" ]] || die 2 "add: --evidence verified needs --check <command>"
     fi
     [[ "$type" != "hypothesis" || -n "$falsifier" ]] || die 2 "add: a hypothesis needs --falsifier (the observation that would refute it)"
+    if [[ -n "$escaped_from" ]]; then
+        [[ "$type" == "lesson" ]] || die 2 "add: --escaped-from is for --type lesson (a bug found after that phase's gate passed)"
+        local ef
+        ef="$(normalize_phase "$escaped_from")"
+        [[ -n "$ef" ]] || die 2 "add: --escaped-from: unknown phase '${escaped_from}' (e.g. verification, sdlc:verification, research:analysis)"
+        escaped_from="$ef"
+    fi
     if [[ -n "$check" ]]; then
         case "$check" in *$'\n'*) die 2 "add: --check must be one line" ;; esac
         if check_denied "$check"; then die 2 "add: --check looks destructive (rm/sudo/git push/curl|...); refused"; fi
@@ -735,12 +783,18 @@ EOF
         echo "contradicts: $(kb_list_format ${contradicts[@]+"${contradicts[@]}"})"
         echo "supports: []"
         echo "tags: $(kb_list_format ${tags[@]+"${tags[@]}"})"
+        [[ -n "$escaped_from" ]] && echo "escaped_from: ${escaped_from}"
         echo "---"
         [[ -n "$quote" ]] && printf '> %s\n\n' "$quote"
         [[ -n "$body" ]] && printf '%s\n' "$body"
     } > "$tmp"
     mv "$tmp" "$file"
     kb_event "$KB" "$id" "-" candidate "add" "$author"
+    # Meta-learning: a bug that escaped this phase's gate. It counts in
+    # `learn` only once the PI has approved the lesson (design 6.4).
+    if [[ -n "$escaped_from" ]]; then
+        kb_outcome escape "$escaped_from" "$author" - "$id" "$claim" "$(kb_head_ref "$ROOT")"
+    fi
 
     # Reciprocal contradicts link, so the old item shows the dispute
     for l in ${contradicts[@]+"${contradicts[@]}"}; do
@@ -927,9 +981,26 @@ EOF
     kb_fm_set "$f" reviewer "$pi"
     kb_fm_set "$f" verified_at "$TODAY"
     kb_fm_set "$f" review_by "$(review_by_for "$(kb_fm_get "$f" type)" "$TODAY")"
+    # A meta-learning proposal: approval records the PI's acceptance and the
+    # moment `learn` starts measuring the metric again. It never applies the
+    # proposed change (design 6.4): the change goes through a normal CR.
+    local is_proposal=false
+    if [[ "$(kb_fm_get "$f" type)" == "proposal" ]]; then
+        is_proposal=true
+        kb_fm_set "$f" approved_ts "$(kb_timestamp)"
+    fi
     set_status "$f" trusted "approved-by-pi"
     rebuild_stats_cache
     echo "${id}: ${st} -> trusted (approved by ${pi})"
+    if [[ "$is_proposal" == "true" ]]; then
+        local tgt
+        tgt="$(kb_fm_get "$f" target)"
+        echo "Acceptance recorded; nothing was changed${tgt:+ in ${tgt}}."
+        echo "Apply the change in the item's body through a change request (uws kb show ${id})."
+        if [[ "$(kb_fm_get "$f" proposal_kind)" == "change" ]]; then
+            echo "uws kb learn will measure $(kb_fm_get "$f" metric) over the next ${UWS_KB_LEARN_WINDOW:-10} events and propose a revert if it does not improve."
+        fi
+    fi
 }
 
 cmd_reject() {

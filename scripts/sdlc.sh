@@ -51,6 +51,7 @@ source_lib "atomic_utils.sh" || true
 source_lib "validation_utils.sh" || true
 source_lib "logging_utils.sh" || true
 source_lib "workflow_routing.sh" || true
+source_lib "kb_utils.sh" || true   # meta-learning outcomes (docs/kb/outcomes.tsv)
 
 #######################################
 # Validate workflow is initialized
@@ -441,6 +442,9 @@ main() {
                 # G6: log the transition event (checkpoints.log; see
                 # log_phase_transition for why not handoff.md)
                 log_phase_transition "$current_phase" "$next_phase"
+                # Meta-learning: record the gate pass (best effort; no-op without docs/kb)
+                declare -f kb_record_gate_pass > /dev/null 2>&1 && kb_record_gate_pass sdlc "$current_phase" "$next_phase" \
+                    "$(get_phase_deliverables "$current_phase" | wc -l)" "${details:-}" || true
 
                 # Point at the subagent that owns the new phase. Agents are real
                 # Claude Code subagents now, dispatched on demand by
@@ -555,6 +559,8 @@ main() {
 
             local regression_phase
             regression_phase=$(get_regression_phase "$current_phase")
+            # Meta-learning: keep the reason (docs/kb/outcomes.tsv; best effort, no-op without docs/kb)
+            declare -f kb_record_gate_fail > /dev/null 2>&1 && kb_record_gate_fail sdlc "$current_phase" "$regression_phase" "$details" || true
 
             if [[ -n "$regression_phase" ]]; then
                 set_phase "$regression_phase"

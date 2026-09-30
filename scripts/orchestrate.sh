@@ -35,6 +35,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/resolve_project.sh"
 YAML_UTILS_QUIET=true source "${SCRIPT_DIR}/lib/yaml_utils.sh" 2>/dev/null || true
 YAML_UTILS_QUIET=true source "${SCRIPT_DIR}/lib/workflow_routing.sh" 2>/dev/null || true
+# Meta-learning outcomes (docs/kb/outcomes.tsv): best effort, no-op without a KB
+# shellcheck source=lib/kb_utils.sh
+source "${SCRIPT_DIR}/lib/kb_utils.sh" 2>/dev/null || true
 
 PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
@@ -176,6 +179,12 @@ ${deliv}
 ${contract}
 EOF
 
+    # Meta-learning: which role and model got this phase's work (best effort)
+    if declare -f kb_outcome >/dev/null 2>&1; then
+        kb_outcome dispatch "${M}:${PHASE}" "$AGENT" "$(kb_agent_model "$AGENT" "$PROJECT_ROOT")" \
+            "$target" dispatched "$(kb_head_ref "$PROJECT_ROOT")" || true
+    fi
+
     echo -e "${GREEN}✓ Prepared dispatch for ${AGENT} (${M}:${PHASE})${NC}"
     echo -e "  Brief:  ${CYAN}workspace/${AGENT}/TASK.md${NC}"
     echo -e "  Output: ${CYAN}workspace/${AGENT}/${target}${NC}"
@@ -197,12 +206,27 @@ cmd_collect() {
     # The TASK.md brief is a transient control file, NOT a deliverable. submit.sh
     # diffs the whole workspace/<agent>/ dir, so leaving TASK.md in would submit it
     # as a repo-root file and cause cross-CR conflicts. Strip it before staging.
-    local active_agent
+    local active_agent target="" phase="" brief
     active_agent=$(get_active_agent "$STATE_FILE" 2>/dev/null || true)
-    if [[ -n "$active_agent" && -f "${PROJECT_ROOT}/workspace/${active_agent}/TASK.md" ]]; then
-        rm -f "${PROJECT_ROOT}/workspace/${active_agent}/TASK.md"
+    brief="${PROJECT_ROOT}/workspace/${active_agent}/TASK.md"
+    if [[ -n "$active_agent" && -f "$brief" ]]; then
+        # The brief names the phase and target artifact; keep them for the outcome row
+        target="$(sed -n 's/^- \*\*Target artifact\*\*: `workspace\/[^/]*\/\(.*\)`$/\1/p' "$brief" | head -1 || true)"
+        phase="$(sed -n 's/^- \*\*Methodology \/ Phase\*\*: \([a-z]*\) \/ \([a-z_]*\).*/\1:\2/p' "$brief" | head -1 || true)"
+        rm -f "$brief"
     fi
-    bash "${SCRIPT_DIR}/submit.sh" "$summary" "$ticket"
+    local out rc=0 cr
+    out="$(bash "${SCRIPT_DIR}/submit.sh" "$summary" "$ticket")" || rc=$?
+    [[ -n "$out" ]] && printf '%s\n' "$out"
+    (( rc == 0 )) || exit "$rc"
+    # Meta-learning: the collected CR, so review decisions can be traced to the
+    # role and model that produced it (best effort)
+    cr="$(printf '%s\n' "$out" | sed -n 's/^CL ID: \(CR-[0-9A-Za-z_-]*\)$/\1/p' | tail -1)"
+    if declare -f kb_outcome >/dev/null 2>&1 && [[ -n "$cr" ]]; then
+        [[ -n "$phase" ]] || phase="$(kb_current_phase)"
+        kb_outcome dispatch "$phase" "${active_agent:-unknown}" \
+            "$(kb_agent_model "${active_agent:-unknown}" "$PROJECT_ROOT")" "${target:--}" collected "$cr" || true
+    fi
     echo ""
     echo -e "${YELLOW}Human gate:${NC} review the change request, then approve with"
     echo -e "  ${CYAN}./scripts/review.sh approve <CR-ID>${NC}"
