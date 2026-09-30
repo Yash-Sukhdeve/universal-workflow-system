@@ -2758,37 +2758,100 @@ def _plan_order(project, plans, results, decisions, known):
             out.append(Finding(plans.rel, plans.by_exp[exp][0][0], "PLAN-ORDER",
                                "%s: not a git repository, so the freeze cannot be shown to precede its results" % exp))
         return out
-    numbers_rel = project.numbers().rel
-    num_first = first_appearance(project, numbers_rel,
+    numbers = project.numbers()
+    runs = project.runs()
+    num_first = first_appearance(project, numbers.rel,
                                  lambda t: {o["id"] for o in _jsonl_objects(t) if isinstance(o.get("id"), str)})
     # Keyed on the frozen hash too: a freeze row edited in place counts from the commit
     # that introduced the edit, not from the commit of the original row.
     plan_first = first_appearance(project, plans.rel,
                                   lambda t: {_freeze_key(o) for o in _jsonl_objects(t)})
+    path_first, blob_first = {}, {}
 
-    def result_commit(kind, key):
+    def first_commit_of(rel):
+        """The oldest commit in HEAD's history that has `rel` (by name; `--follow` is not
+        used because it takes an unrelated file with the same content for a rename)."""
+        if rel not in path_first:
+            log = _git(project, ["log", "--format=%H", "--", rel])
+            commits = (log or "").split()
+            path_first[rel] = commits[-1] if commits else None
+        return path_first[rel]
+
+    def first_commit_with_content(rel, sha256):
+        """The oldest commit in HEAD's history that holds the content of `rel` under any
+        name, when that content is the recorded version (`sha256`). This covers a result
+        committed under another name, or renamed, before the freeze."""
+        path = project.path(rel)
+        if not sha256 or not os.path.isfile(path) or sha256_file(path) != sha256:
+            return None
+        if rel not in blob_first:
+            blob = (_git(project, ["hash-object", "--", rel]) or "").strip()
+            log = _git(project, ["log", "--format=%H", "--find-object=%s" % blob]) if blob else None
+            commits = (log or "").split()
+            blob_first[rel] = commits[-1] if commits else None
+        return blob_first[rel]
+
+    def evidence(kind, key, label):
+        """When the result existed: [(what, commit)], plus the commit its run executed on.
+
+        A result exists from the earliest of: the ledger row (or run record), the first
+        commit of the output file it names, and the first commit of its run record. Adding
+        the ledger row after a fresh freeze therefore cannot hide results committed earlier."""
+        items, run_id, run_rec = [], None, None
         if kind == "number":
-            return num_first.get(key)
-        log = _git(project, ["log", "--topo-order", "--reverse", "--diff-filter=A", "--format=%H", "--", key])
-        commits = (log or "").split()
-        return commits[0] if commits else None
+            row = numbers.latest[key][1]
+            items.append(("row", None, num_first.get(key)))
+            out_rel = safe_rel(project, row.get("output"))
+            if out_rel:
+                items.append(("output", out_rel, first_commit_of(out_rel)))
+                items.append(("output content", out_rel, first_commit_with_content(out_rel, row.get("output_sha256"))))
+            if row.get("run") and str(row["run"]) in runs:
+                run_id = str(row["run"])
+        else:
+            run_id = label
+        if run_id in runs:
+            rel, run_rec, _err = runs[run_id]
+            items.append(("run record", rel, first_commit_of(rel)))
+            for o in (run_rec or {}).get("outputs") or []:
+                o_rel = safe_rel(project, o.get("path")) if isinstance(o, dict) else None
+                if o_rel and (kind == "run" or not any(i[1] == o_rel for i in items)):
+                    items.append(("output", o_rel, first_commit_of(o_rel)))
+                    items.append(("output content", o_rel, first_commit_with_content(o_rel, o.get("sha256"))))
+        return items, run_id, (run_rec or {}).get("git_commit")
 
     for exp in todo:
         rows = plans.by_exp[exp]
-        res = [(label, result_commit(kind, key)) for label, kind, key in results[exp]]
+        res = [(label, kind) + evidence(kind, key, label) for label, kind, key in results[exp]]
         first_line, first_row = rows[0]
         f1 = plan_first.get(_freeze_key(first_row))
         if f1 is None:
             out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
                                "%s: the freeze is not committed, but results exist (%s); commit the freeze first"
-                               % (exp, ", ".join(label for label, _c in res[:3]))))
+                               % (exp, ", ".join(r[0] for r in res[:3]))))
         else:
-            for label, c in res:
-                if c is not None and (c == f1 or not is_ancestor(project, f1, c)):
+            for label, kind, items, run_id, run_commit in res:
+                reported = set()
+                for what, rel, c in items:
+                    if c is None or c in reported or (c != f1 and is_ancestor(project, f1, c)):
+                        continue
+                    reported.add(c)
+                    if what == "row" or (kind == "run" and what == "run record"):
+                        msg = "%s was committed in %s" % (label, c[:12])
+                    elif what == "output content":
+                        msg = "%s: the content of its output %s was first committed in %s (under this or another " \
+                              "name)" % (label, rel, c[:12])
+                    else:
+                        msg = "%s: its %s %s was first committed in %s" % (label, what, rel, c[:12])
                     out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
-                                       "%s: %s was committed in %s, not after the plan was frozen (%s); a plan "
-                                       "written after its results is not a pre-registration"
-                                       % (exp, label, c[:12], f1[:12])))
+                                       "%s: %s, not after the plan was frozen (%s); a plan written after its "
+                                       "results is not a pre-registration" % (exp, msg, f1[:12])))
+                if run_commit and not is_ancestor(project, f1, str(run_commit)):
+                    who = run_id if kind == "run" else "%s (%s)" % (run_id, label)
+                    out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
+                                       "%s: %s ran on commit %s, which does not contain the freeze (%s): the run "
+                                       "happened before the plan was frozen" % (exp, who, str(run_commit)[:12], f1[:12])))
+        res = [(label, c) for label, _k, items, _r, run_commit in res
+               for c in [i[2] for i in items] + [run_commit] if c]
         dev_path = project.path("%s/%s/deviations.md" % (EXPERIMENTS_REL, exp))
         dev_text = read_text(dev_path) if os.path.isfile(dev_path) else ""
         for lineno, row in rows[1:]:

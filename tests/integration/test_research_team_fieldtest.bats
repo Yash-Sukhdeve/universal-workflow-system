@@ -65,13 +65,29 @@ line_of() {
     write_plan EXP-OK
     check plan freeze EXP-OK >/dev/null
     commit_all "plan frozen"
-    check run --exp EXP-OK --input research/data/raw/gb_scores.csv --output artifacts/ok.json -- \
-        python3 research/code/make_results.py research/data/raw/gb_scores.csv artifacts/ok.json >/dev/null
-    add_number '{"id":"N-0002","macro":"\\OkAuc","printed":"0.912","raw":0.9125,"rounding":"floor:3","metric":"5-fold CV mean ROC-AUC","output":"artifacts/ok.json","pointer":"/classification/Gradient Boosting/cv_auc_mean","data_origin":"synthetic-generated","evaluation":"cross-validation","exp":"EXP-OK","run":"RUN-0001"}'
+    check run --exp EXP-OK --output artifacts/ok.json -- \
+        python3 -c 'import json; json.dump({"auc": 0.81}, open("artifacts/ok.json", "w"))' >/dev/null
+    add_number '{"id":"N-0002","macro":"\\OkAuc","printed":"0.81","raw":0.81,"rounding":"exact","metric":"held-out AUC","output":"artifacts/ok.json","pointer":"/auc","data_origin":"measured","evaluation":"held-out","exp":"EXP-OK","run":"RUN-0001"}'
     commit_all "results"
     run check plan
     echo "$output"
     [ "$status" -eq 0 ]
+}
+
+@test "P0 PLAN-ORDER: results committed under another name before the freeze are found by their content" {
+    write_plan EXP-REN
+    printf '{"auc": 0.77}\n' > "$P/artifacts/draft.json"
+    commit_all "draft results"
+    check plan freeze EXP-REN >/dev/null
+    commit_all "freeze"
+    git -C "$P" mv artifacts/draft.json artifacts/final.json
+    commit_all "rename the results after the freeze"
+    add_number '{"id":"N-0002","macro":"\\RenAuc","printed":"0.77","raw":0.77,"rounding":"exact","metric":"held-out AUC","output":"artifacts/final.json","pointer":"/auc","data_origin":"measured","evaluation":"held-out","exp":"EXP-REN","inputs":[]}'
+    commit_all "row"
+    run check plan
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"PLAN-ORDER EXP-REN: N-0002: the content of its output artifacts/final.json was first committed in"* ]]
 }
 
 # ── P0: C6 on real PROMISE sentences ────────────────────────────────────────
