@@ -64,8 +64,9 @@ Workflow Commands:
   orchestrate <cmd> [args] Route the current phase to its subagent
                            (dispatch "<task>" | collect "<summary>" | status)
   kb <verb> [args]         Project knowledge base in docs/kb/ (add|search|links|
-                           show|verify|recommend|review|approve|reject|pi|prune|
-                           retire|restore|lint|stats|learn|proposals);
+                           show|verify|recommend|review|approve|reject|dispute|
+                           pi|prune|retire|restore|lint|stats|learn|proposals|
+                           init|import); --global for the cross-project KB;
                            'uws kb help' for details
 
 Methodology Commands:
@@ -105,6 +106,20 @@ Examples:
 EOF
 }
 
+# Succeeds when `uws kb` arguments address the global KB (--global,
+# --scope global, --scope=global or a global:K-... ID), which needs no project.
+kb_args_global() {
+    local a prev=""
+    for a in "$@"; do
+        case "$a" in
+            --global|--scope=global|global:K-*) return 0 ;;
+        esac
+        [[ "$prev" == "--scope" && "$a" == "global" ]] && return 0
+        prev="$a"
+    done
+    return 1
+}
+
 # `uws agent` / `uws skill` were retired: agents are real Claude Code
 # subagents (.claude/agents/uws-<role>.md) and skills are native Claude Code
 # skills, so there is nothing to activate or enable.
@@ -142,6 +157,12 @@ main() {
             ;;
         agent|skill)
             retired_command "$cmd"
+            ;;
+        kb)
+            # The global knowledge base lives outside any project
+            if ! find_uws_root >/dev/null 2>&1 && kb_args_global "$@"; then
+                exec "$UWS_INSTALL_DIR/scripts/kb.sh" "$@"
+            fi
             ;;
         uninstall)
             # uninstall doesn't need .workflow/ — find scripts via resolved install dir

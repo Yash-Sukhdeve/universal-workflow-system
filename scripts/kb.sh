@@ -658,11 +658,24 @@ cmd_search() {
     else
         out="$(search_lines "$filter" "$type" "" "" "${words[@]}" | budget "$limit")"
     fi
-    [[ -n "$out" ]] || exit 1
-    printf '%s\n' "$out"
     local via="${UWS_KB_USAGE_VIA:-search}"
     [[ "$via" =~ ^[a-z-]+$ ]] || via="search"
+    mark_search_session "$via"
+    [[ -n "$out" ]] || exit 1
+    printf '%s\n' "$out"
     record_usage "$via" "$out"
+}
+
+# Record, in the usage log of each KB searched, that this session searched it
+# (id "-"), so R4 counts the session even when nothing of that KB matched
+mark_search_session() {
+    local via="$1" g
+    if cache_writable; then kb_usage_record "$KB" "$via" -; fi
+    if [[ "$SEARCH_SCOPE" == "all" ]]; then
+        g="$(global_kb)"
+        if [[ "$g" != "$KB" ]] && kb_global_ready "$g"; then kb_usage_record "$g" "$via" -; fi
+    fi
+    return 0
 }
 
 cmd_links() {
@@ -2702,7 +2715,8 @@ EOF
     fi
     # Retrievals recorded on this machine (the R4 usage log)
     if [[ -s "${KB}/.cache/usage.tsv" ]]; then
-        LC_ALL=C awk -F '\t' 'NF >= 3 { n++; if (!($2 in s)) { s[$2] = 1; ns++ } if (!($3 in i)) { i[$3] = 1; ni++ } }
+        LC_ALL=C awk -F '\t' 'NF >= 3 { if (!($2 in s)) { s[$2] = 1; ns++ }
+                                        if ($3 != "-") { n++; if (!($3 in i)) { i[$3] = 1; ni++ } } }
             END { printf "usage on this machine: %d retrieval(s) of %d item(s) in %d session(s)\n", n, ni, ns }' "${KB}/.cache/usage.tsv"
     fi
     if [[ "$SCOPE" == "project" ]]; then
@@ -2916,7 +2930,7 @@ cmd_import() {
                     kb_fm_set "$hf" source "$(kb_list_format --quote "${srcs[@]}")"
                     kb_event "$KB" "$hitid" candidate candidate "import-duplicate:${src}" "$actor"
                 fi
-                echo "  ${src}: same claim as $(id_prefix)${hitid} (R7); collapsed into it (source added)"
+                echo "  ${src}: same claim as $(id_prefix)${hitid} (R7); $([[ "$dry" == "true" ]] && echo "would be collapsed into it" || echo "collapsed into it") (source added)"
             else
                 echo "  ${src}: same claim as $(id_prefix)${hitid} (R7); not imported"
             fi

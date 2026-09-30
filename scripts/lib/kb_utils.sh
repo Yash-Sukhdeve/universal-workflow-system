@@ -99,7 +99,11 @@ function kb_list(v, arr,    n, i, c, cur, inq, quoted) {
             if (c == "\\" && i < length(v)) { i++; cur = cur substr(v, i, 1) }
             else if (c == "\"") inq = 0
             else cur = cur c
-        } else if (c == "\"") { inq = 1; quoted = 1 }
+        } else if (c == "\"") {
+            # spacing before an opening quote is not part of the element
+            if (!quoted && cur ~ /^[ \t]*$/) cur = ""
+            inq = 1; quoted = 1
+        }
         else if (c == ",") {
             if (!quoted) { sub(/^[ \t]+/, "", cur); sub(/[ \t]+$/, "", cur) }
             if (cur != "" || quoted) arr[++n] = cur
@@ -682,6 +686,8 @@ kb_session_id() {
 # kb_usage_record <kb-dir> <via> <id>...: append one row per retrieved item to
 # <kb-dir>/.cache/usage.tsv (gitignored, so usage is per machine; design 5.6):
 #   ts  session  id  via            (via: search | show | task)
+# The id "-" records that the KB was searched in this session without naming an
+# item, so a session whose searches found nothing still counts for R4.
 # Best effort: a no-op when the KB has no items directory or is guarded, and a
 # failure prints one line on stderr and returns 0.
 kb_usage_record() {
@@ -694,7 +700,7 @@ kb_usage_record() {
     sess="$(kb_session_id)"
     tab="$(printf '\t')"
     for id in "$@"; do
-        [[ "$id" =~ ^K-[0-9]{8}-[0-9a-f]{6,12}$ ]] || continue
+        [[ "$id" == "-" || "$id" =~ ^K-[0-9]{8}-[0-9a-f]{6,12}$ ]] || continue
         rows+="${ts}${tab}${sess}${tab}${id}${tab}${via}"$'\n'
     done
     [[ -n "$rows" ]] || return 0

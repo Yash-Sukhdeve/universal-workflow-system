@@ -92,7 +92,7 @@ PROSE_AND_FIXTURES = (
 RE_BACKTICK = re.compile(r"`([^`\n]{2,80})`")
 RE_FILE = re.compile(r"(?<![\w./-])(\.?[A-Za-z0-9_][\w.-]*\.(?:" + EXTENSIONS + r"))(?![\w/-])", re.I)
 RE_PATH = re.compile(r"(?<![\w:/.-])(\.{0,2}/?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+/?)")
-RE_SNAKE = re.compile(r"(?<![\w.-])([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?![\w-])")
+RE_SNAKE = re.compile(r"(?<![\w./-])([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?![\w-]|\.\w)")
 RE_URL = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.I)
 
 
