@@ -48,6 +48,7 @@ import argparse
 import ast
 import csv
 import datetime
+import glob
 import hashlib
 import io
 import json
@@ -169,6 +170,26 @@ class Project(object):
         self._manifest = None
         self._runs = None
         self._plans = None
+        self._docs = {}
+        self._links = None
+
+    def doc(self, path):
+        """A parsed prose file, read once per check run."""
+        key = os.path.abspath(path)
+        if key not in self._docs:
+            self._docs[key] = Doc(self, key)
+        return self._docs[key]
+
+    def links(self):
+        """Ledger rows located in the manuscript by their `where` field (see WhereLinks)."""
+        if self._links is None:
+            self._links = WhereLinks(self)
+        return self._links
+
+    def macro_index(self):
+        """Macro name of each current number row -> its N-ID."""
+        return {row["macro"]: nid for nid, (_l, row) in sorted(self.numbers().latest.items())
+                if isinstance(row.get("macro"), str) and row.get("macro")}
 
     def path(self, rel):
         return os.path.join(self.root, rel)
@@ -1241,6 +1262,71 @@ def tex_closure(project, main_rel):
     return sorted(seen), missing
 
 
+# A period after one of these does not end a sentence (LaTeX writers often omit `\ `).
+_ABBREV_RE = re.compile(r"(?:^|[\s(~{])(?:e\.g|i\.e|cf|vs|et al|Figs?|Secs?|Tabs?|Eqs?|No|approx|resp|viz)\.$", re.I)
+_CLOSERS = "})]'\""
+
+
+def sentence_spans(text):
+    """(start, end) of each sentence of `text`; together they cover all of it.
+
+    A sentence ends at `.`, `!` or `?` (repeated, and followed by closing braces, brackets
+    or quotes) when whitespace or the end of the text comes next. So the dots in
+    `recover\\_context.sh`, `0.912`, `Fig.~3` and `et al.\\ ` end nothing (LaTeX's own rule:
+    `.~` and `.\\ ` are not sentence ends), `\\.` is an accent, and a period after a common
+    abbreviation (e.g., i.e., Fig., et al.) does not end the sentence either. No text is
+    ever dropped: the part after the last stop is a sentence of its own."""
+    spans = []
+    n, start, i = len(text), 0, 0
+    while i < n:
+        c = text[i]
+        if c not in ".!?" or (i > 0 and text[i - 1] == "\\"):
+            i += 1
+            continue
+        j = i
+        while j < n and text[j] in ".!?":
+            j += 1
+        k = j
+        while k < n and text[k] in _CLOSERS:
+            k += 1
+        if k >= n or text[k].isspace():
+            abbrev = c == "." and j == i + 1 and _ABBREV_RE.search(text[max(0, i - 12):i + 1])
+            if not abbrev:
+                spans.append((start, k))
+                start = k
+        i = k
+    if start < n:
+        spans.append((start, n))
+    return spans
+
+
+class Sentence(object):
+    """One sentence of a Doc: its text, first line, attached C-IDs, and where each character
+    came from (`line_of(offset)`; `offset_of(lineno, col)` for a column of a code line)."""
+    __slots__ = ("start", "text", "cids", "lines", "_a", "_spans")
+
+    def __init__(self, text, start_offset, spans):
+        self.text, self._a, self._spans, self.cids = text, start_offset, spans, set()
+        end = start_offset + len(text)
+        self.lines = [ln for (st, en, ln) in spans if st < end and en > start_offset]
+        self.start = self.lines[0] if self.lines else spans[0][2]
+
+    def line_of(self, off):
+        pos = self._a + off
+        for st, en, ln in self._spans:
+            if st <= pos < en:
+                return ln
+        return self._spans[-1][2]
+
+    def offset_of(self, lineno, col):
+        """Offset in `text` of column `col` of line `lineno`, or None when it is not in it."""
+        for st, _en, ln in self._spans:
+            if ln == lineno:
+                off = st + col - self._a
+                return off if 0 <= off < len(self.text) else None
+        return None
+
+
 class Doc(object):
     """A prose file as paragraphs of sentences, with per-line context."""
 
@@ -1253,17 +1339,21 @@ class Doc(object):
         self.comment = []
         self.cids = []       # C-IDs attached to each line
         self.env = []        # innermost float environment id per line (or None)
+        self.float_lines = {}  # float env id -> [first line, last line]
         self.in_abstract = []
         self.in_tabular = []
-        self.section = []    # current \section title per line
+        self.section = []    # current \section, \subsection ... title per line
+        self.top_section = []  # current top-level \section title per line
         self.captions = {}   # float env id -> caption text
+        self.labels = {}     # \label name -> line
+        self._sentences = None
         self._scan()
 
     def _scan(self):
         stack, float_id, floats = [], 0, []
-        section = ""
+        section = top = ""
         in_md_comment = False
-        for raw in self.lines:
+        for lineno, raw in enumerate(self.lines, 1):
             if self.is_tex:
                 code, comment = split_tex_comment(raw)
             else:
@@ -1291,23 +1381,39 @@ class Doc(object):
                             rest = rest[start + 4:]
                             in_md_comment = True
                 code = "".join(pieces)
+            ended = []
             for m in re.finditer(r"\\(begin|end)\{([^}]+)\}", code):
                 kind, name = m.group(1), m.group(2).rstrip("*")
                 if kind == "begin":
                     if name in ("table", "figure"):
                         float_id += 1
                         floats.append(float_id)
+                        self.float_lines[float_id] = [lineno, lineno]
                     stack.append(name)
                 elif stack and stack[-1].rstrip("*") == name:
                     stack.pop()
                     if name in ("table", "figure") and floats:
-                        floats.pop()
-            sm = re.search(r"\\(?:sub)*section\*?\{([^}]*)\}", code) if self.is_tex else re.match(r"^#+\s+(.*)", code)
-            if sm:
-                section = sm.group(1)
-            cur_float = floats[-1] if floats else None
+                        ended.append(floats.pop())
+            if self.is_tex:
+                sm = re.search(r"\\(sub)*section\*?\{([^}]*)\}", code)
+                if sm:
+                    section = sm.group(2)
+                    if not sm.group(1):
+                        top = section
+            else:
+                sm = re.match(r"^(#+)\s+(.*)", code)
+                if sm:
+                    section = sm.group(2)
+                    if len(sm.group(1)) <= 2:
+                        top = section
+            # The line that closes a float still belongs to it.
+            cur_float = floats[-1] if floats else (ended[-1] if ended else None)
+            for fid in floats + ended:
+                self.float_lines[fid][1] = lineno
             if cur_float is not None and "\\caption" in code:
                 self.captions[cur_float] = self.captions.get(cur_float, "") + " " + code
+            for m in re.finditer(r"\\label\{([^}]+)\}", code):
+                self.labels.setdefault(m.group(1).strip(), lineno)
             self.code.append(code)
             self.comment.append(comment)
             self.cids.append(set(CID_RE.findall(comment)))
@@ -1315,45 +1421,46 @@ class Doc(object):
             self.in_abstract.append("abstract" in stack or bool(re.search(r"\\begin\{abstract\}", code)))
             self.in_tabular.append(any(s.startswith(("tabular", "longtable", "array")) for s in stack))
             self.section.append(section)
+            self.top_section.append(top)
         # a caption may appear after the content it describes; extend per float
         if self.captions:
             for fid in list(self.captions):
                 self.captions[fid] = self.captions[fid].strip()
 
-    def sentences(self):
-        """Yield (start_line, text, cids, line_of(offset)) for each sentence."""
-        para, offsets = [], []
-        results = []
+    def paragraph_lines(self, lineno):
+        """First and last line of the paragraph (run of non-blank lines) around `lineno`."""
+        lo = hi = lineno
+        while lo > 1 and self.code[lo - 2].strip():
+            lo -= 1
+        while hi < len(self.code) and self.code[hi].strip():
+            hi += 1
+        return lo, hi
+
+    def sentence_list(self):
+        """Every sentence of the file as a Sentence (computed once)."""
+        if self._sentences is not None:
+            return self._sentences
+        para, results = [], []
 
         def flush():
             if not para:
                 return
-            text = ""
-            spans = []
+            text, spans = "", []
             for lineno, code in para:
                 start = len(text)
                 text += code + " "
                 spans.append((start, len(text), lineno))
-            for m in re.finditer(r"[^.!?]*(?:[.!?]+(?=\s|$)|$)", text):
-                s = m.group(0)
-                if not s.strip():
+            for a0, b in sentence_spans(text):
+                raw = text[a0:b]
+                s = raw.strip()
+                if not s:
                     continue
-                a, b = m.start() + (len(s) - len(s.lstrip())), m.end()
-                s = s.strip()
-                lines = [ln for (st, en, ln) in spans if st < b and en > a]
-                if not lines:
+                sent = Sentence(s, a0 + (len(raw) - len(raw.lstrip())), spans)
+                if not sent.lines:
                     continue
-                cids = set()
-                for ln in lines:
-                    cids |= self.cids[ln - 1]
-
-                def line_of(off, _a=a, _spans=spans):
-                    pos = _a + off
-                    for st, en, ln in _spans:
-                        if st <= pos < en:
-                            return ln
-                    return _spans[-1][2]
-                results.append((lines[0], s, cids, line_of))
+                for ln in sent.lines:
+                    sent.cids |= self.cids[ln - 1]
+                results.append(sent)
             del para[:]
 
         structural = re.compile(r"^\s*\\(?:begin|end|(?:sub)*section|paragraph|chapter|item|caption|label)\b")
@@ -1367,7 +1474,12 @@ class Doc(object):
                 flush()
             para.append((lineno, code))
         flush()
+        self._sentences = results
         return results
+
+    def sentences(self):
+        """(start_line, text, cids, line_of(offset)) for each sentence."""
+        return [(x.start, x.text, x.cids, x.line_of) for x in self.sentence_list()]
 
 
 # --------------------------------------------------------------------------- numbers
@@ -1456,24 +1568,186 @@ NUM_STRIP_RE = re.compile(
     r"vspace|hspace|setlength|addtolength|resizebox|scalebox|rule|cmidrule|renewcommand|newcommand|"
     r"definecolor|begin|end|usepackage|documentclass|bibliography\w*|arraystretch|multicolumn|multirow|"
     r"fontsize|linespread|setcounter|pgfplots\w*)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})*")
-# A decimal such as 0.913 (a sentence-ending period may follow); version strings such as
-# 3.2.1 and identifiers such as v1.2 are not matched.
-DECIMAL_RE = re.compile(r"(?<![\w.\\-])-?\d+\.\d+(?:x|×)?(?!\w|\.\w)")
+# A number in prose: a decimal such as 0.913, or any number with a unit attached, such as
+# 1.1ms, 1.1\,ms, 30\% or 3x (a sentence-ending period may follow). Version strings such
+# as 3.2.1, identifiers such as v1.2 or F1, and the second number of a range (0--90) are
+# not matched.
+_UNIT_WORDS = r"\\%|%|ms|[µu]s|ns|secs?|seconds?|mins?|minutes?|hours?|hrs?|s|h|[kKMGT]i?B"
+NUMBER_RE = re.compile(
+    r"(?<![\w.\\-])(?P<num>-?\d+(?:\.\d+)?)"
+    r"(?P<unit>(?:\\[,;:! ]|~|\s)?(?:" + _UNIT_WORDS + r")|\s?(?:\\times|×)|x)?"
+    r"(?!\w|\.\d)")
+# A bare integer is usually a count, a year or an identifier, so an integer is reported
+# only with a unit; `s` and `h` after an integer are not units ("the 1990s", "24h").
+_INT_NOT_UNITS = ("s", "h")
 NUM_PREFIX_EXEMPT = re.compile(
     r"(?:Section|Sec\.|Sections|§|Table|Tab\.|Fig\.|Figure|Eq\.|Equation|Algorithm|Alg\.|Appendix|"
     r"Chapter|Theorem|Lemma|Definition|v|version|Version|Python|release|RFC|ISO|IEEE)\s*~?\s*$")
 NUM_SUFFIX_EXEMPT = re.compile(r"^\s*\\?(?:textwidth|linewidth|columnwidth|textheight|cm|mm|pt|em|ex|in|bp|pc)\b")
 LITERAL_RE = re.compile(r"uws:literal\b(.*)")
 
+# Where results are reported (design 6.4 d): the abstract, tables and figures, and files or
+# top-level sections named introduction, results, evaluation, experiments, discussion or
+# conclusion. A subsection title counts only for the narrower list (so "Evaluation Metrics"
+# inside a method section is not in scope).
+_SCOPE_RE = re.compile(r"(abstract|intro|result|evaluation|experiments\b|discussion|conclusion)", re.I)
+_SCOPE_SUB_RE = re.compile(r"(abstract|intro|result|conclusion)", re.I)
 
-def _decimal_scope(doc, idx):
+
+def number_tokens(code):
+    """Numbers in one comment-stripped line: [(start, end, text, number, reportable)].
+
+    Commands whose arguments are not prose (\\cite, \\ref, \\label, lengths ...) are blanked
+    first, keeping columns. `reportable` is true for a decimal, or an integer with a unit."""
+    stripped = NUM_STRIP_RE.sub(lambda m: " " * len(m.group(0)), code)
+    out = []
+    for m in NUMBER_RE.finditer(stripped):
+        if NUM_PREFIX_EXEMPT.search(stripped[:m.start()]) or NUM_SUFFIX_EXEMPT.match(stripped[m.end():]):
+            continue
+        num, unit = m.group("num"), m.group("unit") or ""
+        word = re.sub(r"^(?:\\[,;:! ]|~|\s)+", "", unit)
+        reportable = "." in num or bool(word and word not in _INT_NOT_UNITS)
+        out.append((m.start(), m.end(), m.group(0), num, reportable))
+    return out
+
+
+def _number_scope(doc, idx):
     rel = doc.rel.lower()
-    name = os.path.basename(rel)
     if doc.in_abstract[idx] or doc.in_tabular[idx] or doc.env[idx] is not None:
         return True
-    if re.search(r"(abstract|result|conclusion)", name) or "/tables/" in "/" + rel:
+    if _SCOPE_RE.search(os.path.basename(rel)) or "/tables/" in "/" + rel:
         return True
-    return bool(re.search(r"(result|conclusion|abstract)", doc.section[idx], re.I))
+    return bool(_SCOPE_RE.search(doc.top_section[idx]) or _SCOPE_SUB_RE.search(doc.section[idx]))
+
+
+# `where` of a ledger row: places in the manuscript, separated by ';' (free text between
+# them is ignored): file:line, file:first-last, file:l1,l2 or file#label.
+WHERE_ITEM_RE = re.compile(r"(?<![\w./-])([\w./-]+\.(?:tex|md))(?::(\d+(?:\s*[-,]\s*\d+)*)|#([^\s;,()]+))")
+
+
+def parse_where(text):
+    """[(path, spec, [(first, last), ...] or None, label or None)] of a `where` field."""
+    out = []
+    for m in WHERE_ITEM_RE.finditer(str(text or "")):
+        path, spec, label = m.group(1), m.group(2), m.group(3)
+        if spec:
+            locs = []
+            for part in re.split(r"\s*,\s*", spec):
+                ends = [int(x) for x in re.split(r"\s*-\s*", part)]
+                locs.append((min(ends), max(ends)))
+            out.append((path, spec, locs, None))
+        else:
+            out.append((path, "#" + label, None, label))
+    return out
+
+
+class WhereLinks(object):
+    """Ledger rows located in the manuscript by their `where` field.
+
+    Numbers: a hand-typed value on a named line that equals the row's printed value is that
+    row's occurrence. NUM-LITERAL names the row, and NUM-SPLIT, C3 and C6 judge the value as
+    they judge a macro use, so typing a number by hand (with or without `uws:literal`) no
+    longer hides it from them. A named place that does not show the value is a NUM-WHERE
+    warning (line numbers drift when the manuscript is edited).
+    Claims: the C-ID counts as attached to the named lines for C6 only, so a claim row that
+    records its sentence as resting on generator data can make C6 block; a `where` link
+    never clears a finding."""
+
+    def __init__(self, project):
+        self.numbers = {}   # abs path -> {lineno: [(start, end, text, nid)]}
+        self.claims = {}    # abs path -> {lineno: set of C-IDs}
+        self.findings = []
+        prose = set(os.path.abspath(f) for f in project.prose_files())
+        numbers = project.numbers()
+        for nid in sorted(numbers.latest):
+            lineno, row = numbers.latest[nid]
+            if not row.get("where") or row.get("printed") is None:
+                continue
+            try:
+                want = Decimal(str(row["printed"]).strip())
+            except InvalidOperation:
+                continue
+            for label, doc, locs in self._places(project, prose, numbers.rel, lineno, nid, row["where"], True):
+                for lo, hi in locs:
+                    self._link_number(numbers.rel, lineno, nid, row, want, label, doc, lo, hi)
+        claims = project.claims()
+        for cid in sorted(claims.latest):
+            lineno, row = claims.latest[cid]
+            if not row.get("where"):
+                continue
+            for _label, doc, locs in self._places(project, prose, claims.rel, lineno, cid, row["where"], False):
+                for lo, hi in locs:
+                    for ln in range(lo, hi + 1):
+                        self.claims.setdefault(doc.path, {}).setdefault(ln, set()).add(cid)
+
+    def _places(self, project, prose, rel, lineno, rid, where, report):
+        for path, spec, locs, label in parse_where(where):
+            place = "%s%s" % (path, spec if label else ":" + spec)
+            full = os.path.abspath(project.path(path))
+            if full not in prose:
+                if report:
+                    why = "is not among the checked manuscript files" if os.path.isfile(full) else "does not exist"
+                    self.findings.append(Finding(rel, lineno, "NUM-WHERE", "%s: where names %s, which %s, so the number "
+                                                 "printed there is not checked" % (rid, path, why), "warn"))
+                continue
+            doc = project.doc(full)
+            if label:
+                ln = doc.labels.get(label)
+                if ln is None:
+                    if report:
+                        self.findings.append(Finding(rel, lineno, "NUM-WHERE", "%s: where names %s, but %s has no "
+                                                     "\\label{%s}" % (rid, place, path, label), "warn"))
+                    continue
+                fid = doc.env[ln - 1]
+                locs = [tuple(doc.float_lines[fid])] if fid is not None else [doc.paragraph_lines(ln)]
+            if len(locs) > 1:
+                for lo, hi in locs:
+                    yield ("%s:%d" % (path, lo) if lo == hi else "%s:%d-%d" % (path, lo, hi)), doc, [(lo, hi)]
+            else:
+                yield place, doc, locs
+
+    def _link_number(self, rel, lineno, nid, row, want, place, doc, lo, hi):
+        hits, seen, macro_there = [], [], False
+        macro = row.get("macro")
+        for ln in range(max(lo, 1), min(hi, len(doc.code)) + 1):
+            code = doc.code[ln - 1]
+            if macro and re.search(re.escape(macro) + r"(?![A-Za-z])", code):
+                macro_there = True
+            for st, en, text, num, _rep in number_tokens(code):
+                seen.append(text)
+                try:
+                    equal = Decimal(num) == want
+                except InvalidOperation:
+                    equal = False
+                if equal:
+                    hits.append((ln, st, en, text))
+        for ln, st, en, text in hits:
+            self.numbers.setdefault(doc.path, {}).setdefault(ln, []).append((st, en, text, nid))
+        if not hits and not macro_there:
+            shown = " (it shows %s)" % ", ".join(sorted(set(seen))) if seen else ""
+            self.findings.append(Finding(rel, lineno, "NUM-WHERE", "%s: where names %s, but its printed value %s is not "
+                                         "there%s; if the line moved, append a revision with the new place"
+                                         % (nid, place, row.get("printed"), shown), "warn"))
+
+
+def number_occurrences(project, doc, sent):
+    """Ledger numbers in a sentence: [(offset, label, N-ID, row)] for uses of ledger macros
+    (never other LaTeX commands) and for hand-typed values located by a row's `where`."""
+    numbers = project.numbers()
+    by_macro = project.macro_index()
+    out = []
+    for mm in MACRO_USE_RE.finditer(sent.text):
+        nid = by_macro.get("\\" + mm.group(1))
+        if nid:
+            out.append((mm.start(), "\\" + mm.group(1), nid, numbers.latest[nid][1]))
+    linked = project.links().numbers.get(doc.path, {})
+    for ln in sent.lines:
+        for st, _en, text, nid in linked.get(ln, []):
+            off = sent.offset_of(ln, st)
+            if off is not None:
+                out.append((off, "hand-typed " + text, nid, numbers.latest[nid][1]))
+    out.sort(key=lambda t: (t[0], t[2]))
+    return out
 
 
 def check_numbers(project, only_ids=None):
@@ -1513,15 +1787,7 @@ def check_numbers(project, only_ids=None):
                         if not _values_equal(value, row.get("raw")):
                             where("value at %s is %r, ledger raw is %r" % (row["pointer"], value, row.get("raw")), "NUM-VALUE")
         if row.get("rounding") and row.get("raw") is not None and row.get("printed") is not None:
-            try:
-                want = apply_rounding(row["raw"], row["rounding"], row.get("scale"))
-            except (ValueError, InvalidOperation) as exc:
-                where(str(exc), "NUM-ROUND")
-            else:
-                pm = re.match(r"^\s*(-?\d+(?:\.\d+)?)", str(row["printed"]))
-                if not pm or pm.group(1) != want:
-                    where("printed %r is not %s applied to raw %r (expected %s)"
-                          % (row["printed"], row["rounding"], row["raw"], want), "NUM-ROUND")
+            findings.extend(_check_rounding(project, numbers.rel, lineno, nid, row))
         run = row.get("run")
         if run:
             findings.extend(_check_run(project, numbers.rel, lineno, nid, run, row))
@@ -1542,9 +1808,118 @@ def check_numbers(project, only_ids=None):
         findings.append(Finding(macro_rel, 1, "NUM-MACRO", "generated macro file is missing; the ledger's macros are not defined"))
 
     if not only_ids:
-        findings.extend(_hand_typed_decimals(project, macro_rel))
+        findings.extend(project.links().findings)
+        findings.extend(_hand_typed_numbers(project, macro_rel))
         findings.extend(_split_disclosure(project, macro_rel))
     return findings
+
+
+def _printed_number(printed):
+    pm = re.match(r"^\s*(-?\d+(?:\.\d+)?)", str(printed))
+    return pm.group(1) if pm else None
+
+
+def _decimals(value):
+    """Decimal places of a value as written (0.9125 -> 4, 3 -> 0)."""
+    exp = Decimal(str(value)).as_tuple().exponent
+    return -exp if isinstance(exp, int) and exp < 0 else 0
+
+
+def _rounds_to(value, stored):
+    """True when `stored` is `value` rounded to the places `stored` has, under any common
+    convention (half up, half even, down, floor, or Python's binary round())."""
+    d, s = Decimal(str(value)), Decimal(str(stored))
+    q = Decimal(1).scaleb(-_decimals(stored))
+    for mode in (ROUND_HALF_UP, ROUND_HALF_EVEN, ROUND_DOWN, ROUND_FLOOR, ROUND_CEILING):
+        if d.quantize(q, rounding=mode) == s:
+            return True
+    try:
+        return Decimal(str(round(float(value), _decimals(stored)))) == s
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _unrounded_value(project, spec):
+    """The full-precision value that a wrapper run wrote: (value, description) or raises ValueError."""
+    if not isinstance(spec, dict):
+        raise ValueError("unrounded must be {\"run\": RUN-ID, \"output\": path, \"pointer\": /json/pointer}")
+    run_id, pointer = str(spec.get("run") or ""), str(spec.get("pointer") or "")
+    out_rel = safe_rel(project, spec.get("output"))
+    if not RUN_RE.match(run_id) or not out_rel or not pointer.startswith("/"):
+        raise ValueError("unrounded needs run (RUN-ID), output (a project path) and pointer (/...)")
+    rel, rec, err = project.runs().get(run_id, (None, None, "research/runs/%s/run.json does not exist" % run_id))
+    if rec is None:
+        raise ValueError("%s: %s" % (run_id, err))
+    if rec.get("exit_code") != 0:
+        raise ValueError("%s exited %r, so it does not provide a value" % (run_id, rec.get("exit_code")))
+    produced = {o.get("path"): o.get("sha256") for o in rec.get("outputs") or [] if isinstance(o, dict)}
+    if out_rel not in produced:
+        raise ValueError("%s does not list %s among its outputs" % (run_id, out_rel))
+    path = project.path(out_rel)
+    if not os.path.isfile(path):
+        raise ValueError("%s does not exist" % out_rel)
+    if sha256_file(path) != produced[out_rel]:
+        raise ValueError("%s changed after %s wrote it" % (out_rel, run_id))
+    try:
+        value = resolve_pointer(path, pointer)
+        Decimal(str(value))
+    except (ValueError, IndexError, KeyError, OSError, InvalidOperation) as exc:
+        raise ValueError("%s %s: %s" % (out_rel, pointer, exc))
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError("%s %s is not a number" % (out_rel, pointer))
+    return value, "%s %s %s" % (run_id, out_rel, pointer)
+
+
+def _check_rounding(project, rel, lineno, nid, row):
+    """NUM-ROUND: printed equals the rounding rule applied to the value (design 6.4 c).
+
+    An output that stores a value already rounded (0.9125 for a true 0.9124502) cannot show
+    whether the printed digits are right, because the rule can give different answers for the
+    values that store the same way. Then:
+    - with `unrounded` (a run output holding the full-precision value), judge against it;
+    - otherwise report "pre-rounded, cannot judge" as a warning. A printed value that no
+      stored-equivalent value could produce is still blocked."""
+    rule, raw, printed, scale = row["rounding"], row["raw"], row["printed"], row.get("scale")
+
+    def bad(msg, level="block"):
+        return [Finding(rel, lineno, "NUM-ROUND", "%s: %s" % (nid, msg), level)]
+
+    try:
+        want = apply_rounding(raw, rule, scale)
+    except (ValueError, InvalidOperation) as exc:
+        return bad(str(exc))
+    got = _printed_number(printed)
+    if row.get("unrounded") is not None:
+        try:
+            value, source = _unrounded_value(project, row["unrounded"])
+        except ValueError as exc:
+            return bad("unrounded: %s" % exc)
+        if not _rounds_to(value, raw):
+            return bad("the unrounded value %s (%s) does not round to raw %r: it is not the quantity the output "
+                       "stores" % (value, source, raw))
+        want_u = apply_rounding(value, rule, scale)
+        if got != want_u:
+            return bad("printed %r is not %s applied to the unrounded value %s (expected %s; %s)"
+                       % (printed, rule, value, want_u, source))
+        return []
+    if got == want:
+        return []
+    if isinstance(raw, (int, str)) and not isinstance(raw, bool) and "." not in str(raw):
+        return bad("printed %r is not %s applied to raw %r (expected %s)" % (printed, rule, raw, want))
+    k = _decimals(raw)
+    half = Decimal(5).scaleb(-(k + 1))
+    lo = apply_rounding(Decimal(str(raw)) - half, rule, scale)
+    hi = apply_rounding(Decimal(str(raw)) + half, rule, scale)
+    try:
+        possible = got is not None and _decimals(got) == _decimals(want) and Decimal(lo) <= Decimal(got) <= Decimal(hi)
+    except InvalidOperation:
+        possible = False
+    if possible:
+        return bad("printed %r is not %s applied to raw %r (expected %s), but the output file is pre-rounded: raw has "
+                   "%d decimals, and the true values it may stand for print as %s to %s, so the rounding cannot be "
+                   "judged. Add `unrounded` {run, output, pointer} from a run that writes the full-precision value"
+                   % (printed, rule, raw, want, k, lo, hi), "warn")
+    return bad("printed %r is not %s applied to raw %r (expected %s)" % (printed, rule, raw, want))
 
 
 def _check_run(project, rel, lineno, nid, run, row=None):
@@ -1711,60 +2086,65 @@ def _check_evaluation(rel, nid, lineno, row):
 
 
 def _split_disclosure(project, macro_rel):
-    """A macro whose value is a CV, training or validation value must say so where it is used."""
+    """A CV, training or validation value must say so where it is used: through its macro,
+    or typed by hand at a place its row's `where` names."""
     out = []
-    by_macro = {}
-    for nid, (_ln, row) in project.numbers().latest.items():
-        if row.get("macro") and row.get("evaluation") in SPLIT_WORDS:
-            by_macro[row["macro"]] = (nid, row["evaluation"])
-    if not by_macro:
+    if not any(r.get("evaluation") in SPLIT_WORDS for _l, r in project.numbers().latest.values()):
         return out
     for path in project.tex_files():
-        doc = Doc(project, path)
+        doc = project.doc(path)
         if doc.rel == macro_rel:
             continue
-        for start, sent, _cids, line_of in doc.sentences():
-            fid = doc.env[start - 1]
-            context = sent + " " + (doc.captions.get(fid, "") if fid is not None else "")
-            for mm in MACRO_USE_RE.finditer(sent):
-                info = by_macro.get("\\" + mm.group(1))
-                if not info:
+        for sent in doc.sentence_list():
+            fid = doc.env[sent.start - 1]
+            context = sent.text + " " + (doc.captions.get(fid, "") if fid is not None else "")
+            for off, label, nid, row in number_occurrences(project, doc, sent):
+                ev = row.get("evaluation")
+                if ev not in SPLIT_WORDS:
                     continue
-                nid, ev = info
                 if not SPLIT_WORDS[ev].search(context):
-                    out.append(Finding(doc.rel, line_of(mm.start()), "NUM-SPLIT",
-                                       "\\%s (%s) is a %s value, but the sentence/caption does not say so; "
-                                       "a reader will take it for a held-out result" % (mm.group(1), nid, ev)))
-                elif HELDOUT_WORD_RE.search(sent):
-                    out.append(Finding(doc.rel, line_of(mm.start()), "NUM-SPLIT",
-                                       "\\%s (%s) is a %s value in a sentence that also says %r; check that it is "
-                                       "not presented as held-out" % (mm.group(1), nid, ev,
-                                                                       HELDOUT_WORD_RE.search(sent).group(0)), "warn"))
+                    out.append(Finding(doc.rel, sent.line_of(off), "NUM-SPLIT",
+                                       "%s (%s) is a %s value, but the sentence/caption does not say so; "
+                                       "a reader will take it for a held-out result" % (label, nid, ev)))
+                elif HELDOUT_WORD_RE.search(sent.text):
+                    out.append(Finding(doc.rel, sent.line_of(off), "NUM-SPLIT",
+                                       "%s (%s) is a %s value in a sentence that also says %r; check that it is "
+                                       "not presented as held-out" % (label, nid, ev,
+                                                                       HELDOUT_WORD_RE.search(sent.text).group(0)), "warn"))
     return out
 
 
-def _hand_typed_decimals(project, macro_rel):
+def _hand_typed_numbers(project, macro_rel):
+    """NUM-LITERAL (design 6.4 d): hand-typed numbers where results are reported, and every
+    hand-typed value that a row's `where` locates, wherever it is."""
     out = []
+    numbers = project.numbers()
+    links = project.links()
     for path in project.tex_files():
         rel = project.rel(path)
         if rel == macro_rel:
             continue
-        doc = Doc(project, path)
+        doc = project.doc(path)
+        linked = links.numbers.get(doc.path, {})
         for idx, code in enumerate(doc.code):
             lit = LITERAL_RE.search(doc.comment[idx])
             if lit:
                 if not lit.group(1).strip():
                     out.append(Finding(rel, idx + 1, "NUM-LITERAL", "uws:literal needs a reason"))
                 continue
-            if not _decimal_scope(doc, idx):
-                continue
-            stripped = NUM_STRIP_RE.sub(" ", code)
-            for m in DECIMAL_RE.finditer(stripped):
-                if NUM_PREFIX_EXEMPT.search(stripped[:m.start()]) or NUM_SUFFIX_EXEMPT.match(stripped[m.end():]):
-                    continue
-                out.append(Finding(rel, idx + 1, "NUM-LITERAL",
-                                   "hand-typed number %s: use a generated macro from the number ledger, "
-                                   "or mark the line `%% uws:literal <reason>`" % m.group(0)))
+            here = dict(((st, en), nid) for st, en, _t, nid in linked.get(idx + 1, []))
+            in_scope = _number_scope(doc, idx)
+            for st, en, text, _num, reportable in number_tokens(code):
+                nid = here.get((st, en))
+                if nid:
+                    macro = numbers.latest[nid][1].get("macro")
+                    out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                       "hand-typed number %s is %s: use its macro %s, or mark the line "
+                                       "`%% uws:literal <reason>`" % (text, nid, macro or "(it has none yet)")))
+                elif in_scope and reportable:
+                    out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                       "hand-typed number %s: use a generated macro from the number ledger, "
+                                       "or mark the line `%% uws:literal <reason>`" % text))
     return out
 
 
@@ -1772,6 +2152,11 @@ def _hand_typed_decimals(project, macro_rel):
 
 S1_RE = re.compile(r"\b(novel(?:ty)?|state[- ]of[- ]the[- ]art|breakthroughs?|unprecedented|"
                    r"outperform(?:s|ed|ing)?|best|(?:the|a) first|first to|first time)\b", re.I)
+# Fixed idioms in which "best" makes no claim about the work itself. The list is narrow on
+# purpose and matched as whole phrases, never as a broad pattern that could hide a claim;
+# "to the best of our knowledge" is NOT on it, because it usually introduces a novelty
+# claim that needs a verified C-ID.
+S1_IDIOM_RE = re.compile(r"\b(best[- ]practices?|best[- ]effort|best[- ]case|at best)\b", re.I)
 S2_RE = re.compile(r"\b(studies (?:have )?(?:show|shown|suggest|found|demonstrate)\w*|research (?:has )?(?:show|shown)\w*|"
                    r"it is (?:well[- ]known|widely (?:known|accepted|believed|recognized))|"
                    r"researchers have (?:found|shown|argued)|experts (?:agree|say|believe)|"
@@ -1807,9 +2192,12 @@ def check_slop(project, files=None, prose=True, code=True):
             _f, missing = tex_closure(project, tex_main)
             for origin, oline, target in missing:
                 findings.append(Finding(origin, oline, "S4", "\\input target %s does not exist (the manuscript does not build)" % target))
-        prose_files = [f for f in (files or project.prose_files()) if f.endswith((".tex", ".md"))]
+        # The generated macro file is the ledger printed as LaTeX, not prose.
+        macro_file = os.path.abspath(project.path(project.config.get("numbers_tex") or "paper/generated/numbers.tex"))
+        prose_files = [f for f in (files or project.prose_files())
+                       if f.endswith((".tex", ".md")) and os.path.abspath(f) != macro_file]
         for path in prose_files:
-            findings.extend(_slop_prose(project, Doc(project, path)))
+            findings.extend(_slop_prose(project, project.doc(path)))
         if not files:
             findings.extend(_slop_latex_logs(project))
     if code:
@@ -1820,13 +2208,18 @@ def check_slop(project, files=None, prose=True, code=True):
     return findings
 
 
+def s1_match(text):
+    """The first novelty or superlative word of `text` that is not part of an allowed idiom."""
+    idioms = [m.span() for m in S1_IDIOM_RE.finditer(text)]
+    for m in S1_RE.finditer(text):
+        if not any(a <= m.start() and m.end() <= b for a, b in idioms):
+            return m
+    return None
+
+
 def _slop_prose(project, doc):
     out = []
-    numbers = project.numbers()
-    macro_origin = {}
-    for nid, (_ln, row) in numbers.latest.items():
-        if row.get("macro"):
-            macro_origin[row["macro"]] = (nid, row.get("data_origin"))
+    links = project.links().claims.get(doc.path, {})
 
     # S4 placeholders: line level, including comments for the TODO family.
     for idx, code in enumerate(doc.code):
@@ -1836,10 +2229,11 @@ def _slop_prose(project, doc):
             out.append(Finding(doc.rel, idx + 1, "S4", "placeholder %r in a comment" % m.group(0)))
     out.extend(_empty_cells(doc))
 
-    for start, sent, cids, line_of in doc.sentences():
+    for sentence in doc.sentence_list():
+        start, sent, cids, line_of = sentence.start, sentence.text, sentence.cids, sentence.line_of
         rows = [(c, _claim_row(project, c)) for c in sorted(cids)]
         # S1 novelty or superlative words need a verified, non-hypothesis claim.
-        m = S1_RE.search(sent)
+        m = s1_match(sent)
         if m and "candidate contribution" not in sent.lower():
             ok = [c for c, r in rows if r and r.get("status") == "verified" and r.get("category") != "hypothesis"]
             if not ok:
@@ -1860,6 +2254,8 @@ def _slop_prose(project, doc):
                 out.append(Finding(doc.rel, line_of(m.start()), "S6",
                                    "%r claims %s-level evidence, but no C-ID on the sentence has strength >= %s"
                                    % (m.group(0), need, need)))
+        # Ledger numbers in the sentence: macro uses and hand-typed values located by `where`.
+        occurrences = number_occurrences(project, doc, sentence)
         # C3 disclosure: non-measured numbers or claims need a disclosure word nearby.
         disclosed = bool(DISCLOSURE_RE.search(sent))
         if not disclosed:
@@ -1867,24 +2263,29 @@ def _slop_prose(project, doc):
             if fid is not None and DISCLOSURE_RE.search(doc.captions.get(fid, "")):
                 disclosed = True
         if not disclosed:
-            for mm in MACRO_USE_RE.finditer(sent):
-                info = macro_origin.get("\\" + mm.group(1))
-                if info and info[1] in NON_MEASURED:
-                    out.append(Finding(doc.rel, line_of(mm.start()), "C3",
-                                       "\\%s (%s) is %s data but the sentence/caption does not say so"
-                                       % (mm.group(1), info[0], info[1])))
+            for off, label, nid, row in occurrences:
+                if row.get("data_origin") in NON_MEASURED:
+                    out.append(Finding(doc.rel, line_of(off), "C3", "%s (%s) is %s data but the sentence/caption "
+                                       "does not say so" % (label, nid, row.get("data_origin"))))
             for c, r in rows:
                 if r and r.get("data_origin") in NON_MEASURED:
                     out.append(Finding(doc.rel, start, "C3",
                                        "%s rests on %s data but the sentence does not say so" % (c, r.get("data_origin"))))
-        # C6: labels a generator assigned are not ground truth (PROMISE audit).
+        # C6: labels a generator assigned are not ground truth (PROMISE audit). Evidence
+        # tied to the sentence (a C-ID on it, a claim row whose `where` names its line, or a
+        # ledger number in it) blocks; without such a link the only evidence is that some
+        # registered data has generator-rule labels, so it warns.
         m = GROUND_TRUTH_RE.search(sent)
         if m and not GEN_LABEL_DISCLOSURE_RE.search(sent):
-            why = _generated_label_trace(project, sent, rows)
+            linked = set()
+            for ln in sentence.lines:
+                linked |= links.get(ln, set())
+            traced = rows + [(c, _claim_row(project, c)) for c in sorted(linked - set(cids))]
+            why = _generated_label_trace(project, traced, occurrences)
             if why:
                 out.append(Finding(doc.rel, line_of(m.start()), "C6",
                                    "%r, but %s; call them generator-assigned labels" % (m.group(0), why)))
-            elif not rows and not MACRO_USE_RE.search(sent) and _manifest_has_generator_labels(project):
+            elif not traced and not occurrences and _manifest_has_generator_labels(project):
                 out.append(Finding(doc.rel, line_of(m.start()), "C6",
                                    "%r in a sentence with no C-ID or number macro, while the data manifest has "
                                    "generator-rule labels; trace the sentence or qualify the wording" % m.group(0), "warn"))
@@ -1895,19 +2296,20 @@ def _manifest_has_generator_labels(project):
     return any(r.get("labels") == "generator-rule" for _l, r in project.manifest().latest.values())
 
 
-def _generated_label_trace(project, sent, rows):
-    """Why the data behind a sentence is not ground truth, or None."""
+def _generated_label_trace(project, rows, occurrences):
+    """Why the data behind a sentence is not ground truth, or None. `rows` are the claims
+    traced to the sentence, `occurrences` the ledger numbers in it."""
     numbers = project.numbers()
     nids = set()
     for c, r in rows:
+        if r and r.get("labels") == "generator-rule":
+            return "%s records generator-rule labels" % c
         if r and r.get("data_origin") in NON_MEASURED:
             return "%s rests on %s data" % (c, r.get("data_origin"))
         for nid in (r or {}).get("numbers") or []:
             nids.add(nid)
-    macro_to_nid = {row.get("macro"): nid for nid, (_l, row) in numbers.latest.items() if row.get("macro")}
-    for mm in MACRO_USE_RE.finditer(sent):
-        if "\\" + mm.group(1) in macro_to_nid:
-            nids.add(macro_to_nid["\\" + mm.group(1)])
+    for _off, _label, nid, _row in occurrences:
+        nids.add(nid)
     man = project.manifest()
     for nid in sorted(nids):
         item = numbers.latest.get(nid)
@@ -3516,7 +3918,7 @@ def check_retractions(project):
     if retracted:
         cite_re = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{([^}]*)\}")
         for path in project.tex_files():
-            doc = Doc(project, path)
+            doc = project.doc(path)
             for _start, sent, _cids, line_of in doc.sentences():
                 for m in cite_re.finditer(sent):
                     keys = {k.strip() for k in m.group(1).split(",")}
@@ -3577,9 +3979,9 @@ def check_question(project):
     for canon, _names in QUESTION_FIELDS:
         if _empty_field(sections.get(canon)):
             out.append(Finding(rel, label_line.get(canon, 1), "GATE-QUESTION", "'%s' is missing or empty" % canon))
-    doc = Doc(project, path)
+    doc = project.doc(path)
     for _s, sent, _c, line_of in doc.sentences():
-        m = S1_RE.search(sent)
+        m = s1_match(sent)
         if m and "candidate contribution" not in sent.lower():
             out.append(Finding(rel, line_of(m.start()), "S1", "%r in the question: say 'candidate contribution' "
                                "until novelty is established (apocalypt.md P2)" % m.group(0)))
