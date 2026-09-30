@@ -497,6 +497,28 @@ seed_cr_rejections() {
     [ "$status" -eq 0 ]
 }
 
+@test "a retired and restored proposal waits for a new decision and is not measured" {
+    set_pi
+    seed_cr_rejections
+    "$UWS" kb learn >/dev/null
+    local p id
+    p="$(proposal_files)"
+    id="$(field "$p" id)"
+    "$UWS" kb approve "$id" >/dev/null
+    "$UWS" kb retire "$id" "wrong target" >/dev/null
+    run "$UWS" kb restore "$id"
+    [ "$status" -eq 0 ]
+    p="${KB}/items/${id}.md"
+    [ "$(field "$p" status)" = "candidate" ]
+    [ -z "$(field "$p" approved_ts)" ]
+    run "$UWS" kb proposals
+    [[ "$output" == *"Waiting for the PI"*"${id}"* ]]
+    [[ "$output" != *"Adopted, being measured"* ]]
+    run "$UWS" status -v
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"KB: 1 meta-learning proposal awaits the PI"* ]]
+}
+
 @test "learn tracks an approved change and proposes a revert when the metric does not improve" {
     set_pi
     seed_cr_rejections
@@ -615,7 +637,8 @@ seed_cr_rejections() {
 @test "meta-learning scripts are ShellCheck-clean and free of GNU-only / bash 4 constructs" {
     local files=("${PROJECT_ROOT}/scripts/kb.sh" "${PROJECT_ROOT}/scripts/lib/kb_utils.sh"
                  "${PROJECT_ROOT}/scripts/review.sh" "${PROJECT_ROOT}/scripts/orchestrate.sh"
-                 "${PROJECT_ROOT}/scripts/sdlc.sh" "${PROJECT_ROOT}/scripts/lib/hook_context.sh")
+                 "${PROJECT_ROOT}/scripts/sdlc.sh" "${PROJECT_ROOT}/scripts/lib/hook_context.sh"
+                 "${PROJECT_ROOT}/scripts/status.sh")
     if command -v shellcheck >/dev/null 2>&1; then
         run shellcheck -x -e SC1091 -S warning "${files[@]}"
         [ "$status" -eq 0 ]

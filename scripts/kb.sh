@@ -1121,6 +1121,8 @@ cmd_restore() {
     by="$(kb_fm_get "$dst" superseded_by)"
     kb_fm_set "$dst" superseded_by ""
     kb_fm_set "$dst" reviewer ""
+    # A restored proposal waits for a new decision: its old approval no longer counts
+    kb_fm_del "$dst" approved_ts
     # Undo the supersession link so prune (R1) does not retire it again
     for g in "${KB}"/items/*.md "${KB}"/retired/*.md; do
         [[ -f "$g" && "$g" != "$dst" ]] || continue
@@ -1455,7 +1457,7 @@ learn_side_table() {
             if (kb_unq(F["type"]) != "proposal" || kb_unq(F["metric"]) == "") return
             kind = kb_unq(F["proposal_kind"]); if (kind == "") kind = "change"
             appr = kb_unq(F["approved_ts"]); fu = kb_unq(F["followup_ts"])
-            tracking = (kind == "change" && appr != "" && fu == "" && rr !~ /^rejected/) ? 1 : 0
+            tracking = (kind == "change" && appr != "" && fu == "" && st != "candidate" && rr !~ /^rejected/) ? 1 : 0
             open = ((dir == "items" && st == "candidate") || tracking) ? 1 : 0
             printf "P\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", id, open, fmv("metric"), fmv("metric_key"), \
                 fmv("created_ts"), fmv("approved_ts"), fmv("followup_ts"), kind, fmv("metric_before"), fmv("track_key"), tracking
@@ -1970,7 +1972,7 @@ cmd_proposals() {
         if [[ "$f" == "${KB}/items/"* && "$st" == "candidate" ]]; then
             open+="${id} [${metric}|${kind}] $(kb_fm_get "$f" claim)"$'\n'
             open+="    target: $(kb_fm_get "$f" target); details: uws kb show ${id}"$'\n'
-        elif [[ "$kind" == "change" && "$metric" != "manual" && -n "$appr" && -z "$fu" && "$rr" != rejected* ]]; then
+        elif [[ "$kind" == "change" && "$metric" != "manual" && "$st" != "candidate" && -n "$appr" && -z "$fu" && "$rr" != rejected* ]]; then
             tracking+="${id} [${metric}] approved ${appr%%T*}; uws kb learn checks it after ${UWS_KB_LEARN_WINDOW} events"$'\n'
         fi
     done
