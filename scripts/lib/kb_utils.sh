@@ -21,6 +21,8 @@
 #   Meta-learning outcomes (design section 6.2): kb_outcome, kb_outcomes_enabled, kb_head_ref,
 #   kb_agent_model, kb_current_phase, kb_cr_model, kb_record_gate_fail,
 #   kb_record_gate_pass
+#   Increment 2 (design section 18): kb_global_memory_dir, kb_global_dir, kb_global_ready,
+#   kb_guarded, kb_session_id, kb_usage_record
 
 if [[ "${_UWS_KB_UTILS_LOADED:-}" == "true" ]]; then
     return 0 2>/dev/null || true
@@ -317,9 +319,11 @@ kb_actor() {
 
 # The PI identity (an e-mail). `kb: { pi: ... }` in .workflow/config.yaml is
 # authoritative; UWS_KB_PI is used only when the config does not set it.
+# The global KB keeps its own PI in <global kb>/config.yaml ($2).
+# Arguments: $1 - project root, $2 - config file (optional)
 kb_pi_identity() {
-    local root="${1:-.}" cfg v=""
-    cfg="${WORKFLOW_DIR:-${root}/.workflow}/config.yaml"
+    local root="${1:-.}" cfg="${2:-}" v=""
+    [[ -n "$cfg" ]] || cfg="${WORKFLOW_DIR:-${root}/.workflow}/config.yaml"
     if [[ -f "$cfg" ]]; then
         v="$(awk '
             /^[^[:space:]#]/ { insec = ($0 ~ /^kb:/); next }
@@ -464,7 +468,8 @@ kb_outcomes_enabled() {
     root="$(kb_project_root 2>/dev/null)" || return 1
     [[ -n "$root" ]] || return 1
     d="$(kb_dir "$root" 2>/dev/null)" || return 1
-    [[ -n "$d" && -d "$d" ]]
+    [[ -n "$d" && -d "$d" ]] || return 1
+    ! kb_guarded "$d"
 }
 
 # kb_outcome <event> <phase> <role> <model> <subject> <result> <ref>
@@ -478,6 +483,7 @@ kb_outcome() {
     [[ -n "$root" ]] || return 0
     d="$(kb_dir "$root" 2>/dev/null)" || d=""
     [[ -n "$d" && -d "$d" ]] || return 0
+    kb_guarded "$d" && return 0
     case "$KB_OUTCOME_EVENTS" in
         *" ${ev} "*) ;;
         *) echo "uws: not recording unknown outcome event '${ev}'" >&2; return 0 ;;
@@ -607,4 +613,93 @@ kb_record_gate_pass() {
         result+=" ungated"
     fi
     kb_outcome gate_pass "${m}:${from}" - - "${m}:${to}" "$result" "$(kb_head_ref "$(kb_project_root)")"
+}
+
+# ── Increment 2: global KB, test-suite guard, usage log (design section 18) ──
+
+# Directory of the cross-project memory: UWS_GLOBAL_MEMORY_DIR, else
+# global_memory_dir in ~/.config/uws/config.yaml, else ~/uws-global-knowledge
+# (the chain of uws_resolve_global_memory_dir in uws_config.sh). That library
+# changes shell options when sourced, so it runs in a subshell here.
+kb_global_memory_dir() {
+    if [[ -n "${UWS_GLOBAL_MEMORY_DIR:-}" ]]; then
+        printf '%s\n' "$UWS_GLOBAL_MEMORY_DIR"
+        return 0
+    fi
+    local d
+    d="$( ( source "${_KB_UTILS_DIR}/uws_config.sh" >/dev/null 2>&1 && uws_resolve_global_memory_dir ) 2>/dev/null || true )"
+    printf '%s\n' "${d:-${HOME}/uws-global-knowledge}"
+}
+
+# The global KB root: <global memory dir>/kb (design 4.5)
+kb_global_dir() {
+    printf '%s/kb\n' "$(kb_global_memory_dir)"
+}
+
+# Succeeds when <dir> exists and is the top level of its own git repository
+# (design risk 13: global writes are refused otherwise, so every change to the
+# cross-project KB stays auditable and reversible in git).
+kb_global_ready() {
+    local d="$1" top real
+    [[ -n "$d" && -d "$d" ]] || return 1
+    top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" || return 1
+    [[ -n "$top" ]] || return 1
+    real="$(cd "$d" && pwd -P)" || return 1
+    top="$(cd "$top" && pwd -P)" || return 1
+    [[ "$top" == "$real" ]]
+}
+
+# Succeeds when writes into the KB at <dir> must be refused because the test
+# suite is running: tests/helpers/test_helper.bash exports UWS_KB_GUARD_ROOT
+# (the UWS source checkout), and a KB inside that directory belongs to the
+# real project, not to a test fixture. A test that means to write there opts
+# in with UWS_KB_ALLOW_GUARDED_WRITE=1. Without UWS_KB_GUARD_ROOT this never
+# refuses, so projects (UWS itself included) are unaffected outside the tests.
+kb_guarded() {
+    local g="${UWS_KB_GUARD_ROOT:-}" p="${1:-}"
+    [[ -n "$g" && -n "$p" ]] || return 1
+    [[ "${UWS_KB_ALLOW_GUARDED_WRITE:-}" == "1" ]] && return 1
+    g="$(cd "$g" 2>/dev/null && pwd -P)" || return 1
+    while [[ ! -d "$p" && "$p" == */* ]]; do p="${p%/*}"; done
+    [[ -n "$p" ]] || p="/"
+    p="$(cd "$p" 2>/dev/null && pwd -P)" || return 1
+    case "${p}/" in
+        "${g}/"*) return 0 ;;
+    esac
+    return 1
+}
+
+# The session an item retrieval belongs to (R4 counts sessions): UWS_KB_SESSION,
+# else Claude Code's CLAUDE_CODE_SESSION_ID, else the calendar day
+# ("day-<date>", a terminal user's working day). Only [A-Za-z0-9._:-], at most
+# 64 bytes.
+kb_session_id() {
+    local s="${UWS_KB_SESSION:-${CLAUDE_CODE_SESSION_ID:-}}"
+    [[ -n "$s" ]] || s="day-$(kb_today)"
+    printf '%s' "$s" | LC_ALL=C tr -c 'A-Za-z0-9._:-' '_' | cut -c1-64
+}
+
+# kb_usage_record <kb-dir> <via> <id>...: append one row per retrieved item to
+# <kb-dir>/.cache/usage.tsv (gitignored, so usage is per machine; design 5.6):
+#   ts  session  id  via            (via: search | show | task)
+# Best effort: a no-op when the KB has no items directory or is guarded, and a
+# failure prints one line on stderr and returns 0.
+kb_usage_record() {
+    local d="${1:-}" via="${2:-search}" ts sess id rows="" tab
+    [[ $# -ge 3 && -d "${d}/items" ]] || return 0
+    shift 2
+    kb_guarded "$d" && return 0
+    [[ "$via" =~ ^[a-z-]+$ ]] || via="search"
+    ts="$(kb_timestamp)"
+    sess="$(kb_session_id)"
+    tab="$(printf '\t')"
+    for id in "$@"; do
+        [[ "$id" =~ ^K-[0-9]{8}-[0-9a-f]{6,12}$ ]] || continue
+        rows+="${ts}${tab}${sess}${tab}${id}${tab}${via}"$'\n'
+    done
+    [[ -n "$rows" ]] || return 0
+    if ! { mkdir -p "${d}/.cache" && printf '%s' "$rows" >> "${d}/.cache/usage.tsv"; } 2>/dev/null; then
+        echo "uws kb: could not record item usage in ${d}/.cache/usage.tsv (continuing)" >&2
+    fi
+    return 0
 }

@@ -11,6 +11,15 @@ export PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export SCRIPTS_DIR="${PROJECT_ROOT}/scripts"
 export WORKFLOW_DIR="${PROJECT_ROOT}/.workflow"
 
+# Knowledge-base guard (docs/design/knowledge-base.md section 18). Tests that do not
+# call setup_test_environment keep WORKFLOW_DIR above, which points at this checkout,
+# so while tests run the KB library refuses every write (items, outcomes.tsv, the
+# usage log) into a KB inside this checkout. A test that means to write there opts in
+# with UWS_KB_ALLOW_GUARDED_WRITE=1. The global KB never resolves to the user's real
+# one either: tests that need a global KB set their own UWS_GLOBAL_MEMORY_DIR.
+export UWS_KB_GUARD_ROOT="${PROJECT_ROOT}"
+export UWS_GLOBAL_MEMORY_DIR="${BATS_RUN_TMPDIR:-${TMPDIR:-/tmp}}/uws-test-no-global-memory"
+
 # Test-specific directories
 export TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export FIXTURES_DIR="${TEST_DIR}/fixtures"
@@ -47,6 +56,8 @@ setup_test_environment() {
     # This is critical for scripts that use WORKFLOW_DIR to find state files
     WORKFLOW_DIR="${TEST_TMP_DIR}/.workflow"
     export WORKFLOW_DIR
+    # A per-test global memory dir (not created here), removed by teardown
+    export UWS_GLOBAL_MEMORY_DIR="${TEST_TMP_DIR}-global"
 
     # Create a minimal project structure
     mkdir -p "${TEST_TMP_DIR}/.workflow"/{agents,templates}
@@ -70,6 +81,9 @@ setup_test_environment() {
 teardown_test_environment() {
     if [[ -n "${TEST_TMP_DIR}" && -d "${TEST_TMP_DIR}" ]]; then
         rm -rf "${TEST_TMP_DIR}"
+    fi
+    if [[ -n "${TEST_TMP_DIR}" && -d "${TEST_TMP_DIR}-global" ]]; then
+        rm -rf "${TEST_TMP_DIR}-global"
     fi
 }
 

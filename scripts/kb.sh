@@ -12,23 +12,41 @@
 #                              (--escaped-from, lessons only: a bug found after
 #                              PHASE's gate passed; recorded as an `escape` outcome)
 #   search <words> [--type T] [--status S] [--include-stale] [--all] [--limit N]
+#          [--min-terms N] [--scope project|global|all] [-- <words>]
+#                              ranked lines; by default the project KB and the
+#                              global KB together (global hits read global:K-...)
 #   links [--type contradicts|supersedes|supports] <ID | words>
-#   show <ID>                  print one item
+#   show <ID | global:ID>      print one item
 #   verify [<ID> | --changed | --all]
 #                              run checks / compare watched files (never promotes)
 #   recommend <ID> [reason]    record a recommendation for promotion (anyone)
-#   review                     list items waiting for the PI
+#   review [--imported]        list items waiting for the PI (--imported: the
+#                              import triage queue, with flags and triage steps)
 #   approve <ID> [--as EMAIL]  promote to trusted (PI only, not from an agent)
 #   reject <ID> "<why>"        retire a candidate as rejected (PI only)
+#   dispute <ID> --by <ID> ["why"]
+#                              mark an item disputed, citing counter-evidence
 #   pi [--set EMAIL]           show or set the PI identity (kb.pi in config.yaml)
 #   prune [--apply]            apply removal rules R1 R2 R3 R5 (dry run by default)
+#                              and list R4 (unused) retirements for you to confirm
 #   retire <ID> "<reason>"     retire by hand (git mv to retired/)
 #   restore <ID>               bring a retired item back as a candidate
-#   lint                       check invariants I1-I4, I6, I7
+#   lint                       check invariants I1-I4, I6-I8
 #   stats [--short]            counts; rebuilds .cache/stats
 #   learn [--dry-run]          meta-learning: compute metrics from outcomes.tsv and
-#                              write proposal candidates (never applies a change)
+#                              the usage log and write proposal candidates (never
+#                              applies a change)
 #   proposals                  list proposals waiting for the PI and those being tracked
+#   init [--global]            create the project KB, or the global KB as its own
+#                              git repository at <global memory dir>/kb
+#   import vector --db <path> [--scope project|global] [--dry-run]
+#   import automemory --dir <path> [--dry-run]
+#                              turn a vector-memory database or Claude Code auto-memory
+#                              topic files into candidates (sources are only read)
+#
+# Scope: --global (or --scope global) runs a verb on the global KB, and so does
+# an ID written global:K-...; learn and proposals are project-only. Global writes
+# are refused unless the global KB is its own git repository (uws kb init --global).
 #
 # Exit codes: 0 ok; 1 not found / no match / lint violation; 2 invalid or
 # unprovenanced; 3 duplicate; 4 undeclared conflict; 5 a check failed;
@@ -45,7 +63,14 @@
 # UWS_KB_LEARN_MIN_N (5), UWS_KB_LEARN_WINDOW (10 samples per metric, and the
 # events tracked after an approval), UWS_KB_LEARN_ESCAPE_RATE (0.20),
 # UWS_KB_LEARN_CR_REJECT_RATE (0.40), UWS_KB_LEARN_DISPROVEN_RATE (0.25),
-# UWS_KB_LEARN_REPEAT_FAILS (3), UWS_KB_OUTCOME_FIELD_BYTES (500).
+# UWS_KB_LEARN_REPEAT_FAILS (3), UWS_KB_LEARN_UNUSED_SHARE (0.50),
+# UWS_KB_OUTCOME_FIELD_BYTES (500).
+# Global KB and usage (design 18): UWS_GLOBAL_MEMORY_DIR (global memory dir;
+# default from ~/.config/uws/config.yaml, else ~/uws-global-knowledge),
+# UWS_KB_UNUSED_SESSIONS (20) and UWS_KB_UNUSED_MIN_AGE_DAYS (90) for R4,
+# UWS_KB_SESSION (session name for the usage log; default CLAUDE_CODE_SESSION_ID,
+# else the day). Internal: UWS_KB_USAGE_VIA (set by orchestrate.sh), and
+# UWS_KB_GUARD_ROOT / UWS_KB_ALLOW_GUARDED_WRITE (set by the test suite).
 
 set -euo pipefail
 
@@ -69,9 +94,55 @@ UWS_KB_LEARN_ESCAPE_RATE="${UWS_KB_LEARN_ESCAPE_RATE:-0.20}"
 UWS_KB_LEARN_CR_REJECT_RATE="${UWS_KB_LEARN_CR_REJECT_RATE:-0.40}"
 UWS_KB_LEARN_DISPROVEN_RATE="${UWS_KB_LEARN_DISPROVEN_RATE:-0.25}"
 UWS_KB_LEARN_REPEAT_FAILS="${UWS_KB_LEARN_REPEAT_FAILS:-3}"
+UWS_KB_LEARN_UNUSED_SHARE="${UWS_KB_LEARN_UNUSED_SHARE:-0.50}"
+UWS_KB_UNUSED_SESSIONS="${UWS_KB_UNUSED_SESSIONS:-20}"
+UWS_KB_UNUSED_MIN_AGE_DAYS="${UWS_KB_UNUSED_MIN_AGE_DAYS:-90}"
 # UWS installation (scripts/..): where proposal targets such as scripts/sdlc.sh
 # or docs/personas/ live when they are not part of the project itself
 UWS_HOME="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Scope (design 4.5, section 18). project: KB = docs/kb of the project. global:
+# KB = <global memory dir>/kb, which is its own git repository, so ROOT (where
+# sources resolve and git runs) is the KB itself. PROJ_ROOT stays the project
+# the command runs in (used to keep project paths out of global claims).
+SCOPE="project"
+PROJ_ROOT="$ROOT"
+PI_CFG="${WORKFLOW_DIR:-${ROOT}/.workflow}/config.yaml"
+GLOBAL_KB_CACHE=""
+
+global_kb() {
+    [[ -n "$GLOBAL_KB_CACHE" ]] || GLOBAL_KB_CACHE="$(kb_global_dir)"
+    printf '%s\n' "$GLOBAL_KB_CACHE"
+}
+
+select_global() {
+    SCOPE="global"
+    KB="$(global_kb)"
+    ROOT="$KB"
+    PI_CFG="${KB}/config.yaml"
+}
+
+# How IDs of this KB are shown, so commands run from a project reach it
+id_prefix() { [[ "$SCOPE" == "global" ]] && printf 'global:'; return 0; }
+scope_flag() { [[ "$SCOPE" == "global" ]] && printf ' --global'; return 0; }
+
+# Refuse to write a KB that must not be written: one inside the UWS source
+# checkout while the test suite runs, or a global KB that is not its own git
+# repository (design risk 13).
+require_writable() {
+    if kb_guarded "$KB"; then
+        die 2 "refusing to write the KB at ${KB}: it is inside the UWS source checkout and the test suite is running (UWS_KB_GUARD_ROOT); a test opts in with UWS_KB_ALLOW_GUARDED_WRITE=1"
+    fi
+    if [[ "$SCOPE" == "global" ]] && ! kb_global_ready "$KB"; then
+        die 2 "the global KB at ${KB} is not its own git repository, so it is not written (design risk 13); run: uws kb init --global"
+    fi
+}
+
+# Local caches (.cache/stats, .cache/usage.tsv) are written only where a KB write is allowed
+cache_writable() {
+    kb_guarded "$KB" && return 1
+    [[ "$SCOPE" != "global" ]] || kb_global_ready "$KB"
+}
 
 TYPES="fact decision lesson anti-pattern question hypothesis proposal"
 EVIDENCES="verified observed reported inferred"
@@ -151,6 +222,8 @@ move_file() {
 
 rebuild_stats_cache() {
     local t s x c r
+    cache_writable || return 0
+    [[ -d "$KB" ]] || return 0
     read -r t s x c r <<EOF
 $(kb_counts "$KB")
 EOF
@@ -182,7 +255,7 @@ retire_code() {
     case "$r" in
         superseded-by:*) printf 'superseded-by\t%s\n' "${r#superseded-by:}" ;;
         disproven-by:*)  printf 'disproven-by\t%s\n' "${r#disproven-by:}" ;;
-        disproven|expired|unpromoted) printf '%s\t-\n' "$r" ;;
+        disproven|expired|unpromoted|unused) printf '%s\t-\n' "$r" ;;
         rejected|rejected:*) printf 'rejected\t-\n' ;;
         graduated:*)     printf 'graduated\t-\n' ;;
         *)               printf 'manual\t-\n' ;;
@@ -203,6 +276,8 @@ retire_item() {  # retire_item <id> <reason>
     kb_fm_set "$dst" retired_at "$TODAY"
     kb_fm_set "$dst" retired_reason "$(kb_quote "$(kb_oneline "$reason")")"
     set_status "$dst" retired "$reason"
+    # outcomes.tsv records this project's process; global retirements are not part of it
+    [[ "$SCOPE" == "project" ]] || return 0
     IFS="$TAB" read -r code rel <<EOF
 $(retire_code "$reason")
 EOF
@@ -301,6 +376,40 @@ secret_scan() {
     return 1
 }
 
+# project_path_in <text>: print the first project or home path the text names
+# (global claims must not; design 4.2) and succeed, else fail. A path is
+# "~/..." or "$HOME...", an absolute path under /home, /Users, /root, $HOME or
+# the project, or a relative path with a slash that exists in the project the
+# command runs in. URLs are not paths.
+project_path_in() {
+    local tok rel root="$PROJ_ROOT" rp="" home="${HOME:-}"
+    [[ -n "$root" && -d "$root" ]] && rp="$(cd "$root" && pwd -P)"
+    while IFS= read -r tok; do
+        tok="${tok%[.:!?]}"
+        [[ -n "$tok" ]] || continue
+        case "$tok" in
+            *://*) continue ;;
+            \~/*|\$HOME*) printf '%s\n' "$tok"; return 0 ;;
+            /*)
+                case "$tok" in /home/?*|/Users/?*|/root/*) printf '%s\n' "$tok"; return 0 ;; esac
+                if [[ -n "$home" && "$home" != "/" && ( "$tok" == "$home" || "$tok" == "$home"/* ) ]] \
+                   || [[ -n "$root" && ( "$tok" == "$root" || "$tok" == "$root"/* ) ]] \
+                   || [[ -n "$rp" && ( "$tok" == "$rp" || "$tok" == "$rp"/* ) ]]; then
+                    printf '%s\n' "$tok"; return 0
+                fi
+                ;;
+            */*)
+                rel="${tok#./}"
+                case "$rel" in ../*|*/../*|..) continue ;; esac
+                if [[ -n "$root" && -n "$rel" && -e "${root}/${rel}" ]]; then printf '%s\n' "$tok"; return 0; fi
+                ;;
+        esac
+    done <<EOF
+$(printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._/~$:+@-' '\n')
+EOF
+    return 1
+}
+
 # Refuse obviously destructive checks; review of the diff is the real control.
 check_denied() {
     printf '%s' "$1" | grep -Eq '(^|[;&|[:space:]])(rm|sudo|mkfs|shutdown|reboot)([[:space:]]|$)|git[[:space:]]+push|(curl|wget)[^|]*\||dd[[:space:]]+if=|>[[:space:]]*/dev/(sd|disk|nvme)'
@@ -377,7 +486,11 @@ EOF
 
 # Formats matching items as "score<TAB>id<TAB>line". Environment in:
 # KBQ (query words), KBSTAT (|status|... filter), KBTYPE, KBONLY (|id|... or
-# empty), KBLINK (link type that must be present, or empty), KBTODAY.
+# empty), KBLINK (link type that must be present, or empty), KBTODAY,
+# KBPRE (prefix of shown IDs: "global:" for the global KB), KBMINM (an item
+# must contain at least this many distinct query words; capped at their number).
+# Common function words are dropped from the query unless it has nothing else,
+# so a sentence (a subagent's task) matches on its content words.
 # shellcheck disable=SC2016
 KB_AWK_SEARCH='
 function powi(b, n,    r) {   # b^n for integer n >= 0 (no exp/log: some awks lack math)
@@ -393,8 +506,12 @@ function trunc(s, n,    c) {
     return s "..."
 }
 BEGIN {
-    nq = split(tolower(ENVIRON["KBQ"]), raw, /[^a-z0-9_.-]+/); q = 0
-    for (i = 1; i <= nq; i++) if (length(raw[i]) >= 2 && !(raw[i] in seen)) { seen[raw[i]] = 1; Q[++q] = raw[i] }
+    ns = split("a an the and or of to in on at by for from with into onto about as is are was were be been being it its this that these those there here then than so but if not no nor do does did done we you they he she i me my our your their them us can could will would shall should may might must has have had what which who whom whose how when where why all any each some such via per vs etc also just only very", sw, " ")
+    for (i = 1; i <= ns; i++) STOP[sw[i]] = 1
+    nq = split(tolower(ENVIRON["KBQ"]), raw, /[^a-z0-9_.-]+/); q = 0; nall = 0
+    for (i = 1; i <= nq; i++) if (length(raw[i]) >= 2 && !(raw[i] in seen)) { seen[raw[i]] = 1; ALL[++nall] = raw[i]; if (!(raw[i] in STOP)) Q[++q] = raw[i] }
+    if (q == 0) for (i = 1; i <= nall; i++) Q[++q] = ALL[i]
+    minm = ENVIRON["KBMINM"] + 0; if (minm < 1) minm = 1; if (minm > q) minm = q
     today = kb_days(ENVIRON["KBTODAY"]); cap = ENVIRON["KBITEM"] + 0
     trust["verified"] = 1.0; trust["reported"] = 0.75; trust["observed"] = 0.6; trust["inferred"] = 0.3
 }
@@ -414,9 +531,10 @@ function kb_emit(    id, st, ty, ev, claim, hay, m, i, rel, d, rec, score, src, 
     if (q > 0) {
         hay = tolower(claim " " F["tags"] " " BODY " " id); m = 0
         for (i = 1; i <= q; i++) if (index(hay, Q[i]) > 0) m++
-        if (m == 0) return
+        if (m == 0 || m < minm) return
         rel = m / q
     }
+    id = ENVIRON["KBPRE"] id
     when = kb_unq(F["verified_at"]); if (when == "") when = kb_unq(F["created"])
     d = kb_days(when); rec = (d < 0 || today < 0) ? 0 : powi(0.995, today - d)
     if (rec > 1) rec = 1
@@ -433,21 +551,54 @@ function kb_emit(    id, st, ty, ev, claim, hay, m, i, rel, d, rec, score, src, 
 }
 '
 
-# search_lines <status-filter> <type> <only-ids> <link> <query...>: ranked
-# lines, unbudgeted, best first.
-search_lines() {
-    local stat="$1" type="$2" only="$3" link="$4"; shift 4
+# search_scored <kb-dir> <id-prefix> <status-filter> <type> <only-ids> <link>
+# <query...>: "score<TAB>id<TAB>line" per matching item of one KB, unsorted.
+# SEARCH_MIN_TERMS (default 1) is the number of query words an item must contain.
+SEARCH_MIN_TERMS=1
+search_scored() {
+    local kbd="$1" pre="$2" stat="$3" type="$4" only="$5" link="$6"; shift 6
     local -a files=()
     local f
-    for f in "${KB}"/items/*.md; do [[ -f "$f" ]] && files+=("$f"); done
+    for f in "${kbd}"/items/*.md; do [[ -f "$f" ]] && files+=("$f"); done
     if [[ "$stat" == *"|retired|"* ]]; then
-        for f in "${KB}"/retired/*.md; do [[ -f "$f" ]] && files+=("$f"); done
+        for f in "${kbd}"/retired/*.md; do [[ -f "$f" ]] && files+=("$f"); done
     fi
     [[ ${#files[@]} -gt 0 ]] || return 0
     KBQ="$*" KBSTAT="$stat" KBTYPE="$type" KBONLY="$only" KBLINK="$link" KBTODAY="$TODAY" \
-        KBITEM="$UWS_KB_ITEM_BYTES" LC_ALL=C \
-        awk "${KB_AWK_DATE}${KB_AWK_VALUES}${KB_AWK_SEARCH}${KB_AWK_ITEMS}" "${files[@]}" \
-        | LC_ALL=C sort -t "$TAB" -k1,1r -k2,2 | cut -f3-
+        KBITEM="$UWS_KB_ITEM_BYTES" KBPRE="$pre" KBMINM="$SEARCH_MIN_TERMS" LC_ALL=C \
+        awk "${KB_AWK_DATE}${KB_AWK_VALUES}${KB_AWK_SEARCH}${KB_AWK_ITEMS}" "${files[@]}"
+}
+
+rank() { LC_ALL=C sort -t "$TAB" -k1,1r -k2,2 | cut -f3-; }
+
+# search_lines <status-filter> <type> <only-ids> <link> <query...>: ranked
+# lines of the current KB, unbudgeted, best first.
+search_lines() {
+    search_scored "$KB" "$(id_prefix)" "$@" | rank
+}
+
+# Record that items were retrieved (design 5.6, R4): IDs are the first word of
+# each output line; global:K-... lines are recorded in the global KB.
+record_usage() {
+    local via="$1" lines="$2" line id g
+    local -a mine=() glob=()
+    while IFS= read -r line; do
+        id="${line%% *}"
+        case "$id" in
+            global:K-*) glob+=("${id#global:}") ;;
+            K-*) mine+=("$id") ;;
+        esac
+    done <<EOF
+$lines
+EOF
+    if [[ ${#mine[@]} -gt 0 ]] && cache_writable; then
+        kb_usage_record "$KB" "$via" "${mine[@]}"
+    fi
+    if [[ ${#glob[@]} -gt 0 ]]; then
+        g="$(global_kb)"
+        if kb_global_ready "$g"; then kb_usage_record "$g" "$via" "${glob[@]}"; fi
+    fi
+    return 0
 }
 
 # Apply the output budget: <= limit lines, each <= UWS_KB_ITEM_BYTES bytes,
@@ -471,8 +622,10 @@ status_filter_for() {  # status_filter_for <status|""> <include-stale> <all>
     printf '|trusted|'
 }
 
+# search: the project KB and, unless --scope project, the global KB, ranked
+# together and cut to the same budget (design 5.3); global hits read global:K-...
 cmd_search() {
-    local type="" status="" stale=false all=false limit="$UWS_KB_SEARCH_LIMIT"
+    local type="" status="" stale=false all=false limit="$UWS_KB_SEARCH_LIMIT" minm=1
     local -a words=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -481,20 +634,35 @@ cmd_search() {
             --include-stale) stale=true; shift ;;
             --all) all=true; shift ;;
             --limit) limit="${2:-}"; shift 2 ;;
+            --min-terms) minm="${2:-}"; shift 2 ;;
+            --) shift; words+=("$@"); break ;;
             -*) die 2 "search: unknown option $1" ;;
             *) words+=("$1"); shift ;;
         esac
     done
     [[ ${#words[@]} -gt 0 ]] || die 2 "search: give one or more words"
     is_uint "$limit" || die 2 "search: --limit must be a number"
+    is_uint "$minm" || die 2 "search: --min-terms must be a number"
     (( limit > UWS_KB_SEARCH_LIMIT )) && limit="$UWS_KB_SEARCH_LIMIT"
     [[ -z "$type" ]] || word_in "$type" "$TYPES" || die 2 "search: unknown type '$type'"
     [[ -z "$status" ]] || word_in "$status" "candidate trusted stale disputed retired" \
         || die 2 "search: unknown status '$status'"
-    local out
-    out="$(search_lines "$(status_filter_for "$status" "$stale" "$all")" "$type" "" "" "${words[@]}" | budget "$limit")"
+    SEARCH_MIN_TERMS="$minm"
+    local out filter g
+    filter="$(status_filter_for "$status" "$stale" "$all")"
+    if [[ "$SEARCH_SCOPE" == "all" ]]; then
+        g="$(global_kb)"
+        out="$( { search_scored "$KB" "" "$filter" "$type" "" "" "${words[@]}"
+                  if [[ "$g" != "$KB" ]]; then search_scored "$g" "global:" "$filter" "$type" "" "" "${words[@]}"; fi
+                } | rank | budget "$limit")"
+    else
+        out="$(search_lines "$filter" "$type" "" "" "${words[@]}" | budget "$limit")"
+    fi
     [[ -n "$out" ]] || exit 1
     printf '%s\n' "$out"
+    local via="${UWS_KB_USAGE_VIA:-search}"
+    [[ "$via" =~ ^[a-z-]+$ ]] || via="search"
+    record_usage "$via" "$out"
 }
 
 cmd_links() {
@@ -535,7 +703,16 @@ EOF
 
 cmd_show() {
     [[ $# -eq 1 ]] || die 2 "show: give one item ID"
-    cat "$(require_item "$1")"
+    local p
+    p="$(kb_item_path "$KB" "$1" || true)"
+    # An ID not in the project KB may be a global one written without its prefix
+    if [[ -z "$p" && "$SCOPE" == "project" ]] && p="$(kb_item_path "$(global_kb)" "$1")"; then
+        select_global
+    fi
+    [[ -n "$p" ]] || die 1 "no such item: $1"
+    cat "$p"
+    [[ "$p" == "${KB}/items/"* ]] && record_usage show "$(id_prefix)$1"
+    return 0
 }
 
 # ── add ─────────────────────────────────────────────────────────────────────
@@ -592,7 +769,7 @@ normalize_phase() {
 
 cmd_add() {
     local type="" claim="" evidence="" check="" author="" tags_raw="" falsifier="" body="" quote=""
-    local scope="project" no_conflict=false escaped_from=""
+    local no_conflict=false escaped_from=""
     local -a sources=() watches=() supersedes=() contradicts=()
     while [[ $# -gt 0 ]]; do
         [[ "$1" == --* && "$1" != "--no-conflict" && $# -lt 2 ]] && die 2 "add: $1 needs a value"
@@ -611,7 +788,6 @@ cmd_add() {
             --falsifier) falsifier="$2"; shift 2 ;;
             --body) body="$2"; shift 2 ;;
             --quote) quote="$2"; shift 2 ;;
-            --scope) scope="$2"; shift 2 ;;
             --escaped-from) escaped_from="$2"; shift 2 ;;
             --reviewer) die 2 "add: --reviewer is not accepted; the reviewer is recorded by 'approve' (PI only)" ;;
             *) die 2 "add: unknown argument '$1'" ;;
@@ -619,7 +795,6 @@ cmd_add() {
     done
 
     # ── Field validation (exit 2) ──
-    [[ "$scope" == "project" ]] || die 2 "add: only --scope project exists in this version (global KB is increment 2)"
     [[ -n "$type" ]] || die 2 "add: --type is required ($TYPES)"
     word_in "$type" "$TYPES" || die 2 "add: unknown type '$type' ($TYPES)"
     [[ -n "$claim" ]] || die 2 "add: --claim is required"
@@ -642,6 +817,13 @@ cmd_add() {
         ef="$(normalize_phase "$escaped_from")"
         [[ -n "$ef" ]] || die 2 "add: --escaped-from: unknown phase '${escaped_from}' (e.g. verification, sdlc:verification, research:analysis)"
         escaped_from="$ef"
+        [[ "$SCOPE" == "project" ]] || die 2 "add: --escaped-from records a gate escape of this project; use it in the project KB, not the global one"
+    fi
+    if [[ "$SCOPE" == "global" ]]; then
+        local hit_path
+        if hit_path="$(project_path_in "$claim")"; then
+            die 2 "add: a global claim must not name a project or home path (${hit_path}); keep project facts in the project KB"
+        fi
     fi
     if [[ -n "$check" ]]; then
         case "$check" in *$'\n'*) die 2 "add: --check must be one line" ;; esac
@@ -692,6 +874,7 @@ EOF
             done ;;
     esac
 
+    require_writable
     ensure_kb
     local -a resolved=()
     local r err
@@ -781,7 +964,7 @@ EOF
         echo "---"
         echo "id: ${id}"
         echo "type: ${type}"
-        echo "scope: project"
+        echo "scope: ${SCOPE}"
         echo "status: candidate"
         echo "claim: $(kb_quote "$claim")"
         echo "evidence: ${evidence}"
@@ -894,6 +1077,7 @@ verify_one() {
 cmd_verify() {
     local target="${1:---all}" f
     [[ -d "${KB}/items" ]] || { echo "No KB at ${KB}"; return 0; }
+    require_writable
     VERIFY_START="$(date +%s)"
     case "$target" in
         --changed|--all)
@@ -924,7 +1108,7 @@ pi_gate() {
     if ctx="$(kb_agent_context)"; then
         die 6 "${verb}: refused: running inside an AI agent (${ctx} is set). Only the PI may promote; run this in your own terminal. Agents may use 'uws kb recommend'."
     fi
-    pi="$(kb_pi_identity "$ROOT")"
+    pi="$(kb_pi_identity "$ROOT" "$PI_CFG")"
     [[ -n "$pi" ]] || die 6 "${verb}: refused: no PI configured. The PI runs: uws kb pi --set <your git e-mail>"
     email="$(kb_git_email "$ROOT")"
     if [[ -n "$as" && "$(kb_lower "$as")" != "$(kb_lower "$pi")" ]]; then
@@ -955,6 +1139,7 @@ cmd_approve() {
     [[ "$f" == "${KB}/items/"* ]] || die 1 "approve: ${id} is retired; restore it first"
     st="$(kb_fm_get "$f" status)"
     pi="$(pi_gate approve "$AS_VALUE")"
+    require_writable
     if [[ "$st" == "trusted" ]]; then echo "${id}: already trusted"; return 0; fi
     ev="$(kb_fm_get "$f" evidence)"
     check="$(kb_fm_get "$f" check)"
@@ -962,6 +1147,10 @@ cmd_approve() {
     while IFS= read -r s; do
         [[ -n "$s" ]] || continue
         case "$s" in
+            import:*)
+                # An import is a lead, not evidence (design 18): the PI restates it
+                die 2 "approve: ${id} rests on an import (${s}), a lead to verify, not evidence. Restate it with a resolvable source (uws kb add ...$(scope_flag) --supersedes $(id_prefix)${id}) and approve the new item; see uws kb review --imported$(scope_flag)"
+                ;;
             file:*@*)
                 local p="${s#file:}"; p="${p%@*}"
                 [[ "$p" =~ :[0-9]+(-[0-9]+)?$ ]] && p="${p%:*}"
@@ -982,17 +1171,17 @@ EOF
     elif [[ "$ev" == "verified" ]]; then
         die 2 "approve: verified evidence without a check"
     fi
-    # The PI's approval settles contradictions: trusted items this one
-    # contradicts are retired as disproven (design 5.5).
+    # The PI's approval settles contradictions: active items this one
+    # contradicts (trusted, stale, disputed or candidate) are retired as
+    # disproven (design 5.5; section 18 extends it beyond trusted items so the
+    # PI's triage of an import settles it in one step).
     local l lf
     while IFS= read -r l; do
         [[ -n "$l" ]] || continue
         lf="${KB}/items/${l}.md"
         [[ -f "$lf" ]] || continue
-        if [[ "$(kb_fm_get "$lf" status)" == "trusted" ]]; then
-            retire_item "$l" "disproven-by:${id}"
-            echo "${l}: retired (disproven-by:${id})"
-        fi
+        retire_item "$l" "disproven-by:${id}"
+        echo "$(id_prefix)${l}: retired (disproven-by:${id})"
     done <<EOF
 $(kb_list_parse "$(kb_fm_raw "$f" contradicts)")
 EOF
@@ -1010,14 +1199,18 @@ EOF
     fi
     set_status "$f" trusted "approved-by-pi"
     rebuild_stats_cache
-    echo "${id}: ${st} -> trusted (approved by ${pi})"
+    echo "$(id_prefix)${id}: ${st} -> trusted (approved by ${pi})"
     if [[ "$is_proposal" == "true" ]]; then
         local tgt
         tgt="$(kb_fm_get "$f" target)"
         echo "Acceptance recorded; nothing was changed${tgt:+ in ${tgt}}."
         echo "Apply the change in the item's body through a change request (uws kb show ${id})."
         if [[ "$(kb_fm_get "$f" proposal_kind)" == "change" ]]; then
-            echo "uws kb learn will measure $(kb_fm_get "$f" metric) over the next ${UWS_KB_LEARN_WINDOW:-10} events and propose a revert if it does not improve."
+            if [[ "$(kb_fm_get "$f" metric)" == "r4-unused-share" ]]; then
+                echo "uws kb learn will measure r4-unused-share over the next ${UWS_KB_UNUSED_SESSIONS} sessions on this machine and propose a revert if it does not improve."
+            else
+                echo "uws kb learn will measure $(kb_fm_get "$f" metric) over the next ${UWS_KB_LEARN_WINDOW:-10} events and propose a revert if it does not improve."
+            fi
         fi
     fi
 }
@@ -1028,9 +1221,10 @@ cmd_reject() {
     local id="${REST_ARGS[0]}" why="${REST_ARGS[*]:1}"
     [[ -f "${KB}/items/${id}.md" ]] || die 1 "reject: not an active item: ${id}"
     pi_gate reject "$AS_VALUE" >/dev/null
+    require_writable
     retire_item "$id" "rejected:${why}"
     rebuild_stats_cache
-    echo "${id}: retired (rejected)"
+    echo "$(id_prefix)${id}: retired (rejected)"
 }
 
 cmd_recommend() {
@@ -1040,6 +1234,7 @@ cmd_recommend() {
     [[ -f "$f" ]] || die 1 "recommend: not an active item: ${id}"
     st="$(kb_fm_get "$f" status)"
     [[ "$st" != "trusted" ]] || die 2 "recommend: ${id} is already trusted"
+    require_writable
     actor="$(kb_actor "$ROOT")"
     cur="$(kb_list_parse "$(kb_fm_raw "$f" recommended_by)")"
     if ! printf '%s\n' "$cur" | grep -qxF -- "$actor"; then
@@ -1047,21 +1242,53 @@ cmd_recommend() {
         kb_fm_set "$f" recommended_by "$(kb_list_format $cur "$actor")"
     fi
     kb_event "$KB" "$id" "$st" "$st" "recommend${why:+:$why}" "$actor"
-    echo "${id}: recommendation recorded; only the PI can promote it (uws kb approve ${id})"
+    echo "$(id_prefix)${id}: recommendation recorded; only the PI can promote it (uws kb approve $(id_prefix)${id})"
 }
 
+# review [--imported]: the PI's queue. --imported lists only imported
+# candidates (captured_by import) with their source and flags, then the triage
+# steps (design section 18): an import is a lead and is never approved as is.
 cmd_review() {
-    local f any=false id st ev cs rec
+    local imported=false
+    case "$#:${1:-}" in
+        0:) ;;
+        1:--imported) imported=true ;;
+        *) die 2 "review: use 'review' or 'review --imported'" ;;
+    esac
+    local f any=false id st ev cs rec flags cb pre sf detail
+    pre="$(id_prefix)"; sf="$(scope_flag)"
     for f in "${KB}"/items/*.md; do
         [[ -f "$f" ]] || continue
         st="$(kb_fm_get "$f" status)"
         [[ "$st" == "trusted" ]] && continue
+        cb="$(kb_fm_get "$f" captured_by)"
+        [[ "$imported" != "true" || "$cb" == import* ]] || continue
         any=true
         id="$(kb_fm_get "$f" id)"; ev="$(kb_fm_get "$f" evidence)"; cs="$(kb_fm_get "$f" check_status)"
         rec="$(kb_list_parse "$(kb_fm_raw "$f" recommended_by)" | tr '\n' ',' | sed 's/,$//')"
-        printf '%s [%s|%s|check:%s|recommended:%s] %s\n' "$id" "$st" "${ev:--}" "${cs:-none}" "${rec:-none}" \
-            "$(kb_fm_get "$f" claim)"
+        flags="$(kb_list_parse "$(kb_fm_raw "$f" flags)" | tr '\n' ',' | sed 's/,$//')"
+        printf '%s%s [%s|%s|check:%s|recommended:%s%s] %s\n' "$pre" "$id" "$st" "${ev:--}" "${cs:-none}" "${rec:-none}" \
+            "${flags:+|flags:${flags}}" "$(kb_fm_get "$f" claim)"
+        if [[ "$imported" == "true" ]]; then
+            detail="$(kb_fm_get "$f" flag_detail)"
+            printf '    from %s%s\n' "$(kb_list_parse "$(kb_fm_raw "$f" source)" | head -1)" "${detail:+; ${detail}}"
+        fi
     done
+    if [[ "$imported" == "true" ]]; then
+        [[ "$any" == "true" ]] || echo "No imported items wait for triage."
+        printf '%s\n' \
+            "Triage (the PI; docs/design/knowledge-base.md section 18). An import is a lead, not evidence," \
+            "and approve refuses it; nothing retires it automatically while it waits here (decision D6)." \
+            "  keep or correct:  uws kb add${sf} --type <T> --claim \"<the claim, corrected if needed>\" \\" \
+            "                      --evidence <E> --source <resolvable source> --supersedes <ID>" \
+            "                    then, in your own terminal: uws kb approve <new ID>" \
+            "  refute:           uws kb add${sf} --type fact --claim \"<what is true>\" --evidence reported \\" \
+            "                      --source url:<page> --quote \"<verbatim text>\" --contradicts <ID>" \
+            "                    uws kb dispute <ID> --by <new ID>; then uws kb approve <new ID>" \
+            "                    (the approval retires <ID> as disproven-by:<new ID>)" \
+            "  drop:             uws kb reject <ID> \"<why>\""
+        return 0
+    fi
     [[ "$any" == "true" ]] || echo "Nothing to review."
     echo "Promote: uws kb approve <ID> (PI only, own terminal). Reject: uws kb reject <ID> \"<why>\"."
 }
@@ -1073,7 +1300,8 @@ cmd_pi() {
         if ctx="$(kb_agent_context)"; then
             die 6 "pi --set: refused inside an AI agent (${ctx} is set); run it in your own terminal"
         fi
-        cfg="${WORKFLOW_DIR:-${ROOT}/.workflow}/config.yaml"
+        require_writable
+        cfg="$PI_CFG"
         mkdir -p "$(dirname "$cfg")"
         [[ -f "$cfg" ]] || : > "$cfg"
         tmp="$(mktemp "${cfg}.XXXXXX")"
@@ -1095,8 +1323,8 @@ cmd_pi() {
     fi
     [[ $# -eq 0 ]] || die 2 "pi: use 'pi' or 'pi --set <email>'"
     local pi
-    pi="$(kb_pi_identity "$ROOT")"
-    if [[ -n "$pi" ]]; then echo "$pi"; else echo "No PI configured (uws kb pi --set <email>)"; return 1; fi
+    pi="$(kb_pi_identity "$ROOT" "$PI_CFG")"
+    if [[ -n "$pi" ]]; then echo "$pi"; else echo "No PI configured (uws kb pi --set <email>$(scope_flag))"; return 1; fi
 }
 
 # ── retire / restore / prune ────────────────────────────────────────────────
@@ -1105,9 +1333,10 @@ cmd_retire() {
     [[ $# -ge 2 ]] || die 2 "retire: give an item ID and a reason"
     local id="$1" why="${*:2}"
     [[ -f "${KB}/items/${id}.md" ]] || die 1 "retire: not an active item: ${id}"
+    require_writable
     retire_item "$id" "$why"
     rebuild_stats_cache
-    echo "${id}: retired (${why})"
+    echo "$(id_prefix)${id}: retired (${why})"
 }
 
 cmd_restore() {
@@ -1115,6 +1344,7 @@ cmd_restore() {
     local id="$1" src="${KB}/retired/${1}.md" dst="${KB}/items/${1}.md" by g cur rest
     [[ -f "$src" ]] || die 1 "restore: not a retired item: ${id}"
     [[ -e "$dst" ]] && die 2 "restore: items/${id}.md already exists"
+    require_writable
     move_file "$src" "$dst"
     kb_fm_del "$dst" retired_at
     kb_fm_del "$dst" retired_reason
@@ -1136,7 +1366,145 @@ cmd_restore() {
     done
     set_status "$dst" candidate "restored${by:+ (was superseded-by:$by)}"
     rebuild_stats_cache
-    echo "${id}: restored as candidate"
+    echo "$(id_prefix)${id}: restored as candidate"
+}
+
+# dispute <ID> --by <counter-ID> ["why"]: mark an active item disputed, citing
+# an active item that contradicts it (links both ways). A demotion, open to
+# anyone like a failing check; a trusted item is disputed only by a trusted
+# counter-item (design 5.1). The PI settles it: approving the counter-item
+# retires this one as disproven-by (cmd_approve); otherwise R2 retires it
+# after UWS_KB_DISPUTE_DAYS. It is also the triage step for a wrong import.
+cmd_dispute() {
+    local id="" by="" why="" f g st gst gev cur
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --by) by="${2:-}"; [[ -n "$by" ]] || die 2 "dispute: --by needs an item ID"; shift 2 ;;
+            -*) die 2 "dispute: unknown option $1" ;;
+            *) if [[ -z "$id" ]]; then id="$1"; else why="${why:+$why }$1"; fi; shift ;;
+        esac
+    done
+    [[ -n "$id" && -n "$by" ]] || die 2 "dispute: use dispute <ID> --by <counter-evidence ID> [\"why\"]"
+    [[ "$id" != "$by" ]] || die 2 "dispute: an item cannot dispute itself"
+    f="${KB}/items/${id}.md"; g="${KB}/items/${by}.md"
+    [[ -f "$f" ]] || die 1 "dispute: not an active item: ${id}"
+    [[ -f "$g" ]] || die 1 "dispute: the counter-evidence ${by} is not an active item"
+    st="$(kb_fm_get "$f" status)"; gst="$(kb_fm_get "$g" status)"; gev="$(kb_fm_get "$g" evidence)"
+    case "$gev" in
+        verified|observed|reported) ;;
+        *) die 2 "dispute: the counter-evidence must be verified, observed or reported (${by} is ${gev:-a question})" ;;
+    esac
+    [[ "$gst" != "disputed" ]] || die 2 "dispute: the counter-evidence ${by} is itself disputed"
+    if [[ "$st" == "trusted" && "$gst" != "trusted" ]]; then
+        die 2 "dispute: ${id} is trusted, and only a trusted item disputes it (design 5.1); the PI can approve ${by} instead, which settles the contradiction"
+    fi
+    require_writable
+    local actor
+    actor="$(kb_actor "$ROOT")"
+    cur="$(kb_list_parse "$(kb_fm_raw "$f" contradicts)")"
+    if ! printf '%s\n' "$cur" | grep -qxF -- "$by"; then
+        # shellcheck disable=SC2086
+        kb_fm_set "$f" contradicts "$(kb_list_format $cur "$by")"
+    fi
+    cur="$(kb_list_parse "$(kb_fm_raw "$g" contradicts)")"
+    if ! printf '%s\n' "$cur" | grep -qxF -- "$id"; then
+        # shellcheck disable=SC2086
+        kb_fm_set "$g" contradicts "$(kb_list_format $cur "$id")"
+        kb_event "$KB" "$by" "$gst" "$gst" "contradicts:${id}" "$actor"
+    fi
+    if [[ "$st" == "disputed" ]]; then
+        kb_event "$KB" "$id" "$st" "$st" "disputed-by:${by}${why:+: ${why}}" "$actor"
+        echo "$(id_prefix)${id}: already disputed; counter-evidence ${by} linked"
+    else
+        set_status "$f" disputed "disputed-by:${by}${why:+: ${why}}"
+        echo "$(id_prefix)${id}: ${st} -> disputed (counter-evidence ${by})"
+    fi
+    rebuild_stats_cache
+    echo "The PI settles it: uws kb approve $(id_prefix)${by} retires ${id} as disproven-by:${by}; otherwise prune --apply retires it after ${UWS_KB_DISPUTE_DAYS} days (R2)."
+}
+
+# R4 (design 5.6): which trusted items were retrieved on this machine. Input:
+# the usage log (.cache/usage.tsv: ts, session, id, via), then the item files.
+# Environment: KBUSAGE (the usage log path), KBN (sessions in the window),
+# KBSINCE (count only sessions first seen after this timestamp; "" = all),
+# KBAFTER ("" = the window is the last KBN sessions; else the first KBN
+# sessions first seen after this timestamp), KBTODAY, KBAGE (minimum age in days).
+# Output: "W<TAB>sessions in the window", then per eligible item (trusted, not a
+# decision, created at least KBAGE days ago) "E<TAB>id<TAB>type<TAB>used 0|1".
+# shellcheck disable=SC2016
+KB_AWK_R4='
+FILENAME == ENVIRON["KBUSAGE"] {
+    n = split($0, u, "\t"); if (n < 3 || u[2] == "" || u[3] == "") next
+    s = u[2]
+    if (!(s in ORD)) { ORD[s] = ++NS; FIRST[s] = u[1]; SES[NS] = s }
+    USED[s, u[3]] = 1
+    next
+}
+function r4_window(    i, s, n, since, after, cand) {
+    WDONE = 1; N = ENVIRON["KBN"] + 0; since = ENVIRON["KBSINCE"]; after = ENVIRON["KBAFTER"]; n = 0
+    for (i = 1; i <= NS; i++) {
+        s = SES[i]
+        if (since != "" && FIRST[s] <= since) continue
+        if (after != "" && FIRST[s] <= after) continue
+        cand[++n] = s
+    }
+    NW = 0
+    if (after != "") { for (i = 1; i <= n && NW < N; i++) WIN[++NW] = cand[i] }
+    else { for (i = (n > N ? n - N + 1 : 1); i <= n; i++) WIN[++NW] = cand[i] }
+    printf "W\t%d\n", NW
+}
+function kb_emit(    id, ty, c, i, used) {
+    if (!WDONE) r4_window()
+    if ("_invalid" in F) return
+    id = kb_unq(F["id"]); ty = kb_unq(F["type"])
+    if (kb_unq(F["status"]) != "trusted" || ty == "decision") return
+    c = kb_days(kb_unq(F["created"]))
+    if (c < 0 || kb_days(ENVIRON["KBTODAY"]) - c < ENVIRON["KBAGE"] + 0) return
+    used = 0
+    for (i = 1; i <= NW; i++) if ((WIN[i] SUBSEP id) in USED) { used = 1; break }
+    printf "E\t%s\t%s\t%d\n", id, ty, used
+}
+END { if (!WDONE) r4_window() }
+'
+
+# r4_scan <since|""> <after|"">: run KB_AWK_R4 over the current KB
+r4_scan() {
+    local usage="${KB}/.cache/usage.tsv" f
+    local -a files=()
+    [[ -f "$usage" ]] || usage="/dev/null"
+    for f in "${KB}"/items/*.md; do [[ -f "$f" ]] && files+=("$f"); done
+    KBUSAGE="$usage" KBN="$UWS_KB_UNUSED_SESSIONS" KBSINCE="${1:-}" KBAFTER="${2:-}" KBTODAY="$TODAY" \
+        KBAGE="$UWS_KB_UNUSED_MIN_AGE_DAYS" LC_ALL=C \
+        awk "${KB_AWK_DATE}${KB_AWK_VALUES}${KB_AWK_R4}${KB_AWK_ITEMS}" "$usage" ${files[@]+"${files[@]}"}
+}
+
+check_r4_config() {  # check_r4_config <verb>
+    if ! is_uint "$UWS_KB_UNUSED_SESSIONS" || (( UWS_KB_UNUSED_SESSIONS < 1 )); then
+        die 2 "$1: UWS_KB_UNUSED_SESSIONS must be a whole number >= 1"
+    fi
+    is_uint "$UWS_KB_UNUSED_MIN_AGE_DAYS" || die 2 "$1: UWS_KB_UNUSED_MIN_AGE_DAYS must be a whole number"
+}
+
+# r4_collect <since|""> <after|"">: sets R4_WINDOW (sessions in the window),
+# R4_ELIGIBLE (eligible items) and R4_LIST ("id<TAB>type" lines of the eligible
+# items not retrieved in the window)
+R4_WINDOW=0
+R4_ELIGIBLE=0
+R4_LIST=""
+r4_collect() {
+    local tag a b c out
+    R4_WINDOW=0; R4_ELIGIBLE=0; R4_LIST=""
+    out="$(r4_scan "${1:-}" "${2:-}")"
+    while IFS="$TAB" read -r tag a b c; do
+        case "$tag" in
+            W) R4_WINDOW="$a" ;;
+            E) R4_ELIGIBLE=$((R4_ELIGIBLE + 1))
+               [[ "$c" == "0" ]] && R4_LIST+="${a}${TAB}${b}"$'\n' ;;
+        esac
+    done <<EOF
+$out
+EOF
+    return 0
 }
 
 cmd_prune() {
@@ -1147,7 +1515,9 @@ cmd_prune() {
         *) die 2 "prune: use 'prune' (dry run) or 'prune --apply'" ;;
     esac
     [[ -d "${KB}/items" ]] || { echo "Nothing to prune (no KB at ${KB})."; return 0; }
-    local f id st since age rb plan="" line g
+    check_r4_config prune
+    [[ "$apply" != "true" ]] || require_writable
+    local f id st since age rb plan="" line g imports=0
     # R1: active items listed in another item's supersedes
     local superseded=""
     for g in "${KB}"/items/*.md "${KB}"/retired/*.md; do
@@ -1172,8 +1542,12 @@ EOF
                 (( age >= UWS_KB_DISPUTE_DAYS )) && plan+="${id}${TAB}retire${TAB}disproven"$'\n' ;;
             stale)      # R3 (second half)
                 (( age >= UWS_KB_STALE_GRACE_DAYS )) && plan+="${id}${TAB}retire${TAB}expired"$'\n' ;;
-            candidate)  # R5
-                (( age >= UWS_KB_CANDIDATE_TTL_DAYS )) && plan+="${id}${TAB}retire${TAB}unpromoted"$'\n' ;;
+            candidate)  # R5; imports wait for the PI's triage instead (decision D6)
+                if [[ "$(kb_fm_get "$f" captured_by)" == import* ]]; then
+                    imports=$((imports + 1))
+                elif (( age >= UWS_KB_CANDIDATE_TTL_DAYS )); then
+                    plan+="${id}${TAB}retire${TAB}unpromoted"$'\n'
+                fi ;;
             trusted)    # R3 (first half): review_by passed -> stale
                 rb="$(kb_fm_get "$f" review_by)"
                 if [[ -n "$rb" && "$rb" != "never" ]]; then
@@ -1183,11 +1557,34 @@ EOF
                 fi ;;
         esac
     done
+    # R4: trusted items (not decisions) older than UWS_KB_UNUSED_MIN_AGE_DAYS that
+    # no search, show or subagent brief returned in the last UWS_KB_UNUSED_SESSIONS
+    # sessions on this machine. Usage is per machine, so R4 only proposes: the
+    # human confirms with `retire <ID> unused`.
+    local r4note="" rid
+    r4_collect "" ""
+    if (( R4_WINDOW >= UWS_KB_UNUSED_SESSIONS )); then
+        while IFS="$TAB" read -r rid _; do
+            [[ -n "$rid" ]] || continue
+            case "$plan" in "${rid}${TAB}"*|*$'\n'"${rid}${TAB}"*) continue ;; esac
+            plan+="${rid}${TAB}propose${TAB}unused"$'\n'
+        done <<EOF
+$R4_LIST
+EOF
+    elif (( R4_ELIGIBLE > 0 )); then
+        r4note="R4 (unused) not evaluated: ${R4_WINDOW} of ${UWS_KB_UNUSED_SESSIONS} sessions of usage recorded on this machine."
+    fi
+    if (( imports > 0 )); then
+        echo "${imports} imported candidate(s) wait for the PI's triage; R5 does not retire them (decision D6): uws kb review --imported$(scope_flag)"
+    fi
+    [[ -z "$r4note" ]] || echo "$r4note"
     if [[ -z "$plan" ]]; then echo "Nothing to prune."; return 0; fi
     local pid act why
     while IFS="$TAB" read -r pid act why; do
         [[ -n "$pid" ]] || continue
-        if [[ "$apply" != "true" ]]; then
+        if [[ "$act" == "propose" ]]; then
+            echo "R4: $(id_prefix)${pid} was not retrieved in the last ${UWS_KB_UNUSED_SESSIONS} sessions on this machine; retire it only if you agree: uws kb retire $(id_prefix)${pid} unused"
+        elif [[ "$apply" != "true" ]]; then
             echo "would ${act} ${pid} (${why})"
         elif [[ "$act" == "stale" ]]; then
             set_status "${KB}/items/${pid}.md" stale "$why"
@@ -1388,7 +1785,8 @@ FILENAME == SIDE {
         if (!(fk in WSTART) || t > WSTART[fk]) WSTART[fk] = t
         if (!(tk in TWSTART) || t > TWSTART[tk]) TWSTART[tk] = t
         if ($3 == "1") { BLOCK[fk] = $2; TBLOCK[tk] = $2 }
-        if ($12 == "1") { NT++; T_id[NT] = $2; T_metric[NT] = $4; T_key[NT] = ($11 != "-" ? $11 : $5); T_ts[NT] = $7; T_before[NT] = $10 }
+        # r4-unused-share is measured from the usage log, not outcomes.tsv (learn_r4)
+        if ($12 == "1" && $4 != "r4-unused-share") { NT++; T_id[NT] = $2; T_metric[NT] = $4; T_key[NT] = ($11 != "-" ? $11 : $5); T_ts[NT] = $7; T_before[NT] = $10 }
     }
     next
 }
@@ -1582,6 +1980,7 @@ plan_proposal() {
     local vp ph m p f eclaim text L role model alt persona lvl old new line cb reason
     P_FAM="$fam"; P_KEY="$key"; P_TRACK="$key"; P_N="$n"; P_K="$k"; P_BEFORE="$(fmt2 "$val")"; P_AFTER=""
     P_REFS="$refs"; P_KIND="change"; P_REVERTS=""; P_DIFF=""; P_TEXT=""; P_NOTE=""; P_TARGET=""; P_WHERE=""
+    P_UNIT="events"; P_LOG="outcomes.tsv"; P_WINDOW_LINE=""; P_INPUTS=""; P_SPAN_N=""
     vp="$(pct "$val")"
     case "$fam" in
         gate-escape-rate)
@@ -1695,10 +2094,18 @@ plan_revert() {
     P_TARGET="$(kb_fm_get "$f" target)"; P_WHERE="where ${oid} was applied"
     P_DIFF="$(reverse_diff "$f")"; P_TEXT=""; P_NOTE=""
     [[ -n "$P_DIFF" ]] || P_TEXT="Undo the change described in ${oid} (uws kb show ${oid})."
+    P_UNIT="events"; P_LOG="outcomes.tsv"; P_WINDOW_LINE=""; P_INPUTS=""; P_SPAN_N="$n"
+    local span="${UWS_KB_LEARN_WINDOW} events"
+    if [[ "$P_FAM" == "r4-unused-share" ]]; then
+        # n and k count items; the span after approval is a number of sessions
+        P_UNIT="sessions"; P_LOG=".cache/usage.tsv"; P_SPAN_N="$UWS_KB_UNUSED_SESSIONS"
+        span="${UWS_KB_UNUSED_SESSIONS} sessions"
+        P_INPUTS="this machine's retrieval log (${KB_REL}/.cache/usage.tsv) and the status of the items; only trusted items count."
+    fi
     shown="$(safe_text "$P_TRACK" 60)"
-    P_SUBJECT="events after the approval of ${oid} (${P_FAM}, ${shown})"
-    P_CLAIM="Revert ${oid}: ${P_FAM} for ${shown} went $(pct "$P_BEFORE") -> $(pct "$after") over the ${n} events after its approval (no improvement)."
-    P_FALSIFIER="Keep ${oid} instead if ${P_FAM} for ${shown} gets worse over the next ${UWS_KB_LEARN_WINDOW} events once this revert is applied (a revert is not tracked automatically)."
+    P_SUBJECT="${P_UNIT} after the approval of ${oid} (${P_FAM}, ${shown})"
+    P_CLAIM="Revert ${oid}: ${P_FAM} for ${shown} went $(pct "$P_BEFORE") -> $(pct "$after") over the ${P_SPAN_N} ${P_UNIT} after its approval (no improvement)."
+    P_FALSIFIER="Keep ${oid} instead if ${P_FAM} for ${shown} gets worse over the next ${span} once this revert is applied (a revert is not tracked automatically)."
     P_CONFOUND="the metric can move for reasons unrelated to ${oid} (other changes, different tasks); this reports that it did not improve, not that ${oid} made it worse."
 }
 
@@ -1706,18 +2113,22 @@ plan_revert() {
 proposal_body() {
     local thr
     if [[ "$P_FAM" == "repeated-gate-fail" ]]; then thr=">= ${P_THR} times"; else thr="> $(pct "$P_THR")"; fi
-    printf 'Written by `uws kb learn` from %s/outcomes.tsv. It reports counts, not causes.\n' "$KB_REL"
+    printf 'Written by `uws kb learn` from %s/%s. It reports counts, not causes.\n' "$KB_REL" "${P_LOG:-outcomes.tsv}"
     printf 'Approving it (PI only) records acceptance; it changes no file.\n\n'
     printf '## Metric\n\n'
     if [[ "$P_KIND" == "revert" ]]; then
-        printf -- '- %s for %s: %s when %s was proposed; %s of %s = %s (%s) over the %s events after its approval.\n' \
-            "$P_FAM" "$P_TRACK" "$(pct "$P_BEFORE")" "$P_REVERTS" "$P_K" "$P_N" "$P_AFTER" "$(pct "$P_AFTER")" "$P_N"
+        printf -- '- %s for %s: %s when %s was proposed; %s of %s = %s (%s) over the %s %s after its approval.\n' \
+            "$P_FAM" "$P_TRACK" "$(pct "$P_BEFORE")" "$P_REVERTS" "$P_K" "$P_N" "$P_AFTER" "$(pct "$P_AFTER")" "${P_SPAN_N:-$P_N}" "${P_UNIT:-events}"
         printf -- '- Did not improve: the value after approval is not below the value before.\n'
     else
         printf -- '- %s for %s: %s of %s %s = %s (%s); threshold %s, with n >= %s.\n' \
             "$P_FAM" "$P_KEY" "$P_K" "$P_N" "$P_SUBJECT" "$P_BEFORE" "$(pct "$P_BEFORE")" "$thr" "$UWS_KB_LEARN_MIN_N"
-        printf -- '- Window: the last %s samples (at most %s) recorded after %s.\n' \
-            "$P_N" "$UWS_KB_LEARN_WINDOW" "$( [[ "${P_WSTART:--}" == "-" ]] && echo "the start of the log" || echo "the previous proposal on this key (${P_WSTART})")"
+        if [[ -n "${P_WINDOW_LINE:-}" ]]; then
+            printf -- '- Window: %s\n' "$P_WINDOW_LINE"
+        else
+            printf -- '- Window: the last %s samples (at most %s) recorded after %s.\n' \
+                "$P_N" "$UWS_KB_LEARN_WINDOW" "$( [[ "${P_WSTART:--}" == "-" ]] && echo "the start of the log" || echo "the previous proposal on this key (${P_WSTART})")"
+        fi
         printf -- '- Rows behind the count: %s\n' "$(safe_text "$P_REFS" 400)"
     fi
     printf '\n## Proposed change (not applied)\n\n'
@@ -1733,10 +2144,15 @@ proposal_body() {
         printf '`uws kb learn` measures this once the PI approves the proposal and proposes the revert if it does not improve.\n'
     fi
     printf '\n## Caveats\n\n'
-    printf -- '- Small n: %s samples; with n = %s one event moves the rate by %s percentage points, so this can be chance.\n' \
-        "$P_N" "$P_N" "$(awk -v n="$P_N" 'BEGIN { printf "%d", (n > 0 ? 100 / n + 0.5 : 100) }')"
+    printf -- '- Small n: %s samples; with n = %s one %s moves the rate by %s percentage points, so this can be chance.\n' \
+        "$P_N" "$P_N" "$( [[ "$P_FAM" == "r4-unused-share" ]] && echo item || echo event)" \
+        "$(awk -v n="$P_N" 'BEGIN { printf "%d", (n > 0 ? 100 / n + 0.5 : 100) }')"
     printf -- '- Confounding: %s\n' "$P_CONFOUND"
-    printf -- '- Inputs: only rows that scripts wrote to outcomes.tsv; candidate and inferred items were not counted (design 6.4).\n'
+    if [[ -n "${P_INPUTS:-}" ]]; then
+        printf -- '- Inputs: %s\n' "$P_INPUTS"
+    else
+        printf -- '- Inputs: only rows that scripts wrote to outcomes.tsv; candidate and inferred items were not counted (design 6.4).\n'
+    fi
 }
 
 # write_proposal <body>: create the proposal item from the P_* globals and set
@@ -1764,9 +2180,13 @@ write_proposal() {
         n=$((n + 2))
         (( n <= 12 )) || { warn "learn: cannot mint a unique ID"; return 1; }
     done
-    src="file:${KB_REL}/outcomes.tsv"
-    head="$(head_sha)"
-    [[ -z "$head" ]] || src+="@${head}"
+    src="file:${KB_REL}/${P_LOG:-outcomes.tsv}"
+    # outcomes.tsv is tracked, so the source is pinned to HEAD; the usage log is
+    # machine-local and gitignored, so it cannot be
+    if [[ "${P_LOG:-outcomes.tsv}" == "outcomes.tsv" ]]; then
+        head="$(head_sha)"
+        [[ -z "$head" ]] || src+="@${head}"
+    fi
     ensure_kb
     tmp="$(mktemp "${KB}/items/.new.XXXXXX")" || return 1
     {
@@ -1901,6 +2321,156 @@ EOF
     esac
 }
 
+# ── R4-unused share (design 6.3), from the usage log ────────────────────────
+#
+# The share of eligible trusted items (not decisions, at least
+# UWS_KB_UNUSED_MIN_AGE_DAYS old) that no search, show or subagent brief
+# returned in the last UWS_KB_UNUSED_SESSIONS sessions on this machine. It is
+# measured once that many sessions were recorded after the latest decision on an
+# earlier r4 proposal (so a turned-down proposal is not repeated from the same
+# sessions), proposes with n >= UWS_KB_LEARN_MIN_N eligible items when the share
+# is above UWS_KB_LEARN_UNUSED_SHARE, and measures an approved change again over
+# the first UWS_KB_UNUSED_SESSIONS sessions after its approval. The usage log is
+# machine-local, so the proposal cites it without a commit and says so.
+
+R4_FAM="r4-unused-share"
+R4_KEY="trusted-items"
+
+# review_days_anchor <file> <type>: "line<TAB>days" of the review window of
+# <type> in review_days() of scripts/kb.sh (nothing when not found)
+review_days_anchor() {
+    KBT="$2" awk '
+        /^review_days\(\)/ { f = 1; next }
+        f && /^}/ { exit }
+        f && /\) echo [0-9]+ ;;/ {
+            lab = $0; sub(/^[ \t]+/, "", lab); sub(/\).*/, "", lab)
+            n = split(lab, a, "|")
+            for (i = 1; i <= n; i++) if (a[i] == ENVIRON["KBT"]) {
+                v = $0; sub(/.*\) echo /, "", v); sub(/ ;;.*/, "", v); print NR "\t" v; exit
+            }
+        }' "$1"
+}
+
+# plan_r4_proposal <n> <k> <value> <unused ids> <most common type> <window start|->
+plan_r4_proposal() {
+    local n="$1" k="$2" val="$3" ids="$4" ty="$5" ws="$6" vp line L="" old="" new cur
+    P_FAM="$R4_FAM"; P_KEY="$R4_KEY"; P_TRACK="$R4_KEY"; P_N="$n"; P_K="$k"
+    P_BEFORE="$(fmt2 "$val")"; P_AFTER=""; P_REFS="$ids"; P_KIND="change"; P_REVERTS=""
+    P_DIFF=""; P_TEXT=""; P_NOTE=""; P_THR="$UWS_KB_LEARN_UNUSED_SHARE"; P_SPAN_N=""
+    P_UNIT="sessions"; P_LOG=".cache/usage.tsv"
+    P_WINDOW_LINE="the last ${UWS_KB_UNUSED_SESSIONS} sessions recorded on this machine after $([[ "$ws" == "-" ]] && echo "the start of the log" || echo "the previous proposal on this metric (${ws})")."
+    P_INPUTS="this machine's retrieval log (${KB_REL}/.cache/usage.tsv: uws kb search, show and subagent briefs) and the status of the items; only trusted items count."
+    vp="$(pct "$val")"
+    P_SUBJECT="eligible trusted items (not decisions, at least ${UWS_KB_UNUSED_MIN_AGE_DAYS} days old) that nothing retrieved in the last ${UWS_KB_UNUSED_SESSIONS} sessions on this machine"
+    P_TARGET="scripts/kb.sh"; P_WHERE="the UWS installation"
+    if find_target "scripts/kb.sh"; then
+        P_WHERE="$TARGET_WHERE"
+        line="$(review_days_anchor "$TARGET_ABS" "$ty")"
+        [[ -z "$line" ]] || IFS="$TAB" read -r L old <<< "$line"
+    fi
+    if [[ -n "$L" && -n "$old" ]] && is_uint "$old" && (( old > 1 )); then
+        new=$(( old / 2 ))
+        cur="$(sed -n "${L}p" "$TARGET_ABS")"
+        P_DIFF="$(diff_replace "$TARGET_ABS" "$TARGET_REL" "$L" "${cur/echo ${old} ;;/echo ${new} ;;}")"
+        P_CLAIM="Unused trusted items: ${k} of ${n} (${vp}) were not retrieved in the last ${UWS_KB_UNUSED_SESSIONS} sessions on this machine, above $(pct "$P_THR"); proposal: halve the ${ty} review window (${old} -> ${new} days)."
+        case "$(sed -n "${L}p" "$TARGET_ABS" | sed 's/^[[:space:]]*//; s/).*//')" in
+            *"|"*) P_NOTE="The line covers several types, so the change shortens all of their windows. " ;;
+        esac
+    else
+        P_CLAIM="Unused trusted items: ${k} of ${n} (${vp}) were not retrieved in the last ${UWS_KB_UNUSED_SESSIONS} sessions on this machine, above $(pct "$P_THR"); proposal: shorten the ${ty} review window."
+        P_TEXT="Set UWS_KB_REVIEW_DAYS_$(printf '%s' "$ty" | tr 'a-z-' 'A-Z_')=<half the current window> where uws runs, or change review_days in scripts/kb.sh."
+    fi
+    P_NOTE="${P_NOTE}A shorter window makes unused items stale sooner, and R3 then retires them unless someone re-verifies them; design 6.3 names fewer capture triggers as the other option."
+    P_FALSIFIER="Revert if the unused share does not fall below ${vp} over the first ${UWS_KB_UNUSED_SESSIONS} sessions after approval."
+    P_CONFOUND="usage is recorded on this machine only and counts retrievals through uws kb search, show and subagent briefs, not reads of the item files; a session is a Claude Code session (CLAUDE_CODE_SESSION_ID) or, outside Claude Code, a calendar day; an item can go unused because nobody worked on its topic."
+}
+
+# learn_r4_track <proposal file>: measure an approved r4 change
+learn_r4_track() {
+    local f="$1" id appr before after n k rc=0
+    id="$(kb_fm_get "$f" id)"; appr="$(kb_fm_get "$f" approved_ts)"; before="$(kb_fm_get "$f" metric_before)"
+    r4_collect "" "$appr"
+    if (( R4_WINDOW < UWS_KB_UNUSED_SESSIONS )); then
+        echo "  tracking ${id} (${R4_FAM}, ${R4_KEY}): ${R4_WINDOW} of ${UWS_KB_UNUSED_SESSIONS} sessions since approval"
+        return 0
+    fi
+    n="$R4_ELIGIBLE"
+    k="$(printf '%s' "$R4_LIST" | grep -c . || true)"
+    after="$(awk -v k="$k" -v n="$n" 'BEGIN { printf "%.4f", (n > 0 ? k / n : 0) }')"
+    if awk -v a="$after" -v b="$before" 'BEGIN { exit !((sprintf("%.2f", a) + 0) < (sprintf("%.2f", b) + 0)) }'; then
+        if [[ "$LEARN_DRY" == "true" ]]; then
+            echo "  ${id}: would record an improvement ($(pct "$before") -> $(pct "$after") over ${UWS_KB_UNUSED_SESSIONS} sessions)"
+        else
+            set_followup "$f" "improved $(fmt2 "$before") -> $(fmt2 "$after") over ${UWS_KB_UNUSED_SESSIONS} sessions" "$after"
+            LEARN_WRITES=$((LEARN_WRITES + 1))
+            echo "  ${id}: improved ($(pct "$before") -> $(pct "$after") over ${UWS_KB_UNUSED_SESSIONS} sessions); tracking closed"
+        fi
+        return 0
+    fi
+    echo "  ${id}: did not improve ($(pct "$before") -> $(pct "$after") over ${UWS_KB_UNUSED_SESSIONS} sessions)"
+    plan_revert "$f" "$n" "$k" "$after"
+    emit_proposal || rc=$?
+    if [[ "$LEARN_DRY" != "true" ]] && (( rc == 0 || rc == 3 )); then
+        set_followup "$f" "revert-proposed:${NEW_ID}" "$after"
+    fi
+    return 0
+}
+
+# learn_r4: report the metric, track approved r4 changes, propose when due
+learn_r4() {
+    local f id st kind appr fu rr cts ts latest="" open=""
+    local -a tracked=()
+    for f in "${KB}"/items/*.md "${KB}"/retired/*.md; do
+        [[ -f "$f" ]] || continue
+        [[ "$(kb_fm_get "$f" type)" == "proposal" && "$(kb_fm_get "$f" metric)" == "$R4_FAM" ]] || continue
+        st="$(kb_fm_get "$f" status)"; kind="$(kb_fm_get "$f" proposal_kind)"
+        appr="$(kb_fm_get "$f" approved_ts)"; fu="$(kb_fm_get "$f" followup_ts)"; rr="$(kb_fm_get "$f" retired_reason)"
+        if [[ "$f" == "${KB}/items/"* && "$st" == "candidate" ]]; then
+            open="$(kb_fm_get "$f" id)"
+        elif [[ "${kind:-change}" == "change" && -n "$appr" && -z "$fu" && "$st" != "candidate" && "$rr" != rejected* ]]; then
+            tracked+=("$f")
+        fi
+    done
+    for f in ${tracked[@]+"${tracked[@]}"}; do learn_r4_track "$f"; done
+    # The latest decision point of any r4 proposal (after the tracking above,
+    # which may have closed one), and whether one is still open
+    for f in "${KB}"/items/*.md "${KB}"/retired/*.md; do
+        [[ -f "$f" ]] || continue
+        [[ "$(kb_fm_get "$f" type)" == "proposal" && "$(kb_fm_get "$f" metric)" == "$R4_FAM" ]] || continue
+        fu="$(kb_fm_get "$f" followup_ts)"; appr="$(kb_fm_get "$f" approved_ts)"; cts="$(kb_fm_get "$f" created_ts)"
+        ts="${fu:-${appr:-$cts}}"
+        [[ -z "$ts" || "$ts" < "$latest" ]] || latest="$ts"
+        st="$(kb_fm_get "$f" status)"; kind="$(kb_fm_get "$f" proposal_kind)"; rr="$(kb_fm_get "$f" retired_reason)"
+        if [[ "${kind:-change}" == "change" && -n "$appr" && -z "$fu" && "$st" != "candidate" && "$rr" != rejected* ]]; then
+            open="$(kb_fm_get "$f" id)"
+        fi
+    done
+    if [[ -n "$open" ]]; then
+        echo "  ${R4_FAM} ${R4_KEY}: already proposed (${open})"
+        return 0
+    fi
+    r4_collect "$latest" ""
+    if (( R4_WINDOW < UWS_KB_UNUSED_SESSIONS )); then
+        echo "  ${R4_FAM} ${R4_KEY}: not measured yet (${R4_WINDOW} of ${UWS_KB_UNUSED_SESSIONS} sessions of usage recorded on this machine${latest:+ since the last proposal})"
+        return 0
+    fi
+    local n="$R4_ELIGIBLE" k ids ty val
+    k="$(printf '%s' "$R4_LIST" | grep -c . || true)"
+    val="$(awk -v k="$k" -v n="$n" 'BEGIN { printf "%.4f", (n > 0 ? k / n : 0) }')"
+    printf '  %s %s: %s of %s (%s) -> ' "$R4_FAM" "$R4_KEY" "$k" "$n" "$(pct "$val")"
+    if (( n < UWS_KB_LEARN_MIN_N )); then echo "n < ${UWS_KB_LEARN_MIN_N}: no proposal"; return 0; fi
+    if ! awk -v v="$val" -v t="$UWS_KB_LEARN_UNUSED_SHARE" 'BEGIN { exit !(v > t) }'; then
+        echo "within the threshold"; return 0
+    fi
+    echo "over the threshold"
+    ids="$(printf '%s' "$R4_LIST" | cut -f1 | tr '\n' ',' | sed 's/,$//')"
+    # The type most unused items have (alphabetical on a tie)
+    ty="$(printf '%s' "$R4_LIST" | cut -f2 | LC_ALL=C sort | uniq -c | LC_ALL=C sort -k1,1nr -k2,2 | awk 'NR == 1 { print $2 }')"
+    plan_r4_proposal "$n" "$k" "$val" "$ids" "${ty:-fact}" "${latest:--}"
+    emit_proposal || true
+    return 0
+}
+
 cmd_learn() {
     LEARN_DRY=false
     LEARN_WRITES=0
@@ -1913,17 +2483,21 @@ cmd_learn() {
     for v in UWS_KB_LEARN_MIN_N UWS_KB_LEARN_WINDOW UWS_KB_LEARN_REPEAT_FAILS; do
         if ! is_uint "${!v}" || (( ${!v} < 1 )); then die 2 "learn: ${v} must be a whole number >= 1"; fi
     done
-    for v in UWS_KB_LEARN_ESCAPE_RATE UWS_KB_LEARN_CR_REJECT_RATE UWS_KB_LEARN_DISPROVEN_RATE; do
+    for v in UWS_KB_LEARN_ESCAPE_RATE UWS_KB_LEARN_CR_REJECT_RATE UWS_KB_LEARN_DISPROVEN_RATE UWS_KB_LEARN_UNUSED_SHARE; do
         [[ "${!v}" =~ ^(0(\.[0-9]+)?|1(\.0+)?|\.[0-9]+)$ ]] || die 2 "learn: ${v} must be a number from 0 to 1"
     done
+    check_r4_config learn
     if [[ ! -d "$KB" ]]; then echo "No KB at ${KB#"${ROOT}"/}; nothing to learn."; return 0; fi
     case "$KB" in
         "$ROOT"/*) KB_REL="${KB#"${ROOT}"/}" ;;
         *) die 2 "learn: the KB (${KB}) must be inside the project so proposals can cite its outcomes.tsv" ;;
     esac
+    [[ "$LEARN_DRY" == "true" ]] || require_writable
     local out="${KB}/outcomes.tsv"
     if [[ ! -s "$out" ]]; then
         echo "No outcomes recorded yet in ${KB_REL}/outcomes.tsv; nothing to learn."
+        learn_r4
+        learn_finish
         return 0
     fi
     local side results rc=0
@@ -1951,7 +2525,12 @@ cmd_learn() {
 $results
 EOF
     [[ "$any" == "true" ]] || echo "  no metric has data yet"
-    echo "  r4-unused-share: not measured (R4 usage counts are not built yet; design section 17)"
+    learn_r4
+    learn_finish
+    return 0
+}
+
+learn_finish() {
     if [[ "$LEARN_DRY" == "true" ]]; then
         echo "(dry run: nothing written)"
     elif (( LEARN_WRITES > 0 )); then
@@ -1975,7 +2554,11 @@ cmd_proposals() {
             open+="${id} [${metric}|${kind}] $(kb_fm_get "$f" claim)"$'\n'
             open+="    target: $(kb_fm_get "$f" target); details: uws kb show ${id}"$'\n'
         elif [[ "$kind" == "change" && "$metric" != "manual" && "$st" != "candidate" && -n "$appr" && -z "$fu" && "$rr" != rejected* ]]; then
-            tracking+="${id} [${metric}] approved ${appr%%T*}; uws kb learn checks it after ${UWS_KB_LEARN_WINDOW} events"$'\n'
+            if [[ "$metric" == "r4-unused-share" ]]; then
+                tracking+="${id} [${metric}] approved ${appr%%T*}; uws kb learn checks it after ${UWS_KB_UNUSED_SESSIONS} sessions on this machine"$'\n'
+            else
+                tracking+="${id} [${metric}] approved ${appr%%T*}; uws kb learn checks it after ${UWS_KB_LEARN_WINDOW} events"$'\n'
+            fi
         fi
     done
     if [[ -z "$open" ]]; then
@@ -1996,7 +2579,7 @@ cmd_proposals() {
 
 cmd_lint() {
     local bad=0 f dir id st t ev k p pi
-    pi="$(kb_pi_identity "$ROOT")"
+    pi="$(kb_pi_identity "$ROOT" "$PI_CFG")"
     for dir in items retired; do
         for f in "${KB}/${dir}"/*.md; do
             [[ -f "$f" ]] || continue
@@ -2011,6 +2594,16 @@ cmd_lint() {
                 [[ -n "$(kb_fm_get "$f" "$k")" ]] || { echo "I1 ${base}: missing ${k}"; bad=1; }
             done
             [[ "$id" == "$base" ]] || { echo "I1 ${base}: id '${id}' does not match the file name"; bad=1; }
+            local isc
+            isc="$(kb_fm_get "$f" scope)"
+            [[ -z "$isc" || "$isc" == "$SCOPE" ]] || { echo "I1 ${base}: scope '${isc}' in the ${SCOPE} KB"; bad=1; }
+            # I8 (design 4.2): a global claim names no project or home path
+            if [[ "$SCOPE" == "global" ]]; then
+                local ph
+                if ph="$(project_path_in "$(kb_fm_get "$f" claim)")"; then
+                    echo "I8 ${base}: global claim names a project or home path (${ph})"; bad=1
+                fi
+            fi
             word_in "$t" "$TYPES" || { echo "I1 ${base}: bad type '${t}'"; bad=1; }
             word_in "$st" "candidate trusted stale disputed retired" || { echo "I1 ${base}: bad status '${st}'"; bad=1; }
             if [[ "$dir" == "retired" && "$st" != "retired" ]] || [[ "$dir" == "items" && "$st" == "retired" ]]; then
@@ -2090,12 +2683,38 @@ cmd_stats() {
         return 0
     fi
     rebuild_stats_cache
-    if [[ "$short" == "true" ]]; then kb_summary_line "$ROOT"; kb_proposals_line "$ROOT"; return 0; fi
     local t s x c r
     read -r t s x c r <<EOF
 $(kb_counts "$KB")
 EOF
-    echo "KB ${KB#"${ROOT}"/}: $((t + s + x + c)) active (${t} trusted, ${s} stale, ${x} disputed, ${c} candidate), ${r} retired"
+    if [[ "$short" == "true" ]]; then
+        if [[ "$SCOPE" == "global" ]]; then
+            printf 'Global KB: %s trusted, %s stale, %s disputed, %s to review. Search: uws kb search <words>\n' "$t" "$s" "$x" "$c"
+        else
+            kb_summary_line "$ROOT"; kb_proposals_line "$ROOT"
+        fi
+        return 0
+    fi
+    if [[ "$SCOPE" == "global" ]]; then
+        echo "Global KB ${KB}: $((t + s + x + c)) active (${t} trusted, ${s} stale, ${x} disputed, ${c} candidate), ${r} retired$(kb_global_ready "$KB" || echo "; NOT a git repository, so not written (uws kb init --global)")"
+    else
+        echo "KB ${KB#"${ROOT}"/}: $((t + s + x + c)) active (${t} trusted, ${s} stale, ${x} disputed, ${c} candidate), ${r} retired"
+    fi
+    # Retrievals recorded on this machine (the R4 usage log)
+    if [[ -s "${KB}/.cache/usage.tsv" ]]; then
+        LC_ALL=C awk -F '\t' 'NF >= 3 { n++; if (!($2 in s)) { s[$2] = 1; ns++ } if (!($3 in i)) { i[$3] = 1; ni++ } }
+            END { printf "usage on this machine: %d retrieval(s) of %d item(s) in %d session(s)\n", n, ni, ns }' "${KB}/.cache/usage.tsv"
+    fi
+    if [[ "$SCOPE" == "project" ]]; then
+        local g gt gs gx gc gr
+        g="$(global_kb)"
+        if [[ -d "${g}/items" ]]; then
+            read -r gt gs gx gc gr <<EOF
+$(kb_counts "$g")
+EOF
+            echo "global KB ${g}: ${gt} trusted, ${gs} stale, ${gx} disputed, ${gc} candidate, ${gr} retired (search includes its trusted items; uws kb stats --global)"
+        fi
+    fi
     local -a files=()
     local f
     for f in "${KB}"/items/*.md; do [[ -f "$f" ]] && files+=("$f"); done
@@ -2114,11 +2733,314 @@ EOF
     fi
 }
 
+# ── init / import (increment 2, design section 18) ──────────────────────────
+
+# init [--global]: create the project KB, or the global KB as its own git
+# repository (design 4.5). Never commits.
+cmd_init() {
+    [[ $# -eq 0 ]] || die 2 "init: use 'init' or 'init --global'"
+    if [[ "$SCOPE" == "global" ]]; then
+        kb_guarded "$KB" && require_writable
+        mkdir -p "$KB" || die 2 "init: cannot create ${KB}"
+        if kb_global_ready "$KB"; then
+            echo "Global KB already initialised at ${KB} (its own git repository)."
+        else
+            if git -C "$KB" rev-parse --show-toplevel >/dev/null 2>&1; then
+                warn "init: ${KB} is inside another git repository; giving the KB its own"
+            fi
+            git init -q "$KB" 2>/dev/null || die 2 "init: git init failed in ${KB}"
+            echo "Initialised the global KB at ${KB} as its own git repository."
+        fi
+        ensure_kb
+        echo "Next, in your own terminal: uws kb pi --set <your git e-mail> --global. Commit the KB yourself (git -C ${KB} add -A; git -C ${KB} commit)."
+        return 0
+    fi
+    require_writable
+    ensure_kb
+    echo "Project KB ready at ${KB#"${ROOT}"/}."
+}
+
+# Normalised claim (the same rule as kb_normalize_claim, in awk) of each item
+# in items/ and retired/: "norm<TAB>id<TAB>dir<TAB>captured_by" per line.
+claim_index() {
+    local -a files=()
+    local f
+    for f in "${KB}"/items/*.md "${KB}"/retired/*.md; do [[ -f "$f" ]] && files+=("$f"); done
+    [[ ${#files[@]} -gt 0 ]] || return 0
+    LC_ALL=C awk "${KB_AWK_VALUES}${KB_AWK_NORM}"'
+        function kb_emit(    d) {
+            if ("_invalid" in F) return
+            d = (index(FILE, "/retired/") > 0) ? "retired" : "items"
+            printf "%s\t%s\t%s\t%s\n", kb_norm(kb_unq(F["claim"])), kb_unq(F["id"]), d, kb_unq(F["captured_by"])
+        }
+    '"${KB_AWK_ITEMS}" "${files[@]}"
+}
+
+# kb_norm(s): kb_normalize_claim in awk (C locale): lower case, whitespace
+# runs to one space, trimmed, trailing . ! ? ; : , dropped
+# shellcheck disable=SC2016
+KB_AWK_NORM='
+function kb_norm(s) {
+    s = tolower(s); gsub(/[[:space:]]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s); sub(/[.!?;:,]*$/, "", s)
+    return s
+}
+'
+
+# import_claim <text>: one line of at most UWS_KB_CLAIM_BYTES bytes; a longer
+# text is cut at a sentence end, else a word boundary, and marked with "..."
+import_claim() {
+    KBV="$1" KBN="$UWS_KB_CLAIM_BYTES" LC_ALL=C awk "${KB_AWK_UTF8}"'
+        BEGIN {
+            s = ENVIRON["KBV"]; n = ENVIRON["KBN"] + 0
+            gsub(/[[:space:][:cntrl:]]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s)
+            if (length(s) <= n) { printf "%s", s; exit }
+            t = substr(s, 1, n - 3); cut = 0
+            for (i = length(t) - 1; i >= 60; i--) if (substr(t, i, 2) == ". ") { cut = i; break }
+            if (cut) { printf "%s", substr(t, 1, cut); exit }
+            for (i = length(t); i >= 60; i--) if (substr(t, i, 1) == " ") { cut = i; break }
+            if (cut) t = substr(t, 1, cut - 1)
+            printf "%s...", whole(t)
+        }'
+}
+
+# Unescape a field written by kb_import.py (\\ \t \n \r; "-" is empty)
+unesc_field() {
+    if [[ "$1" == "-" ]]; then return 0; fi
+    printf '%b' "$1"
+}
+
+# cmd_import vector|automemory ...: see the header. Sources are only read
+# (kb_import.py); every new item is a candidate with evidence inferred, source
+# import:<store>#<row or file>, captured_by import. A claim equal to an active
+# item's (R7) is collapsed into it; one equal to a retired item's is not
+# brought back. Rows that look like secrets are skipped; in the global KB, so
+# are claims that name a project or home path.
+cmd_import() {
+    local kind="${1:-}" db="" dir="" dry=false
+    [[ $# -gt 0 ]] && shift
+    case "$kind" in
+        vector|automemory) ;;
+        *) die 2 "import: use 'import vector --db <path>' or 'import automemory --dir <path>'" ;;
+    esac
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --db) db="${2:-}"; shift 2 || die 2 "import: --db needs a path" ;;
+            --dir) dir="${2:-}"; shift 2 || die 2 "import: --dir needs a path" ;;
+            --dry-run) dry=true; shift ;;
+            *) die 2 "import: unknown argument '$1'" ;;
+        esac
+    done
+    command -v python3 >/dev/null 2>&1 || die 2 "import: python3 is needed to read the source"
+    local label src_desc
+    local -a pyargs=()
+    if [[ "$kind" == "vector" ]]; then
+        [[ -n "$db" && -z "$dir" ]] || die 2 "import vector: give --db <path to vector_memory.db>"
+        [[ -f "$db" ]] || die 2 "import vector: no such file: ${db}"
+        if [[ "$SCOPE" == "global" ]]; then label="vector-global"; else label="vector-local"; fi
+        pyargs=(vector --db "$db" --scope "$SCOPE" --label "$label")
+        src_desc="$(basename "$db")"
+    else
+        [[ -n "$dir" && -z "$db" ]] || die 2 "import automemory: give --dir <auto-memory directory>"
+        [[ -d "$dir" ]] || die 2 "import automemory: no such directory: ${dir}"
+        [[ "$SCOPE" == "project" ]] || die 2 "import automemory: auto-memory holds one project's facts; import it into that project's KB"
+        label="automemory"
+        pyargs=(automemory --dir "$dir")
+        src_desc="$(basename "$dir")/"
+    fi
+    # The suspected-fixture rule compares with the project's tracked files
+    if [[ "$SCOPE" == "project" ]] && git -C "$PROJ_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+        pyargs+=(--project "$PROJ_ROOT")
+    fi
+    [[ "$dry" == "true" ]] || require_writable
+
+    local recs err rc=0
+    recs="$(mktemp "${TMPDIR:-/tmp}/uws-kb-import.XXXXXX")" || die 2 "import: cannot create a temporary file"
+    err="$(mktemp "${TMPDIR:-/tmp}/uws-kb-import-err.XXXXXX")" || { rm -f "$recs"; die 2 "import: cannot create a temporary file"; }
+    python3 "${SCRIPT_DIR}/kb_import.py" "${pyargs[@]}" > "$recs" 2> "$err" || rc=$?
+    if (( rc != 0 )); then
+        local msg
+        msg="$(tail -1 "$err")"
+        rm -f "$recs" "$err"
+        die 2 "import: ${msg:-reading the source failed}"
+    fi
+    rm -f "$err"
+
+    local blob="-"
+    [[ "$kind" == "vector" ]] && blob="$(git hash-object "$db" 2>/dev/null | cut -c1-12 || true)"
+    local idx
+    idx="$(claim_index)"
+    [[ "$dry" == "true" ]] || ensure_kb
+    local actor tag ref ty tags flags detail text meta orig claim norm hit hitid hitdir hitcb src
+    local n_new=0 n_flag=0 n_dup=0 n_ret=0 n_skip=0 n_rows=0
+    actor="$(kb_actor "$ROOT")"
+    echo "Import ${kind} from ${src_desc} into the ${SCOPE} KB$([[ "$dry" == "true" ]] && echo " (dry run: nothing written)"):"
+    while IFS="$TAB" read -r tag ref ty tags flags detail text meta orig; do
+        case "$tag" in
+            I) echo "  note: $(unesc_field "$ref")"; continue ;;
+            S) n_skip=$((n_skip + 1)); echo "  skip ${label}#$(unesc_field "$ref"): $(unesc_field "$ty")"; continue ;;
+            R) ;;
+            *) continue ;;
+        esac
+        n_rows=$((n_rows + 1))
+        ref="$(unesc_field "$ref")"
+        src="import:${label}#${ref}"
+        text="$(unesc_field "$text")"; orig="$(unesc_field "$orig")"
+        claim="$(import_claim "$text")"
+        if [[ -z "$claim" ]]; then n_skip=$((n_skip + 1)); echo "  skip ${src}: empty text"; continue; fi
+        if hit="$(secret_scan "${claim}"$'\n'"${orig}")"; then
+            n_skip=$((n_skip + 1)); echo "  skip ${src}: text looks like a secret (${hit}); not imported (remove it from the source by hand)"
+            continue
+        fi
+        if [[ "$SCOPE" == "global" ]] && hit="$(project_path_in "$claim")"; then
+            n_skip=$((n_skip + 1)); echo "  skip ${src}: names a project or home path (${hit}); a global claim must not (import it into a project KB instead)"
+            continue
+        fi
+        norm="$(KBV="$claim" LC_ALL=C awk "${KB_AWK_NORM}"'BEGIN { printf "%s", kb_norm(ENVIRON["KBV"]) }')"
+        hit="$(printf '%s\n' "$idx" | KBN="$norm" awk -F '\t' '$1 == ENVIRON["KBN"] { print $2 "\t" $3 "\t" $4; exit }')"
+        if [[ -n "$hit" ]]; then
+            IFS="$TAB" read -r hitid hitdir hitcb <<< "$hit"
+            if [[ "$hitdir" == "retired" ]]; then
+                n_ret=$((n_ret + 1))
+                echo "  ${src}: already retired as $(id_prefix)${hitid} ($(kb_fm_get "${KB}/retired/${hitid}.md" retired_reason)); not brought back (uws kb restore to reopen it)"
+                continue
+            fi
+            n_dup=$((n_dup + 1))
+            local hf="${KB}/items/${hitid}.md" cur
+            cur="$(kb_list_parse "$(kb_fm_raw "$hf" source)")"
+            if [[ "$hitcb" == import* ]] && ! printf '%s\n' "$cur" | grep -qxF -- "$src"; then
+                if [[ "$dry" != "true" ]]; then
+                    local -a srcs=()
+                    local s1
+                    while IFS= read -r s1; do [[ -n "$s1" ]] && srcs+=("$s1"); done <<< "$cur"
+                    srcs+=("$src")
+                    kb_fm_set "$hf" source "$(kb_list_format --quote "${srcs[@]}")"
+                    kb_event "$KB" "$hitid" candidate candidate "import-duplicate:${src}" "$actor"
+                fi
+                echo "  ${src}: same claim as $(id_prefix)${hitid} (R7); collapsed into it (source added)"
+            else
+                echo "  ${src}: same claim as $(id_prefix)${hitid} (R7); not imported"
+            fi
+            continue
+        fi
+        local hex id n=6
+        while :; do
+            hex="$(kb_hash6 "$norm" "$n")" || die 2 "import: cannot hash a claim (git missing?)"
+            id="K-$(printf '%s' "$TODAY" | tr -d '-')-${hex}"
+            [[ -e "${KB}/items/${id}.md" || -e "${KB}/retired/${id}.md" ]] || break
+            n=$((n + 2))
+            (( n <= 12 )) || die 2 "import: cannot mint a unique ID"
+        done
+        idx+=$'\n'"${norm}${TAB}${id}${TAB}items${TAB}import"
+        n_new=$((n_new + 1))
+        local shown="$ty"
+        if [[ "$flags" != "-" ]]; then n_flag=$((n_flag + 1)); shown+="|flag:${flags}"; fi
+        if [[ "$dry" == "true" ]]; then
+            echo "  would add $(id_prefix)${id} [${shown}] from ${src}: ${claim}"
+            continue
+        fi
+        write_import_item "$id" "$ty" "$claim" "$src" "$tags" "$flags" "$(unesc_field "$detail")" \
+            "$(unesc_field "$meta")" "$orig" "$kind" "$src_desc" "$blob"
+        kb_event "$KB" "$id" "-" candidate "import:${src}" "$actor"
+        echo "  added $(id_prefix)${id} [${shown}] from ${src}: ${claim}"
+    done < "$recs"
+    rm -f "$recs"
+    echo "Summary: ${n_rows} record(s); $([[ "$dry" == "true" ]] && echo "would add" || echo "added") ${n_new} candidate(s) (${n_flag} flagged suspected-fixture), ${n_dup} duplicate(s) collapsed (R7), ${n_ret} already retired, ${n_skip} skipped."
+    [[ "$dry" == "true" ]] || rebuild_stats_cache
+    echo "Nothing imported is trusted. The PI triages each item: uws kb review --imported$(scope_flag)"
+}
+
+# write_import_item <id> <type> <claim> <source> <tags csv> <flags|-> <flag detail>
+#   <meta> <original text> <kind> <source description> <blob|->
+write_import_item() {
+    local id="$1" ty="$2" claim="$3" src="$4" tags_csv="$5" flags="$6" detail="$7" meta="$8" orig="$9"
+    local kind="${10}" desc="${11}" blob="${12}" tmp t
+    local -a tags=()
+    while IFS= read -r t; do
+        [[ -n "$t" && "$t" != "-" && "$t" =~ ^[A-Za-z0-9._:+/-]+$ ]] && tags+=("$t")
+    done <<EOF
+$(printf '%s' "$tags_csv" | tr ',' '\n')
+EOF
+    [[ "$flags" == "-" ]] && flags=""
+    tmp="$(mktemp "${KB}/items/.new.XXXXXX")" || die 2 "import: cannot write in ${KB}/items"
+    {
+        echo "---"
+        echo "id: ${id}"
+        echo "type: ${ty}"
+        echo "scope: ${SCOPE}"
+        echo "status: candidate"
+        echo "claim: $(kb_quote "$claim")"
+        echo "evidence: inferred"
+        echo "source: $(kb_list_format --quote "$src")"
+        echo "watch: []"
+        echo "watch_blob: []"
+        echo "author: kb-import"
+        echo "reviewer:"
+        echo "captured_by: import"
+        echo "created: ${TODAY}"
+        echo "verified_at: ${TODAY}"
+        echo "status_since: ${TODAY}"
+        echo "review_by: $(review_by_for "$ty" "$TODAY")"
+        echo "supersedes: []"
+        echo "superseded_by:"
+        echo "contradicts: []"
+        echo "supports: []"
+        echo "tags: $(kb_list_format ${tags[@]+"${tags[@]}"})"
+        if [[ -n "$flags" ]]; then
+            echo "flags: [${flags}]"
+            echo "flag_detail: $(kb_quote "$(kb_oneline "$detail")")"
+        fi
+        echo "---"
+        printf 'Imported by `uws kb import %s` from `%s`%s (%s); the source was only read.\n\n' \
+            "$kind" "$desc" "$([[ "$blob" == "-" || -z "$blob" ]] || echo " (git blob ${blob} of the file at import time)")" "$meta"
+        printf 'This is a lead to verify, not evidence: `approve` refuses it. To keep it, restate it with a\n'
+        printf 'resolvable source (`uws kb add ...%s --supersedes %s%s`) and have the PI approve that item.\n' "$(scope_flag)" "$(id_prefix)" "$id"
+        if [[ -n "$flags" ]]; then
+            printf '\nFlag %s: %s. It may be test data or a fact from another project. The PI reviews it;\nnothing retires it because of the flag.\n' "$flags" "$detail"
+        fi
+        printf '\nOriginal text:\n\n'
+        printf '%s\n' "$orig" | sed 's/^/> /'
+    } > "$tmp"
+    mv "$tmp" "${KB}/items/${id}.md"
+}
+
 # ── main ────────────────────────────────────────────────────────────────────
 
+# Verbs that take --global / --scope global, and those that take --scope all
+GLOBAL_VERBS=" add search links show verify approve reject recommend review dispute pi prune retire restore lint stats init import "
+SEARCH_SCOPE="project"
+
 main() {
-    local verb="${1:-help}"
+    local verb="${1:-help}" scope_arg=""
     shift 2>/dev/null || true
+    # Scope: --global, --scope <s>, --scope=<s>, or an ID written global:K-...
+    local -a args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --global) scope_arg="global"; shift ;;
+            --scope) [[ $# -ge 2 ]] || die 2 "--scope needs project, global or all"; scope_arg="$2"; shift 2 ;;
+            --scope=*) scope_arg="${1#--scope=}"; shift ;;
+            global:K-*) args+=("${1#global:}"); [[ -n "$scope_arg" ]] || scope_arg="global"; shift ;;
+            --) args+=("$@"); break ;;
+            *) args+=("$1"); shift ;;
+        esac
+    done
+    case "$scope_arg" in
+        ""|project) ;;
+        global)
+            word_in "$verb" "$GLOBAL_VERBS" || die 2 "${verb}: the global KB has no '${verb}' (it is project-only)"
+            select_global ;;
+        all)
+            [[ "$verb" == "search" ]] || die 2 "--scope all is for search only"
+            ;;
+        *) die 2 "--scope must be project, global or all (got '${scope_arg}')" ;;
+    esac
+    if [[ "$verb" == "search" ]]; then
+        case "$scope_arg" in
+            ""|all) SEARCH_SCOPE="all" ;;
+            *) SEARCH_SCOPE="$scope_arg" ;;
+        esac
+    fi
+    set -- ${args[@]+"${args[@]}"}
     case "$verb" in
         add) cmd_add "$@" ;;
         search) cmd_search "$@" ;;
@@ -2129,6 +3051,7 @@ main() {
         reject) cmd_reject "$@" ;;
         recommend) cmd_recommend "$@" ;;
         review) cmd_review "$@" ;;
+        dispute) cmd_dispute "$@" ;;
         pi) cmd_pi "$@" ;;
         prune) cmd_prune "$@" ;;
         retire) cmd_retire "$@" ;;
@@ -2137,6 +3060,8 @@ main() {
         stats) cmd_stats "$@" ;;
         learn) cmd_learn "$@" ;;
         proposals) cmd_proposals "$@" ;;
+        init) cmd_init "$@" ;;
+        import) cmd_import "$@" ;;
         help|-h|--help) usage ;;
         *) die 2 "unknown verb '${verb}' (run: uws kb help)" ;;
     esac
