@@ -46,7 +46,7 @@ if [[ "$COMMAND" == "list" ]]; then
         [ -d "$dir" ] || continue
         ID=$(basename "$dir")
         SUMMARY_FILE="$dir/summary.md"
-        AGENT=$(grep "**Agent**:" "$SUMMARY_FILE" 2>/dev/null | cut -d: -f2 | xargs)
+        AGENT=$(grep -F "**Agent**:" "$SUMMARY_FILE" 2>/dev/null | cut -d: -f2 | xargs)
         MSG=$(grep "## 📝 Summary" -A 1 "$SUMMARY_FILE" 2>/dev/null | tail -1 | xargs)
         echo "$ID | $AGENT | $MSG"
     done

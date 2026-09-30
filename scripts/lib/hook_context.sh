@@ -215,13 +215,16 @@ uws_hook_context() {
     git="$(uws_git_summary "$root")"
     [[ -n "$git" ]] && tail+="${git}"$'\n'
     # Tier-0 knowledge-base line (<= 120 bytes; nothing when there is no KB)
-    local kbline=""
+    # plus one short line only while meta-learning proposals wait for the PI
+    local kbline="" kbprop=""
     if [[ -f "${_UWS_HOOK_LIB_DIR}/kb_utils.sh" ]]; then
         # shellcheck source=kb_utils.sh
         source "${_UWS_HOOK_LIB_DIR}/kb_utils.sh"
         kbline="$(kb_summary_line "$root" 2>/dev/null || true)"
+        [[ -n "$kbline" ]] && kbprop="$(kb_proposals_line "$root" 2>/dev/null || true)"
     fi
     [[ -n "$kbline" ]] && tail+="$(_uws_trunc "$kbline" 120)"$'\n'
+    [[ -n "$kbprop" ]] && tail+="$(_uws_trunc "$kbprop" 80)"$'\n'
     tail+="Full handoff: .workflow/handoff.md. Save progress with /uws:checkpoint <msg> (or: uws checkpoint create <msg>)."
 
     local note="(some items omitted; read .workflow/handoff.md)"

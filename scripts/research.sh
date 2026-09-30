@@ -39,6 +39,7 @@ source_lib() {
     local lib="$1"
     if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
         # Suppress yq warning noise
+        # shellcheck source=/dev/null
         YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/${lib}"
         return 0
     fi
