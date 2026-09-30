@@ -25,7 +25,8 @@
 #       (docs/design/research-team.md section 2).
 #   --agent <role>
 #       Dispatch a specific subagent instead of the phase's default, for example the
-#       research team's rt-scout, rt-verifier or rt-redteam.
+#       research team's rt-scout, rt-verifier, rt-redteam, rt-methodologist,
+#       rt-engineer or rt-writer.
 #
 # RWF Compliance: R3 (State Safety)
 
@@ -43,7 +44,7 @@ M=""; PHASE=""; AGENT=""
 METHODOLOGY_OVERRIDE=""; AGENT_OVERRIDE=""
 
 # Subagents gen_subagents.sh generates (.claude/agents/uws-<role>.md).
-KNOWN_AGENTS=" researcher architect implementer experimenter optimizer deployer documenter rt-scout rt-verifier rt-redteam "
+KNOWN_AGENTS=" researcher architect implementer experimenter optimizer deployer documenter rt-scout rt-verifier rt-redteam rt-methodologist rt-engineer rt-writer "
 
 research_ledger_active() {
     [[ -d "${PROJECT_ROOT}/research/ledger" ]]
@@ -96,14 +97,17 @@ resolve_context() {
     if declare -f get_agent_for_phase >/dev/null 2>&1; then
         AGENT=$(get_agent_for_phase "$M" "$PHASE")
     fi
-    # Research projects with ledgers route the phases the research team owns in
-    # increment 1 to its roles (design section 5: scout owns literature_review, the
-    # red team owns peer_review). Other phases keep their generic agent until the
-    # methodologist, engineer and writer arrive in increment 2.
+    # Research projects with ledgers route each phase to the research-team role that owns
+    # it (docs/design/research-team.md section 5). hypothesis stays with the lead in the
+    # main session, which dispatches the generic researcher only when asked.
     if [[ "$M" == "research" ]] && research_ledger_active; then
         case "$PHASE" in
             literature_review) AGENT="rt-scout" ;;
+            experiment_design) AGENT="rt-methodologist" ;;
+            data_collection)   AGENT="rt-engineer" ;;
+            analysis)          AGENT="rt-methodologist" ;;
             peer_review)       AGENT="rt-redteam" ;;
+            publication)       AGENT="rt-writer" ;;
         esac
     fi
     [[ -z "$AGENT" ]] && AGENT="researcher"

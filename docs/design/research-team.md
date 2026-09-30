@@ -1,6 +1,9 @@
 # Design: The UWS Research Team (Apocalypt)
 
-- **Status**: design only, awaiting PI review. No code has been written.
+- **Status**: increments 1 and 2 implemented (section 11 and section 11a). Still not built:
+  slop rules S3, S5, S7, C2 and C4, the INVENTORY report, the BibTeX metadata cross-check
+  (6.3 step 6), `bib verify --online`, the environment-lock and Dockerfile checks, and the
+  KB promotion interface (section 9). The gates say which of these they do not check.
 - **Date**: 2026-09-24
 - **Author role**: principal system architect (UWS subagent)
 - **Governing persona**: `docs/personas/apocalypt.md` (PI-supplied, verbatim). Every rule below cites the principle it enforces as P1-P11, which are the numbered principles in that file (P1 = line 21, P11 = line 101).
@@ -217,8 +220,10 @@ research/sources/cache/            # full texts for quote checks (gitignored)
 research/sources/index.jsonl       # {citekey, text_sha256, retrieved_at, url, access}
 research/lit/{search_log.md,matrix.md}
 research/experiments/EXP-*/{plan.md,config.yaml,deviations.md}
-research/runs/RUN-*/run.json
-research/data/{raw/,derived/,MANIFEST.tsv}
+research/ledger/plans.jsonl       # append-only plan freezes (increment 2; see 11a)
+research/runs/RUN-*/{run.json,stdout.txt,stderr.txt}
+research/data/{raw/,derived/,manifest.jsonl}   # was MANIFEST.tsv; see 11a
+research/sources/retractions.jsonl  # Crossref retraction lookups (increment 2)
 research/env/{requirements.lock,Dockerfile}
 research/repro/report-<date>.json
 research/reviews/REV-*.md
@@ -284,9 +289,17 @@ Nothing is edited in place and nothing is deleted.
 6. **Metadata cross-check:** title, authors, year and venue in the `.bib` must match the
    cached text's first page, allowing for accents and case. This catches the "wholesale
    entry substitution" failure [src S11].
-7. **Retraction status:** needed, but **not designed yet**. I did not verify which
-   authoritative field or database reports retractions. It is deferred to increment 2 as a
-   tracked open item. It is not silently skipped.
+7. **Retraction status (increment 2):** Crossref's REST API carries retractions, including
+   those from the Retraction Watch database it acquired in 2023, in the `update-to` field
+   of the notice, with `source` `publisher` or `retraction-watch` [src S20]; the retracted
+   work lists them under `updated-by` [obs: `api.crossref.org/works/10.1016/S0140-6736(97)11096-0`,
+   2026-09-30, a `retraction` from `retraction-watch`]. The Crossmark schema defines 12
+   update types [src S21]. `research_check.py retraction --online` reads both the work's
+   `updated-by` and `works?filter=updates:<doi>`, and caches the answer in
+   `research/sources/retractions.jsonl`. Offline gates read the cache: a verified claim on a
+   retracted source blocks; an unchecked or unreachable source is a warning and is never
+   reported as clean. DataCite DOIs (for example arXiv's) are "not in Crossref" and stay
+   unknown.
 
 ### 6.4 Number provenance (`numbers.jsonl`)
 
@@ -634,6 +647,68 @@ The existing 720 BATS tests must stay green. The gate stays inactive without `re
 
 ---
 
+## 11a. Second increment (implemented 2026-09-30)
+
+**Scope delivered:** the methodologist, engineer and writer (section 4), plan freeze,
+data manifests, run records and the repro job (section 8), the red-team manuscript hash
+(section 5, peer_review), retraction checks (6.3 step 7), and metric formulas. Tests:
+`tests/integration/test_research_team_inc2.bats`.
+
+**What each gate now checks, in addition to increment 1:**
+
+| Phase | New checks |
+|---|---|
+| literature_review and later | retraction cache (`RETRACTION`) |
+| experiment_design and later | at least one plan; all nine plan fields; frozen hash matches; freeze committed before results; deviations need a PI decision (`PLAN-*`) |
+| data_collection and later | data manifest, seeds, number inputs, run-record completeness (`DATA-*`, `RUN-SCHEMA`) |
+| analysis and later | formulas and evaluation splits (`NUM-FORMULA`, `NUM-SPLIT`), rule C6, a passing current repro report for every non-literature number (`REPRO`) |
+| peer_review, publication | a red-team review naming the current manuscript hash (`GATE-REVIEW-HASH`) |
+
+**PROMISE audit failures and the check that now catches each:**
+
+| Failure found in the audit (section 10) | Check |
+|---|---|
+| training input chosen by newest mtime and never archived (F8) | C5 on the code; `DATA-UNMANIFESTED` for the run's input; `DATA-MISSING` if the file is gone; the repro job cannot re-run an input it does not have |
+| data generator unseeded | `DATA-SEED` (no recorded seed; draws without a seed call; RNG built without a seed) |
+| generator-rule labels called ground truth | C6 |
+| CV means reported as held-out (F9) | `NUM-SPLIT` (every number declares `evaluation`; the sentence or caption must say "cross-validation"/"CV"/"fold") |
+| FPR misreported, 5.8% for 37/88 = 42.0% | `NUM-FORMULA` (the row declares `N-FP/(N-FP+N-TN)` and the check recomputes it) |
+
+**Deviations from the earlier sections, and why [decision]:**
+1. The data manifest is `research/data/manifest.jsonl`, not `MANIFEST.tsv` (section 8): JSON
+   Lines matches the ledgers (ADR 1) and carries the generator, seed, label origin and split
+   definition the PROMISE failures need. A new version of a file is a new row naming the
+   hash it supersedes and a reason; replacing raw data needs a PI decision ID.
+2. Freezes live in the append-only `research/ledger/plans.jsonl`, not in a `frozen_sha256`
+   field of the plan, so the plan file never has to be edited to record its own hash.
+   "Frozen before results" is checked from git history: the commit that first contains the
+   freeze row (keyed on its hash) must be a strict ancestor of the first commit containing
+   each result. A freeze committed together with its results fails. Without git the order
+   cannot be shown, and the check fails.
+3. The repro job extracts the run's recorded commit with `git archive` into a scratch
+   directory instead of creating a `git worktree`, so it never touches the repository's
+   worktree list, and it does not rebuild the environment from the lock: the re-run uses the
+   current interpreter and packages, and the report records them. Environment rebuilds stay
+   a PI decision (compute budget). Inputs that git does not track (large data) are copied in
+   only when their hash equals the recorded one. Outputs are deleted before the re-run.
+   A re-run can still write outside the scratch copy through an absolute path: that is
+   detected (hashes of number outputs and manifest files before and after), not prevented.
+4. "Recent" for the repro record means *current*: the report's hash of the number row and of
+   its run record must equal today's. A time limit is optional
+   (`UWS_RESEARCH_REPRO_MAX_AGE_DAYS`), so committed fixtures do not expire.
+5. The plan has nine required sections (P5, P7 and the section-5 gate text): hypothesis,
+   unit of evaluation, baseline, metric, controls, split and grouping, sample size, decision
+   rule, stopping condition.
+6. Every non-literature number names its experiment (`exp`) or is labelled `exploratory`,
+   and names its inputs (`inputs` or a run). Otherwise pre-registration and the data
+   manifest could be bypassed by leaving the link out.
+
+**Configuration added:** `UWS_RESEARCH_TOLERANCE_DEFAULT` (exact | abs:x | rel:x),
+`UWS_RESEARCH_REPRO_TIMEOUT` (seconds, default 3600), `UWS_RESEARCH_REPRO_MAX_AGE_DAYS`
+(default off), `UWS_RESEARCH_RETRACTION_MAX_AGE_DAYS` (warning, default 180),
+`UWS_RESEARCH_CURL` (curl binary for Crossref; tests use a stub), `UWS_RESEARCH_MAILTO`
+(optional contact in the User-Agent), `UWS_RESEARCH_CROSSREF_API` (base URL).
+
 ## 12. Risks and failure modes
 
 | # | Risk | Mitigation |
@@ -738,6 +813,8 @@ The existing 720 BATS tests must stay green. The gate stays inactive without `re
 - S17 DOI content negotiation: https://citation.doi.org/docs.html
 - S18 arXiv BibTeX endpoint, tested: https://arxiv.org/bibtex/2309.11495
 - S19 Wikipedia, *Signs of AI writing*: https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing
+- S20 Crossref, *Retraction Watch* (metadata retrieval documentation), opened 2026-09-30: https://www.crossref.org/documentation/retrieve-metadata/retraction-watch/
+- S21 Crossref, *Participating in Crossmark* (the 12 update types), opened 2026-09-30: https://www.crossref.org/documentation/crossmark/participating-in-crossmark/
 
 Not cited, because the page returned 403: the ACM Artifact Review and Badging definitions.
 

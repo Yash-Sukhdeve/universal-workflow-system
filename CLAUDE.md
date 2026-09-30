@@ -58,7 +58,7 @@ Seven roles (`researcher`, `architect`, `implementer`, `experimenter`, `optimize
 `deployer`, `documenter`). Personas are in `docs/personas/`; `scripts/gen_subagents.sh`
 turns them into Claude Code subagents in `.claude/agents/uws-<role>.md`. The research
 group follows `docs/personas/apocalypt.md`.
-Research team (`docs/design/research-team.md`): `uws-rt-*` agents, the `uws-research-lead` skill, and `scripts/research_check.py` (stdlib-only gate that `research.sh next` runs when `research/ledger/` exists).
+Research team (`docs/design/research-team.md`): six `uws-rt-*` agents, the `uws-research-lead` skill, and `scripts/research_check.py` (stdlib-only gate that `research.sh next` runs when `research/ledger/` exists; `run`/`repro` are its only commands that execute code, `retraction --online` its only network use).
 
 ### Phases and Checkpoints
 UWS phases: `phase_1_planning → phase_2_implementation → phase_3_validation →
