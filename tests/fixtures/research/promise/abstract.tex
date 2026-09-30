@@ -1,0 +1,8 @@
+\begin{abstract}
+AI-assisted software development has transformed how developers work, yet context loss during extended projects remains a critical challenge. When sessions span weeks or months, developers spend 15--25 minutes recovering context after each interruption. While workflow management systems can reduce this overhead, a fundamental question remains: Can we predict whether context recovery will succeed, and how long it will take?
+
+We present the first predictive models for workflow context recovery in AI-assisted development. Using the Universal Workflow System (UWS) as our experimental platform, we generate a dataset of 3,000 recovery scenarios spanning diverse conditions: varying checkpoint counts (1--200), state complexities (minimal to complex), corruption levels (0--90\%), and interruption types (clean, crash, timeout). We train and evaluate machine learning models to predict recovery time, success probability, and state completeness.
+
+Our results demonstrate that workflow recovery is predictable: Gradient Boosting achieves MAE of 1.1ms for recovery time prediction ($R^2 = 0.756$) and AUC-ROC of 0.912 for recovery success classification. Feature importance analysis reveals that corruption level ($r = -0.475$), checkpoint characteristics, and handoff document size are the dominant factors. We release a public benchmark dataset enabling future research on development workflow analytics.
+
+\end{abstract}
