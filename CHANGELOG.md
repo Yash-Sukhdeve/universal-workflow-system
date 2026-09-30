@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Meta-learning
+
+Increment 3 of `docs/design/knowledge-base.md` (section 6), built before the global KB and
+imports at the PI's priority: UWS records what happens to its own process and proposes rule
+changes from those counts; only the PI accepts them and nothing is applied automatically.
+
+#### Added
+- `docs/kb/outcomes.tsv` (tracked, append-only, `merge=union`): one TSV row per outcome,
+  columns `ts event phase role model subject result ref`, written only by scripts through
+  `kb_outcome` (`scripts/lib/kb_utils.sh`). Fields are TSV-escaped (tab, newline, CR,
+  backslash) and capped at 500 bytes. Recording is best effort: a no-op when `docs/kb` does
+  not exist, and a failure prints one line on stderr without changing the caller's exit code
+- Writers: `sdlc.sh fail` / `research.sh reject` (`gate_fail`: the reason is now kept),
+  `sdlc/research next` (`gate_pass`: deliverables done/total, `forced`, `ungated`),
+  `review.sh approve|reject` (`cr_decision`; `reject <CR-ID> "<reason>"` now takes a reason),
+  `orchestrate.sh dispatch|collect` (`dispatch`: role, the subagent's `model:`, target, CR ID),
+  `uws kb add --type lesson --escaped-from <phase>` (`escape`), and every KB retirement
+  (`kb_retire`: reason code, the item's evidence, captured_by, prior status and type)
+- `uws kb learn [--dry-run]`: gate-escape rate per phase (> 20% of the last 10 passes),
+  first-pass CR rejection rate per role and model (> 40%), disproven rate per evidence level and
+  per captured_by (> 25%), and repeated gate-failure reasons (>= 3), each over the last 10
+  samples and only with n >= 5 (all configurable, `UWS_KB_LEARN_*`). Escapes count only once the
+  PI has approved the lesson; retirements of candidates, inferred items, hypotheses, questions
+  and proposals are not counted. A crossing writes a `proposal` candidate with the metric, n,
+  the value, the target file, the exact change as a unified diff (a checklist line in
+  `scripts/<m>.sh`, a persona Quality Gate item, a model route, a trust weight, or a line in
+  the `uws-kb` skill), a falsifier and small-n/confounding caveats. Idempotent: a key (for CR
+  proposals, the role) with an open or tracked proposal gets no second one, and only samples
+  after the latest proposal count
+- `uws kb approve` on a proposal records `approved_ts` and says that nothing was changed; it
+  never applies the diff. `learn` then measures the same metric over the next 10 events and
+  either records `followup: improved ...` or writes a revert proposal (the diff reversed)
+- `uws kb proposals` lists proposals waiting for the PI and adopted ones being measured; the
+  SessionStart context, `uws kb stats --short` and `uws status -v` add one line while
+  proposals wait. `restore` of a proposal drops its old approval, so it waits for a new decision
+- `tests/integration/test_kb_learn.bats` (23 tests: each writer, the no-KB and failure
+  guards, every threshold, n < 5, idempotence and dry run, the candidate/inferred guard,
+  approve leaving the target file untouched, restore, revert and improvement tracking, the
+  session line)
+
+#### Not built
+- The R4-unused-share metric: it needs R4 usage counts, which are not built, and would not
+  come from `outcomes.tsv`; `learn` says it is not measured
+
+#### Fixed
+- `review.sh reject` no longer stops under `set -e` when `NOTIFICATIONS.md` is missing
+- `review.sh list` reads the agent with `grep -F` (the pattern was a regex by accident)
+
 ### Knowledge base
 
 Increment 1 of `docs/design/knowledge-base.md`: a project knowledge base in `docs/kb/`,
@@ -44,6 +92,81 @@ tracked in git, where every item has a source and only the PI promotes items to 
 - The `.workflow/knowledge/patterns.yaml` scaffold (nothing wrote to it): `init` no longer
   creates it, `migrate_state.sh --clean` deletes it when it is still the empty template, and
   the stale `.workflow/knowledge/` line is gone from `.gitignore`
+
+### Research team (increment 2)
+
+Increment 2 of `docs/design/research-team.md`: the methodologist, engineer and writer, plan
+freeze, data manifests, run records and the repro job, the red-team manuscript hash,
+retraction checks and metric formulas. Each failure found in the PROMISE 2026 audit is now
+caught by a check (tests in `tests/integration/test_research_team_inc2.bats`, 46 tests).
+
+#### Added
+- Subagents `uws-rt-methodologist` (opus), `uws-rt-engineer` and `uws-rt-writer` (sonnet),
+  generated from `docs/personas/research-{methodologist,engineer,writer}.md` with
+  `apocalypt.md` included once. The engineer and methodologist have Edit; the writer has no
+  web tools. `orchestrate.sh` routes experiment_design and analysis to the methodologist,
+  data_collection to the engineer and publication to the writer when `research/ledger/`
+  exists; the `uws-research-lead` skill (both copies) dispatches all six roles.
+- Plan freeze: `research_check.py plan new|freeze <EXP-ID>` writes
+  `research/experiments/EXP-*/plan.md` (hypothesis, unit, baseline, metric, controls, split
+  and grouping, sample size, decision rule, stopping condition) and records its SHA-256 in
+  the append-only `research/ledger/plans.jsonl`. `plan` fails when a plan is incomplete or
+  unfrozen (`PLAN-FIELDS`, `PLAN-FREEZE`), changed since its freeze (`PLAN-DRIFT`), when a
+  result (a number row or run record naming the experiment) was committed before or with the
+  freeze, or the freeze row was edited later (`PLAN-ORDER`, from git history), when a re-freeze
+  after results lacks a reason, a recorded PI decision and a `deviations.md` row
+  (`PLAN-DEVIATION`), and when a non-literature number names no experiment and is not
+  labelled `exploratory` (`PLAN-LINK`). `plan freeze` refuses a first freeze once results
+  exist, and a change after results without `--pi-decision D-<n>`.
+- Data manifest `research/data/manifest.jsonl` (`data add <path> --source --version --split
+  --origin [--generator --seed --labels]`, raw files made read-only). `data` fails on hash
+  or size drift (`DATA-HASH`), registered files that are gone (`DATA-MISSING`), raw files and
+  number inputs that are not registered (`DATA-UNMANIFESTED`), numbers that name no inputs
+  (`DATA-NOINPUT`), runs that used an older version of an input (`DATA-RUNHASH`), generated
+  data without a recorded seed, a generator that draws random values without seeding, or
+  builds an RNG without a seed (`DATA-SEED`), replaced raw data without a PI decision
+  (`DATA-REPLACE`), and incomplete run records (`RUN-SCHEMA`).
+- Run records: `run [--exp] [--input]... [--output]... [--seed] [--env] -- <command>` writes
+  `research/runs/RUN-*/run.json` (command, commit, dirty flag, inputs and outputs with
+  hashes, seeds, environment, exit code, stdout/stderr) and keeps failed runs.
+- Repro job: `repro <N-ID ...|all>` re-runs each run at its recorded commit in a scratch copy
+  (`git archive`; recorded inputs copied in at their recorded hash; outputs deleted first),
+  compares every number within its `tolerance` (default exact, or
+  `UWS_RESEARCH_TOLERANCE_DEFAULT`), refuses runs recorded on a dirty tree, reports a re-run
+  that changes files of the original project, and writes `research/repro/report-*.json`.
+  The analysis, peer_review and publication gates need a passing report for every number's
+  current ledger row and run record (`REPRO`); `UWS_RESEARCH_REPRO_MAX_AGE_DAYS` adds an
+  age limit.
+- Red-team manuscript hash: `manuscript-hash` hashes the manuscript files (prose, number
+  macros, references.bib). The peer_review and publication gates need a review whose
+  `Manuscript: sha256:...` line matches (`GATE-REVIEW-HASH`), so edits after review re-open it.
+- Retraction check: `retraction --online` asks Crossref for each `bib_sources/` DOI
+  (`updated-by` on the work, and notices whose `update-to` names it) and appends the answer
+  to `research/sources/retractions.jsonl`; exit 2 when Crossref is unreachable, and an
+  unreachable attempt never hides an earlier answer. Offline, `retraction` (and every gate
+  from literature_review) blocks a verified claim resting on a retracted source and a
+  `\cite` of it in a sentence that does not say "retracted"; unchecked, unreachable,
+  non-Crossref or DOI-less sources are warnings, never passes.
+- Numbers: a row may declare a `formula` over other N-IDs; the check recomputes it and
+  compares it with `raw` and with `printed` under the row's rounding (`NUM-FORMULA`: the
+  PROMISE false-positive rate, 5.8% for 37/88 = 42.0%, now fails). Non-literature numbers
+  declare `evaluation` (`held-out` | `validation` | `cross-validation` | `training` | `n/a`);
+  a cross-validation, training or validation macro used in a sentence or caption that does
+  not say so fails, and one next to held-out wording warns (`NUM-SPLIT`). A number's `run`
+  must list its output at the same hash.
+- Slop rule C6: "ground truth", "annotated" or "gold standard" wording on a sentence traced to
+  generated data, or to an input whose manifest `labels` is `generator-rule`, fails unless
+  the sentence says the labels come from the generator.
+- `macros` writes the generated macro file from the number ledger; `init` also scaffolds
+  `research/experiments`, `research/data/raw`, `research/runs`, `research/repro`,
+  `plans.jsonl` and `manifest.jsonl`.
+
+#### Changed
+- The gates no longer print "not checked yet" for these checks. From analysis on they list
+  the rules that are still unimplemented (S3, S5, S7, C2, C4 and the INVENTORY report).
+- The research-team fixture gained a seeded generator, a frozen plan (EXP-LEAK), a manifest
+  row, a real Crossref answer for its one source, and a `Manuscript:` line in REV-001; the
+  tests commit the freeze before the results.
 
 ### Research team
 

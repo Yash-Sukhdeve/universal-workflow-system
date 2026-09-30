@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/resolve_project.sh"
 
 # Source utility libraries (suppress yq warning)
+# shellcheck disable=SC2034  # read by yaml_utils.sh
 YAML_UTILS_QUIET=true
 if [[ -f "${SCRIPT_DIR}/lib/validation_utils.sh" ]]; then
     source "${SCRIPT_DIR}/lib/validation_utils.sh"
@@ -307,6 +308,9 @@ if [ "$VERBOSE" = true ]; then
     fi
     if [[ -n "$KB_LINE" ]]; then
         echo -e "  ${CYAN}${KB_LINE}${NC}"
+        # Meta-learning proposals waiting for the PI (nothing when there are none)
+        KB_PROP="$(kb_proposals_line "$(cd "${WORKFLOW_DIR}/.." && pwd)" 2>/dev/null || true)"
+        [[ -z "$KB_PROP" ]] || echo -e "  ${YELLOW}${KB_PROP}${NC}"
     else
         echo -e "  ${DIM}No knowledge base yet (uws kb add ...)${NC}"
     fi

@@ -21,6 +21,24 @@ UWS_DIR="${PROJECT_ROOT}/.uws"
 STAGING_DIR="${UWS_DIR}/crs"
 NOTIFICATIONS_FILE="${PROJECT_ROOT}/NOTIFICATIONS.md"
 
+# Meta-learning outcomes (docs/kb/outcomes.tsv); recording is best effort and a
+# no-op in projects without a KB (docs/design/knowledge-base.md section 6.2).
+# shellcheck source=lib/kb_utils.sh
+source "${SCRIPT_DIR}/lib/kb_utils.sh" 2>/dev/null || true
+
+# record_cr_decision <cr-dir> <cr-id> <result>: one cr_decision row with the
+# CR's agent, the model it was dispatched with, and its summary line.
+record_cr_decision() {
+    declare -f kb_outcomes_enabled > /dev/null 2>&1 || return 0
+    kb_outcomes_enabled || return 0
+    local dir="$1" id="$2" result="$3" agent summary
+    agent="$(awk '/^\*\*Agent\*\*:/ { sub(/^\*\*Agent\*\*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit }' \
+        "${dir}/summary.md" 2>/dev/null || true)"
+    summary="$(awk 'f { print; exit } /^## .*Summary/ { f = 1 }' "${dir}/summary.md" 2>/dev/null || true)"
+    kb_outcome cr_decision "$(kb_current_phase)" "${agent:--}" "$(kb_cr_model "$id" "${agent:-unknown}")" \
+        "$summary" "$result" "$id" || true
+}
+
 if [[ "$COMMAND" == "list" ]]; then
     echo "Pending Change Requests:"
     echo "ID | Agent | Summary"
@@ -29,7 +47,7 @@ if [[ "$COMMAND" == "list" ]]; then
         [ -d "$dir" ] || continue
         ID=$(basename "$dir")
         SUMMARY_FILE="$dir/summary.md"
-        AGENT=$(grep "**Agent**:" "$SUMMARY_FILE" 2>/dev/null | cut -d: -f2 | xargs)
+        AGENT=$(grep -F "**Agent**:" "$SUMMARY_FILE" 2>/dev/null | cut -d: -f2 | xargs)
         MSG=$(grep "## 📝 Summary" -A 1 "$SUMMARY_FILE" 2>/dev/null | tail -1 | xargs)
         echo "$ID | $AGENT | $MSG"
     done
@@ -78,20 +96,28 @@ if [[ "$COMMAND" == "approve" ]]; then
     
     # 5. Archive CR (Optional, here we delete for simplicity or move to archive)
     mv "$CL_DIR" "${STAGING_DIR}/ARCHIVED_${CL_ID}"
-    
+
+    # 6. Meta-learning: record the decision (best effort)
+    record_cr_decision "${STAGING_DIR}/ARCHIVED_${CL_ID}" "$CL_ID" "approved"
+
     echo "✅ Approved and Merged Successfully!"
     exit 0
 fi
 
 if [[ "$COMMAND" == "reject" ]]; then
+    # Usage: review.sh reject <CR-ID> ["reason"]; the reason is kept in docs/kb/outcomes.tsv
     CL_ID="$ARG"
     CL_DIR="${STAGING_DIR}/${CL_ID}"
-    
+    REASON="${*:3}"
+
     if [[ ! -d "$CL_DIR" ]]; then
         echo "Error: CR $CL_ID not found."
         exit 1
     fi
-    
+
+    # 0. Meta-learning: record the decision before the CR is deleted (best effort)
+    record_cr_decision "$CL_DIR" "$CL_ID" "rejected${REASON:+: ${REASON}}"
+
     # 1. Move Ticket Back
     TICKET_ID=$(grep -m 1 "**Ticket**:" "${CL_DIR}/summary.md" | cut -d: -f2 | tr -d ' *' || echo "None")
     
@@ -101,7 +127,9 @@ if [[ "$COMMAND" == "reject" ]]; then
     fi
     
     # 2. Cleanup
-    sed_inplace "/${CL_ID}/d" "$NOTIFICATIONS_FILE"
+    if [[ -f "$NOTIFICATIONS_FILE" ]]; then
+        sed_inplace "/${CL_ID}/d" "$NOTIFICATIONS_FILE"
+    fi
     rm -rf "$CL_DIR"
     
     echo "❌ CR Rejected. Feedback sent."

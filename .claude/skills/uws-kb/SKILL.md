@@ -44,6 +44,8 @@ the item ID when you use it. Exit code 1 means no match.
   when told about an overlap (exit 4).
 - The new ID is printed on stdout. Exit 2 = invalid or unprovenanced, 3 = duplicate.
 - Never put credentials or personal data in an item; the secret scan refuses them.
+- A bug that got past a phase's gate: add it with `--type lesson --escaped-from <phase>`
+  (e.g. `verification`), so the meta-learning metrics count it once the PI approves it.
 
 ## Promotion belongs to the PI
 
@@ -58,3 +60,20 @@ PI (principal investigator) can make an item `trusted`, by running
 Then tell the user which IDs are waiting (`./bin/uws kb review`). Do not
 work around this: do not edit `status:` in item files, change the git identity, or unset
 environment variables.
+
+## Meta-learning proposals
+
+Scripts record what happens to the workflow itself in `docs/kb/outcomes.tsv` (gate failures
+with their reasons, gate passes, change-request decisions, dispatches with the agent's model,
+escaped bugs, retirements); never edit that file. `./bin/uws kb learn` counts those rows and,
+when a rate crosses its threshold with n >= 5, writes a `proposal` candidate holding the exact
+change as a diff, a falsifier and its caveats (counts, not causes).
+
+```bash
+./bin/uws kb learn --dry-run         # what it would propose
+./bin/uws kb proposals               # proposals waiting for the PI, and adopted ones being measured
+```
+
+Only the PI approves a proposal, and approving never applies it: the change goes through a
+normal change request, and `learn` proposes a revert if the metric does not improve over the
+next 10 events. Do not apply a proposal's change yourself unless the user asks for it.

@@ -1,69 +1,24 @@
 #!/usr/bin/env bats
 # Research team, increment 1 (docs/design/research-team.md section 11).
 # Acceptance tests AT1-AT10 against tests/fixtures/research/project, which passes every
-# gate; each test breaks one thing and expects the named check to fail on it.
+# gate once its run is recorded and reproduced (research_make_reproducible); each test
+# breaks one thing and expects the named check to fail on it.
 # AT11 (headless Claude, SubagentStop) and AT12 (PROMISE audit) run outside BATS.
+# Increment 2 is tested in test_research_team_inc2.bats.
 
 load '../helpers/test_helper'
+load '../helpers/research_helper'
 source "${PROJECT_ROOT}/scripts/lib/portable.sh"   # sed_inplace (BSD and GNU sed)
 
-RFIX="${PROJECT_ROOT}/tests/fixtures/research"
-CHECK="${PROJECT_ROOT}/scripts/research_check.py"
 HOOK="${PROJECT_ROOT}/plugins/uws/hooks/research_subagent_stop.sh"
 
+# The fixture is committed in two steps (plan freeze first); see research_fixture_setup.
 setup() {
-    command -v python3 >/dev/null 2>&1 || skip "python3 not installed"
-    setup_test_environment
-    P="${TEST_TMP_DIR}"
-    cp -R "${RFIX}/project/." "$P/"
-    cd "$P"
-    git add -A research bib_sources paper artifacts >/dev/null
-    git commit -q -m "fixture" >/dev/null
+    research_fixture_setup
 }
 
 teardown() {
     teardown_test_environment
-}
-
-check() {
-    python3 "$CHECK" --root "$P" "$@"
-}
-
-append_claim() {
-    printf '%s\n' "$1" >> "$P/research/ledger/claims.jsonl"
-}
-
-# A state.yaml like the one init writes, with research at the given phase.
-research_state() {
-    cat > "$P/.workflow/state.yaml" << EOF
-project_type: "research"
-goal: ""
-current_phase: "phase_1_planning"
-current_checkpoint: "CP_1_001"
-research_phase: "$1"
-
-phases:
-  phase_1_planning:
-    status: "active"
-  phase_2_implementation:
-    status: "pending"
-  phase_3_validation:
-    status: "pending"
-  phase_4_delivery:
-    status: "pending"
-  phase_5_maintenance:
-    status: "pending"
-
-methodology_progress:
-
-metadata:
-  created: "2026-09-26T00:00:00"
-EOF
-    printf '# log\n' > "$P/.workflow/checkpoints.log"
-}
-
-phase_now() {
-    grep '^research_phase:' "$P/.workflow/state.yaml" | cut -d: -f2 | tr -d ' "'
 }
 
 # Stub curl for the fetcher: copies $FAKE_BODY to the -o file and prints the -w line.
@@ -87,6 +42,7 @@ EOF
 # ── The reference project passes ──────────────────────────────────────────────
 
 @test "research fixture: every phase gate passes on the reference project" {
+    research_make_reproducible
     local phase
     for phase in hypothesis literature_review experiment_design data_collection analysis peer_review publication; do
         run check gate "$phase"
@@ -516,7 +472,7 @@ EOF
     printf '| F-003 | blocking | open | split leaks | train.py:157 | GroupKFold |\n' >> "$P/research/reviews/REV-001.md"
     run check gate peer_review
     [ "$status" -eq 1 ]
-    [[ "$output" == *"research/reviews/REV-001.md:7 GATE-REVIEW F-003"* ]]
+    [[ "$output" == *"research/reviews/REV-001.md:9 GATE-REVIEW F-003"* ]]
 }
 
 @test "gate publication: needs the PI approval line" {
@@ -621,7 +577,7 @@ hook_input() {
 
 @test "ships: research agents, the lead skill and the research-check command are in the plugin" {
     local role
-    for role in rt-scout rt-verifier rt-redteam; do
+    for role in rt-scout rt-verifier rt-redteam rt-methodologist rt-engineer rt-writer; do
         [ -f "${PROJECT_ROOT}/plugins/uws/agents/uws-${role}.md" ]
         grep -q "Governing persona (docs/personas/apocalypt.md, verbatim)" "${PROJECT_ROOT}/plugins/uws/agents/uws-${role}.md"
         grep -q "Open questions for the orchestrator" "${PROJECT_ROOT}/plugins/uws/agents/uws-${role}.md"

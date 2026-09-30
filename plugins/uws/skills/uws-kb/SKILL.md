@@ -44,6 +44,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/uws kb add --type fact --claim "<one sentence, at most
   when told about an overlap (exit 4).
 - The new ID is printed on stdout. Exit 2 = invalid or unprovenanced, 3 = duplicate.
 - Never put credentials or personal data in an item; the secret scan refuses them.
+- A bug that got past a phase's gate: add it with `--type lesson --escaped-from <phase>`
+  (e.g. `verification`), so the meta-learning metrics count it once the PI approves it.
 
 ## Promotion belongs to the PI
 
@@ -58,3 +60,20 @@ ${CLAUDE_PLUGIN_ROOT}/bin/uws kb recommend <ID> "<why it is ready>"
 Then tell the user which IDs are waiting (`${CLAUDE_PLUGIN_ROOT}/bin/uws kb review`). Do not
 work around this: do not edit `status:` in item files, change the git identity, or unset
 environment variables.
+
+## Meta-learning proposals
+
+Scripts record what happens to the workflow itself in `docs/kb/outcomes.tsv` (gate failures
+with their reasons, gate passes, change-request decisions, dispatches with the agent's model,
+escaped bugs, retirements); never edit that file. `${CLAUDE_PLUGIN_ROOT}/bin/uws kb learn` counts those rows and,
+when a rate crosses its threshold with n >= 5, writes a `proposal` candidate holding the exact
+change as a diff, a falsifier and its caveats (counts, not causes).
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/uws kb learn --dry-run         # what it would propose
+${CLAUDE_PLUGIN_ROOT}/bin/uws kb proposals               # proposals waiting for the PI, and adopted ones being measured
+```
+
+Only the PI approves a proposal, and approving never applies it: the change goes through a
+normal change request, and `learn` proposes a revert if the metric does not improve over the
+next 10 events. Do not apply a proposal's change yourself unless the user asks for it.

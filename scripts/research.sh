@@ -39,6 +39,7 @@ source_lib() {
     local lib="$1"
     if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
         # Suppress yq warning noise
+        # shellcheck source=/dev/null
         YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/${lib}"
         return 0
     fi
@@ -57,12 +58,13 @@ source_lib "validation_utils.sh" || true
 source_lib "logging_utils.sh" || true
 source_lib "workflow_routing.sh" || true
 source_lib "decision_utils.sh" || true
+source_lib "kb_utils.sh" || true   # meta-learning outcomes (docs/kb/outcomes.tsv)
 
 PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
 # Subcommands of `research.sh check <name>` that run the evidence checker instead of
 # ticking a numbered deliverable (docs/design/research-team.md section 6.6).
-RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers slop gate init role-exit "
+RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers slop gate init role-exit plan data run repro retraction manuscript-hash macros "
 
 #######################################
 # Validate workflow is initialized
@@ -509,6 +511,9 @@ main() {
             if next_phase=$(get_next_phase "$current_phase"); then
                 set_phase "$next_phase"
                 echo -e "${GREEN}✅ Advancing to: ${next_phase}${NC}"
+                # Meta-learning: record the gate pass (best effort; no-op without docs/kb)
+                declare -f kb_record_gate_pass > /dev/null 2>&1 && kb_record_gate_pass research "$current_phase" "$next_phase" \
+                    "$(get_phase_deliverables "$current_phase" | wc -l)" "${details:-}" || true
 
                 # Point at the subagent that owns the new phase. Agents are real
                 # Claude Code subagents now, dispatched on demand by
@@ -588,6 +593,8 @@ main() {
 
             local refinement_phase
             refinement_phase=$(get_refinement_phase "$current_phase")
+            # Meta-learning: keep the reason (docs/kb/outcomes.tsv; best effort, no-op without docs/kb)
+            declare -f kb_record_gate_fail > /dev/null 2>&1 && kb_record_gate_fail research "$current_phase" "$refinement_phase" "$details" || true
 
             if [[ -n "$refinement_phase" ]]; then
                 set_phase "$refinement_phase"
@@ -710,6 +717,13 @@ main() {
             echo "  check init                 Scaffold research/ and bib_sources/"
             echo "  check ledger|bib|quotes|numbers|slop   Run one evidence check"
             echo "  check gate <phase>         Run a phase's evidence gate (next runs it too)"
+            echo "  check plan [new|freeze <EXP-ID>]   Pre-register an experiment plan (frozen by hash)"
+            echo "  check data [add <path> ...]        Data manifest: hashes, sources, splits, seeds"
+            echo "  check run [--exp E] [--input P] [--output P] -- <cmd>   Run and record a command"
+            echo "  check repro <N-ID ...|all> Re-run recorded commands in a scratch copy and compare"
+            echo "  check retraction [--online]        Retraction notices (Crossref) for bib_sources/"
+            echo "  check manuscript-hash      The hash a red-team review must name"
+            echo "  check macros               Write the number macros from the number ledger"
             echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
             echo "  bib build                  Write references.bib from bib_sources/ only"
             echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"

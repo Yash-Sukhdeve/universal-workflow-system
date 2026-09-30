@@ -1,7 +1,7 @@
 #!/bin/bash
 # UWS plugin SubagentStop hook for the research team (docs/design/research-team.md
 # section 6.7, layer L2). It runs `research_check.py role-exit` when a research subagent
-# (uws-rt-scout, uws-rt-verifier, uws-rt-redteam) tries to stop.
+# (uws-rt-scout, -verifier, -redteam, -methodologist, -engineer, -writer) tries to stop.
 #
 # Hook contract (Claude Code hooks reference, https://code.claude.com/docs/en/hooks,
 # section "SubagentStop", checked 2026-09-26):

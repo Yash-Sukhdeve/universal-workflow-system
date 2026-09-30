@@ -65,13 +65,15 @@ Workflow Commands:
                            (dispatch "<task>" | collect "<summary>" | status)
   kb <verb> [args]         Project knowledge base in docs/kb/ (add|search|links|
                            show|verify|recommend|review|approve|reject|pi|prune|
-                           retire|restore|lint|stats); 'uws kb help' for details
+                           retire|restore|lint|stats|learn|proposals);
+                           'uws kb help' for details
 
 Methodology Commands:
   sdlc [cmd]               SDLC workflow (status|start|next|fail|reset)
   research [cmd]           Research workflow (status|start|next|reject|reset)
   research check <name>    Research team evidence checks: init | ledger | bib |
-                           quotes | numbers | slop | gate <phase>
+                           quotes | numbers | slop | gate <phase> | plan | data |
+                           run | repro | retraction | manuscript-hash | macros
   research bib fetch|build Download authoritative BibTeX into bib_sources/;
                            build references.bib from bib_sources/ only
   spiral [args]            Spiral SDLC workflow

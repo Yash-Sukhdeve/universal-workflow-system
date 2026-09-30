@@ -25,7 +25,8 @@
 #       (docs/design/research-team.md section 2).
 #   --agent <role>
 #       Dispatch a specific subagent instead of the phase's default, for example the
-#       research team's rt-scout, rt-verifier or rt-redteam.
+#       research team's rt-scout, rt-verifier, rt-redteam, rt-methodologist,
+#       rt-engineer or rt-writer.
 #
 # RWF Compliance: R3 (State Safety)
 
@@ -35,6 +36,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/resolve_project.sh"
 YAML_UTILS_QUIET=true source "${SCRIPT_DIR}/lib/yaml_utils.sh" 2>/dev/null || true
 YAML_UTILS_QUIET=true source "${SCRIPT_DIR}/lib/workflow_routing.sh" 2>/dev/null || true
+# Meta-learning outcomes (docs/kb/outcomes.tsv): best effort, no-op without a KB
+# shellcheck source=lib/kb_utils.sh
+source "${SCRIPT_DIR}/lib/kb_utils.sh" 2>/dev/null || true
 
 PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
@@ -43,7 +47,7 @@ M=""; PHASE=""; AGENT=""
 METHODOLOGY_OVERRIDE=""; AGENT_OVERRIDE=""
 
 # Subagents gen_subagents.sh generates (.claude/agents/uws-<role>.md).
-KNOWN_AGENTS=" researcher architect implementer experimenter optimizer deployer documenter rt-scout rt-verifier rt-redteam "
+KNOWN_AGENTS=" researcher architect implementer experimenter optimizer deployer documenter rt-scout rt-verifier rt-redteam rt-methodologist rt-engineer rt-writer "
 
 research_ledger_active() {
     [[ -d "${PROJECT_ROOT}/research/ledger" ]]
@@ -96,14 +100,17 @@ resolve_context() {
     if declare -f get_agent_for_phase >/dev/null 2>&1; then
         AGENT=$(get_agent_for_phase "$M" "$PHASE")
     fi
-    # Research projects with ledgers route the phases the research team owns in
-    # increment 1 to its roles (design section 5: scout owns literature_review, the
-    # red team owns peer_review). Other phases keep their generic agent until the
-    # methodologist, engineer and writer arrive in increment 2.
+    # Research projects with ledgers route each phase to the research-team role that owns
+    # it (docs/design/research-team.md section 5). hypothesis stays with the lead in the
+    # main session, which dispatches the generic researcher only when asked.
     if [[ "$M" == "research" ]] && research_ledger_active; then
         case "$PHASE" in
             literature_review) AGENT="rt-scout" ;;
+            experiment_design) AGENT="rt-methodologist" ;;
+            data_collection)   AGENT="rt-engineer" ;;
+            analysis)          AGENT="rt-methodologist" ;;
             peer_review)       AGENT="rt-redteam" ;;
+            publication)       AGENT="rt-writer" ;;
         esac
     fi
     [[ -z "$AGENT" ]] && AGENT="researcher"
@@ -176,6 +183,12 @@ ${deliv}
 ${contract}
 EOF
 
+    # Meta-learning: which role and model got this phase's work (best effort)
+    if declare -f kb_outcomes_enabled >/dev/null 2>&1 && kb_outcomes_enabled; then
+        kb_outcome dispatch "${M}:${PHASE}" "$AGENT" "$(kb_agent_model "$AGENT" "$PROJECT_ROOT")" \
+            "$target" dispatched "$(kb_head_ref "$PROJECT_ROOT")" || true
+    fi
+
     echo -e "${GREEN}✓ Prepared dispatch for ${AGENT} (${M}:${PHASE})${NC}"
     echo -e "  Brief:  ${CYAN}workspace/${AGENT}/TASK.md${NC}"
     echo -e "  Output: ${CYAN}workspace/${AGENT}/${target}${NC}"
@@ -197,12 +210,27 @@ cmd_collect() {
     # The TASK.md brief is a transient control file, NOT a deliverable. submit.sh
     # diffs the whole workspace/<agent>/ dir, so leaving TASK.md in would submit it
     # as a repo-root file and cause cross-CR conflicts. Strip it before staging.
-    local active_agent
+    local active_agent target="" phase="" brief
     active_agent=$(get_active_agent "$STATE_FILE" 2>/dev/null || true)
-    if [[ -n "$active_agent" && -f "${PROJECT_ROOT}/workspace/${active_agent}/TASK.md" ]]; then
-        rm -f "${PROJECT_ROOT}/workspace/${active_agent}/TASK.md"
+    brief="${PROJECT_ROOT}/workspace/${active_agent}/TASK.md"
+    if [[ -n "$active_agent" && -f "$brief" ]]; then
+        # The brief names the phase and target artifact; keep them for the outcome row
+        target="$(sed -n 's/^- \*\*Target artifact\*\*: `workspace\/[^/]*\/\(.*\)`$/\1/p' "$brief" | head -1 || true)"
+        phase="$(sed -n 's/^- \*\*Methodology \/ Phase\*\*: \([a-z]*\) \/ \([a-z_]*\).*/\1:\2/p' "$brief" | head -1 || true)"
+        rm -f "$brief"
     fi
-    bash "${SCRIPT_DIR}/submit.sh" "$summary" "$ticket"
+    local out rc=0 cr
+    out="$(bash "${SCRIPT_DIR}/submit.sh" "$summary" "$ticket")" || rc=$?
+    [[ -n "$out" ]] && printf '%s\n' "$out"
+    (( rc == 0 )) || exit "$rc"
+    # Meta-learning: the collected CR, so review decisions can be traced to the
+    # role and model that produced it (best effort)
+    cr="$(printf '%s\n' "$out" | sed -n 's/^CL ID: \(CR-[0-9A-Za-z_-]*\)$/\1/p' | tail -1)"
+    if [[ -n "$cr" ]] && declare -f kb_outcomes_enabled >/dev/null 2>&1 && kb_outcomes_enabled; then
+        [[ -n "$phase" ]] || phase="$(kb_current_phase)"
+        kb_outcome dispatch "$phase" "${active_agent:-unknown}" \
+            "$(kb_agent_model "${active_agent:-unknown}" "$PROJECT_ROOT")" "${target:--}" collected "$cr" || true
+    fi
     echo ""
     echo -e "${YELLOW}Human gate:${NC} review the change request, then approve with"
     echo -e "  ${CYAN}./scripts/review.sh approve <CR-ID>${NC}"

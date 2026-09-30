@@ -52,13 +52,14 @@ analysis → peer_review → publication`. Once a goal is declared (`sdlc.sh goa
 - `active_agent:` in `state.yaml` - last agent `orchestrate.sh` dispatched (`record_active_agent`)
 - `checkpoints/snapshots/<CP_ID>/` - state snapshots (gitignored)
 - Knowledge base: `docs/kb/` (tracked; `scripts/kb.sh` + `lib/kb_utils.sh`, `uws kb`); only the PI (`kb.pi` in `config.yaml`) promotes items to trusted
+- Meta-learning: scripts append outcomes to `docs/kb/outcomes.tsv` via `kb_outcome` (best effort, no-op without `docs/kb`); `uws kb learn` turns them into `proposal` candidates that only the PI approves and nothing applies automatically
 
 ### Agents
 Seven roles (`researcher`, `architect`, `implementer`, `experimenter`, `optimizer`,
 `deployer`, `documenter`). Personas are in `docs/personas/`; `scripts/gen_subagents.sh`
 turns them into Claude Code subagents in `.claude/agents/uws-<role>.md`. The research
 group follows `docs/personas/apocalypt.md`.
-Research team (`docs/design/research-team.md`): `uws-rt-*` agents, the `uws-research-lead` skill, and `scripts/research_check.py` (stdlib-only gate that `research.sh next` runs when `research/ledger/` exists).
+Research team (`docs/design/research-team.md`): six `uws-rt-*` agents, the `uws-research-lead` skill, and `scripts/research_check.py` (stdlib-only gate that `research.sh next` runs when `research/ledger/` exists; `run`/`repro` are its only commands that execute code, `retraction --online` its only network use).
 
 ### Phases and Checkpoints
 UWS phases: `phase_1_planning → phase_2_implementation → phase_3_validation →

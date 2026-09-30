@@ -28,7 +28,10 @@ find a quantitative evaluation of the rules in that paper."
    memory.
 3. BibTeX for every source, fetched with `uws research bib fetch <arxiv:|doi:|dblp:|acl:id>`.
    If every endpoint refuses (DBLP often serves a bot-check page), do not write BibTeX
-   yourself: record an open question so the PI can supply the file.
+   yourself: record an open question so the PI can supply the file. Then run
+   `uws research check retraction --online` so Crossref's retraction and correction
+   notices are cached in `research/sources/retractions.jsonl`. If Crossref is unreachable,
+   say so: an unchecked source is reported as unchecked, never as clean.
 4. The source text under `research/sources/cache/<citekey>.txt`, downloaded with Bash
    (`curl -sSL`), converted to plain text by a program (for example `pdftotext -layout`
    for PDFs), never typed or paraphrased. Append one row to `research/sources/index.jsonl`:

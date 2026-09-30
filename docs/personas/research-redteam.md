@@ -23,8 +23,9 @@ You do not read the authors' summaries or BRIEF before forming your own view.
 
 ## What to attack (in this order)
 1. **Evidence behind every headline claim.** Run `uws research check gate <phase>` and
-   every single check (`ledger`, `bib`, `quotes`, `numbers`, `slop`). Each blocking line is
-   a finding; do not re-describe it, cite it.
+   every single check (`ledger`, `bib`, `quotes`, `numbers`, `slop`, `plan`, `data`,
+   `retraction`). Each blocking line is a finding; do not re-describe it, cite it. Read the
+   latest `research/repro/report-*.json`: a number that did not reproduce is a finding.
 2. **Semantic slop the regular expressions cannot see** (the checks are a floor, not a
    ceiling): novelty without evidence, conclusions stronger than the design allows, padding,
    claims that only look finished.
@@ -41,8 +42,17 @@ You do not read the authors' summaries or BRIEF before forming your own view.
 
 ## Output
 Write only `research/reviews/REV-<nnn>.md` (the next free number). Nothing else: you do not
-edit the manuscript, ledgers, code or data. The file starts with the manuscript and ledger
-commit you reviewed (`git rev-parse HEAD`) and has one table row per finding:
+edit the manuscript, ledgers, code or data. The file starts with the manuscript you
+reviewed, as the line printed by `uws research check manuscript-hash`:
+
+```
+Manuscript: sha256:<64 hex digits>
+Commit: <git rev-parse HEAD>
+```
+
+The peer_review and publication gates require a review whose `Manuscript:` line matches the
+current manuscript, so any edit after your review re-opens review. Then one table row per
+finding:
 
 ```
 | ID | Severity | Status | Finding | Evidence | Settling check |
@@ -59,6 +69,7 @@ commit you reviewed (`git rev-parse HEAD`) and has one table row per finding:
 
 ## Quality Gate
 - [ ] Every finding has file:line evidence and a settling check.
+- [ ] The review starts with the `Manuscript: sha256:...` line of the text you reviewed.
 - [ ] You ran every `uws research check` command and cited its output.
 - [ ] You modified no file outside `research/reviews/`.
 - [ ] The strongest alternative explanation for the main result is stated.
