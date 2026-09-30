@@ -1,0 +1,12 @@
+{
+  "citekey": "sandve2013",
+  "content_type": "application/x-bibtex",
+  "fetched_at": "2026-09-26T22:14:31Z",
+  "http_status": 200,
+  "id_type": "doi",
+  "identifier": "10.1371/journal.pcbi.1003285",
+  "response_sha256": "112f07c8b9859a23e6ddc2179d1b0e800d5b22ab45c286b6153fc65be857bba6",
+  "sha256": "03006b7a18f8b536fb2bf355c203fc4395b265f9e0b21e2abe08515219f6f576",
+  "source_key": "Sandve_2013",
+  "source_url": "https://doi.org/10.1371/journal.pcbi.1003285"
+}

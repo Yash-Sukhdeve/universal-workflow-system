@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Research team
+
+Increment 1 of the research team (`docs/design/research-team.md` section 11): research
+claims, citations and numbers are checked by a program, not by trust.
+
+#### Added
+- `scripts/research_check.py` (Python 3.8+ standard library only): `ledger`, `bib`, `quotes`,
+  `numbers`, `slop` (rules S1, S2, S4, S6, C1, C3, C5) and `gate <phase>`, plus `init`.
+  Findings print as `file:line RULE-ID message` (or `--json`); exit 0 pass, 1 findings,
+  2 could not run. The claim ledger rejects a claim verified by its own author, and the
+  ledgers are append-only against `HEAD` and `HEAD~1`.
+- `scripts/research_bib.sh fetch|build` (`uws research bib …`): downloads BibTeX from
+  arXiv, DOI content negotiation, DBLP or the ACL Anthology into `bib_sources/` with a
+  `.meta.json` (source URL, HTTP status, SHA-256). It refuses HTML and bot-check pages and
+  anything that is not exactly one entry, and writes nothing in that case.
+  `references.bib` is built only from `bib_sources/`; keys are renamed through `KEYMAP.tsv`.
+- Research subagents `uws-rt-scout` (sonnet), `uws-rt-verifier` and `uws-rt-redteam` (opus),
+  generated from `docs/personas/research-*.md` with `apocalypt.md` included verbatim and a
+  research output contract (C-IDs instead of REQ-IDs). Model overrides use
+  `UWS_AGENT_MODEL_RT_SCOUT` and so on.
+- `uws-research-lead` skill (also shipped in the plugin under `skills/`) and the
+  `/uws:research-check` plugin command.
+- Plugin `SubagentStop` hook for `uws-rt-*` agents (plain and plugin-scoped names): it
+  sends an agent back when a claim is verified by its own author, raw data was modified,
+  or the report has no "Open questions for the orchestrator" section. It retries at most
+  `UWS_RESEARCH_HOOK_RETRIES` times (default 2) and then records a blocker.
+- `orchestrate.sh --methodology sdlc|research` and `--agent <role>`.
+
+#### Changed
+- `research.sh next` runs the evidence gate when `research/ledger/` exists and fails
+  closed. `--force` now needs a reason, is logged to `decisions.log` with category
+  `research-gate-force`, and is always refused at publication. `research.sh check <name>`
+  runs a check, while `check <n>` still ticks a deliverable.
+- `orchestrate.sh`: when both an SDLC and a research phase are active, research work can
+  now be dispatched with `--methodology research`. Before, SDLC always won.
+
 ### Context hygiene
 
 What UWS injects into Claude's context at session start is small,

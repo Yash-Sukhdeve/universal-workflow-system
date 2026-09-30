@@ -1,0 +1,22 @@
+\documentclass{article}
+\input{generated/numbers}
+\begin{document}
+\begin{abstract}
+On a synthetic benchmark, Gradient Boosting reaches a 5-fold CV mean ROC-AUC of \GbAucCv{}. % C-0002
+\end{abstract}
+
+\section{Background}
+Keeping track of how every result was produced is a rule of reproducible research \cite{sandve2013}. % C-0001
+
+\section{Results}
+Gradient Boosting was the best of the models on the synthetic data (CV mean \GbAucCv{}). % C-0002
+\begin{table}
+\caption{Synthetic benchmark, CV mean on the training split.}
+\begin{tabular}{lr}
+Model & ROC-AUC \\
+Gradient Boosting & \GbAucCv{} \\
+\end{tabular}
+\end{table}
+\bibliographystyle{plain}
+\bibliography{references}
+\end{document}

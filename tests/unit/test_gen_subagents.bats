@@ -16,7 +16,8 @@ setup() {
     cp -R "${PROJECT_ROOT}/docs/personas" "${GEN_ROOT}/docs/personas"
     AGENTS="${GEN_ROOT}/.claude/agents"
     unset UWS_AGENT_MODEL
-    for r in RESEARCHER ARCHITECT IMPLEMENTER EXPERIMENTER OPTIMIZER DEPLOYER DOCUMENTER; do
+    for r in RESEARCHER ARCHITECT IMPLEMENTER EXPERIMENTER OPTIMIZER DEPLOYER DOCUMENTER \
+             RT_SCOUT RT_VERIFIER RT_REDTEAM; do
         unset "UWS_AGENT_MODEL_${r}"
     done
 }
@@ -116,5 +117,50 @@ expected_default() {
         [ "$asks" -eq "$cannots" ]
         run grep -niE "ask the architect/user|back to the user|STOP and ask\." "$f"
         [ "$status" -eq 1 ]
+    done
+}
+
+# ── Research team roles (docs/design/research-team.md section 4) ─────────────
+
+@test "gen_subagents: research roles get their model tiers (verifier and red team on opus)" {
+    run "${GEN_ROOT}/scripts/gen_subagents.sh"
+    assert_success
+    [ "$(frontmatter_model "${AGENTS}/uws-rt-scout.md")" = "sonnet" ]
+    [ "$(frontmatter_model "${AGENTS}/uws-rt-verifier.md")" = "opus" ]
+    [ "$(frontmatter_model "${AGENTS}/uws-rt-redteam.md")" = "opus" ]
+}
+
+@test "gen_subagents: UWS_AGENT_MODEL_RT_SCOUT overrides the scout (hyphen becomes underscore)" {
+    UWS_AGENT_MODEL_RT_SCOUT=opus run "${GEN_ROOT}/scripts/gen_subagents.sh"
+    assert_success
+    [ "$(frontmatter_model "${AGENTS}/uws-rt-scout.md")" = "opus" ]
+    assert_file_contains "${AGENTS}/uws-rt-scout.md" "UWS_AGENT_MODEL_RT_SCOUT="
+}
+
+@test "gen_subagents: research agents embed apocalypt.md exactly once; SDLC agents do not" {
+    run "${GEN_ROOT}/scripts/gen_subagents.sh"
+    assert_success
+    local role n
+    for role in rt-scout rt-verifier rt-redteam; do
+        n="$(grep -c 'You are Apocalypt, pronounced' "${AGENTS}/uws-${role}.md" || true)"
+        [ "$n" -eq 1 ]
+        assert_file_contains "${AGENTS}/uws-${role}.md" "Research Output Contract"
+        run grep -q "Trace every requirement/claim to a REQ-ID" "${AGENTS}/uws-${role}.md"
+        [ "$status" -ne 0 ]
+    done
+    run grep -l 'You are Apocalypt, pronounced' "${AGENTS}/uws-researcher.md" "${AGENTS}/uws-implementer.md"
+    [ "$status" -ne 0 ]
+    # the role personas reference apocalypt.md instead of copying it
+    run grep -l 'You are Apocalypt, pronounced' "${GEN_ROOT}"/docs/personas/research-*.md
+    [ "$status" -ne 0 ]
+}
+
+@test "gen_subagents: committed agent files match the generator output" {
+    run "${GEN_ROOT}/scripts/gen_subagents.sh"
+    assert_success
+    local role
+    for role in researcher architect implementer experimenter optimizer deployer documenter \
+                rt-scout rt-verifier rt-redteam; do
+        cmp -s "${AGENTS}/uws-${role}.md" "${PROJECT_ROOT}/.claude/agents/uws-${role}.md"
     done
 }

@@ -51,7 +51,8 @@ Then, in any project:
 
 Workflow context is injected automatically at session start, and a checkpoint is taken
 before every context compaction. The plugin also adds seven role subagents
-(`uws:uws-researcher`, `uws:uws-architect`, `uws:uws-implementer`, …).
+(`uws:uws-researcher`, `uws:uws-architect`, `uws:uws-implementer`, …) and a research
+team (see [Research team](#research-team)).
 
 ### Option 2: Per-project installer (commit UWS into the repo)
 
@@ -283,6 +284,32 @@ requirements → design → implementation → verification → deployment → m
 ```
 hypothesis → literature_review → experiment_design → data_collection → analysis → peer_review → publication
 ```
+
+#### Research team
+
+For work that has to hold up to review, UWS provides a research team led by the
+`uws-research-lead` skill in your session. The team follows the Apocalypt persona
+(`docs/personas/apocalypt.md`) and has three subagents: `uws-rt-scout` (finds sources and
+proposes claims), `uws-rt-verifier` (checks each claim against its source, independently)
+and `uws-rt-redteam` (adversarial review). Their work is recorded in plain-text ledgers
+under `research/`, and a deterministic checker (Python 3 standard library) checks those
+ledgers at every phase gate:
+
+```bash
+uws research check init              # scaffold research/ and bib_sources/
+uws research bib fetch doi:10.1371/journal.pcbi.1003285 --key sandve2013
+uws research bib build               # references.bib only from bib_sources/
+uws research check gate literature_review   # file:line findings; exit 1 blocks
+uws research next                    # runs the gate; --force "<reason>" is logged,
+                                     # and refused at publication
+```
+
+The checks enforce that no claim is verified by its own author, that ledgers are
+append-only, that BibTeX is downloaded (never hand-written), that quotes appear verbatim in
+the cached source, that every number in the paper comes from a generated macro traced to
+an output file and its hash, and a set of "slop" rules (unsupported novelty, vague
+attribution, placeholders, overclaimed causality, undisclosed simulated data). The plugin
+command is `/uws:research-check`. Design: `docs/design/research-team.md`.
 
 ---
 

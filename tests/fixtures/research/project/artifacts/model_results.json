@@ -1,0 +1,9 @@
+{
+  "_note": "Synthetic test fixture for tests/integration/test_research_team.bats. These values are not a measurement.",
+  "classification": {
+    "Gradient Boosting": {
+      "cv_auc_mean": 0.9125,
+      "test_auc": 0.9199
+    }
+  }
+}

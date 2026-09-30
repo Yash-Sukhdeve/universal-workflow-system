@@ -56,6 +56,16 @@ jobs:
             exit 1
           fi
 
+      - name: Compile the research checker (Python 3 standard library only)
+        run: |
+          # scripts/research_check.py backs the research gates; its behaviour is tested by
+          # tests/integration/test_research_team.bats in the Ubuntu and macOS jobs.
+          python3 -m py_compile scripts/research_check.py
+          if grep -nE '^\s*(import|from)\s+(yaml|numpy|pandas|requests|bibtexparser)\b' scripts/research_check.py; then
+            echo "::error::research_check.py must use the Python standard library only"
+            exit 1
+          fi
+
       - name: Lint user-facing entry points (warnings fail)
         run: |
           # These run on users' machines, so they get the stricter warning level
@@ -93,6 +103,8 @@ jobs:
           test -x "$materialized/bin/uws"
           test -x "$materialized/scripts/init_workflow.sh"
           ls "$materialized"/agents/uws-*.md
+          test -f "$materialized/skills/uws-research-lead/SKILL.md"
+          test -x "$materialized/hooks/research_subagent_stop.sh"
 
   # ============================================================================
   # UNIT TESTS - Ubuntu

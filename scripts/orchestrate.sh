@@ -18,6 +18,15 @@
 #   ./scripts/orchestrate.sh status
 #       Show the resolved methodology/phase/agent for the current state.
 #
+# Options (any position after the command):
+#   --methodology sdlc|research
+#       Use that methodology's phase. Without it, sdlc wins whenever sdlc_phase is set,
+#       so a project with both phases active could never dispatch research work
+#       (docs/design/research-team.md section 2).
+#   --agent <role>
+#       Dispatch a specific subagent instead of the phase's default, for example the
+#       research team's rt-scout, rt-verifier or rt-redteam.
+#
 # RWF Compliance: R3 (State Safety)
 
 set -euo pipefail
@@ -31,6 +40,18 @@ PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
 
 M=""; PHASE=""; AGENT=""
+METHODOLOGY_OVERRIDE=""; AGENT_OVERRIDE=""
+
+# Subagents gen_subagents.sh generates (.claude/agents/uws-<role>.md).
+KNOWN_AGENTS=" researcher architect implementer experimenter optimizer deployer documenter rt-scout rt-verifier rt-redteam "
+
+research_ledger_active() {
+    [[ -d "${PROJECT_ROOT}/research/ledger" ]]
+}
+
+is_research_agent() {
+    [[ "$1" == rt-* ]]
+}
 
 resolve_context() {
     if [[ ! -f "$STATE_FILE" ]]; then
@@ -40,19 +61,50 @@ resolve_context() {
     local sdlc_phase research_phase
     sdlc_phase=$(yaml_get "$STATE_FILE" "sdlc_phase" 2>/dev/null || echo "null")
     research_phase=$(yaml_get "$STATE_FILE" "research_phase" 2>/dev/null || echo "null")
+    [[ -z "$sdlc_phase" ]] && sdlc_phase="null"
+    [[ -z "$research_phase" ]] && research_phase="null"
 
-    if [[ "$sdlc_phase" != "null" && -n "$sdlc_phase" ]]; then
-        M="sdlc"; PHASE="$sdlc_phase"
-    elif [[ "$research_phase" != "null" && -n "$research_phase" ]]; then
-        M="research"; PHASE="$research_phase"
-    else
-        echo -e "${RED}Error: no active phase. Start one first:${NC}" >&2
-        echo -e "  ${CYAN}./scripts/sdlc.sh start${NC}   or   ${CYAN}./scripts/research.sh start${NC}" >&2
-        exit 1
+    case "$METHODOLOGY_OVERRIDE" in
+        sdlc|research)
+            M="$METHODOLOGY_OVERRIDE"
+            if [[ "$M" == "sdlc" ]]; then PHASE="$sdlc_phase"; else PHASE="$research_phase"; fi
+            if [[ "$PHASE" == "null" ]]; then
+                echo -e "${RED}Error: no active ${M} phase. Start it first: ${CYAN}./scripts/${M}.sh start${NC}" >&2
+                exit 1
+            fi
+            ;;
+        *)
+            if [[ "$sdlc_phase" != "null" ]]; then
+                M="sdlc"; PHASE="$sdlc_phase"
+                if [[ "$research_phase" != "null" ]]; then
+                    echo -e "${YELLOW}note: sdlc and research phases are both active; using sdlc (pass --methodology research for research work)${NC}" >&2
+                fi
+            elif [[ "$research_phase" != "null" ]]; then
+                M="research"; PHASE="$research_phase"
+            else
+                echo -e "${RED}Error: no active phase. Start one first:${NC}" >&2
+                echo -e "  ${CYAN}./scripts/sdlc.sh start${NC}   or   ${CYAN}./scripts/research.sh start${NC}" >&2
+                exit 1
+            fi
+            ;;
+    esac
+
+    if [[ -n "$AGENT_OVERRIDE" ]]; then
+        AGENT="$AGENT_OVERRIDE"
+        return 0
     fi
-
     if declare -f get_agent_for_phase >/dev/null 2>&1; then
         AGENT=$(get_agent_for_phase "$M" "$PHASE")
+    fi
+    # Research projects with ledgers route the phases the research team owns in
+    # increment 1 to its roles (design section 5: scout owns literature_review, the
+    # red team owns peer_review). Other phases keep their generic agent until the
+    # methodologist, engineer and writer arrive in increment 2.
+    if [[ "$M" == "research" ]] && research_ledger_active; then
+        case "$PHASE" in
+            literature_review) AGENT="rt-scout" ;;
+            peer_review)       AGENT="rt-redteam" ;;
+        esac
     fi
     [[ -z "$AGENT" ]] && AGENT="researcher"
     return 0   # never let a trailing test's exit code abort the caller under set -e
@@ -89,9 +141,24 @@ cmd_dispatch() {
             echo -e "${YELLOW}warn: could not record active agent; continuing${NC}" >&2
     fi
 
-    local goal deliv
+    local goal deliv contract
     goal=$(yaml_get "$STATE_FILE" "goal" 2>/dev/null || echo ""); [[ "$goal" == "null" ]] && goal=""
     deliv=$(bash "${SCRIPT_DIR}/${M}.sh" deliverables "$PHASE" 2>/dev/null || true)
+    if [[ "$M" == "research" ]] && research_ledger_active; then
+        deliv="${deliv}
+- Evidence gate passes: \`uws research check gate ${PHASE}\` (research.sh next runs it)"
+    fi
+    if is_research_agent "$AGENT"; then
+        contract="Follow \`.claude/agents/uws-${AGENT}.md\` (research output contract). Every claim you author is a
+C-ID row appended to \`research/ledger/claims.jsonl\` with status \`unverified\`; never verify a claim you authored.
+BibTeX only through \`uws research bib fetch\`. Proposed manuscript edits go under \`workspace/${AGENT}/\`.
+End your report with \"Open questions for the orchestrator\". STOP at your Quality Gate —
+do NOT advance the workflow or mark deliverables; the lead + the PI own that."
+    else
+        contract="Follow \`.claude/agents/uws-${AGENT}.md\`. Write ONLY under \`workspace/${AGENT}/\`.
+Complete artifacts, no stubs. Trace claims to REQ-IDs. STOP at your Quality Gate —
+do NOT advance the workflow or mark deliverables; the orchestrator + human review own that."
+    fi
 
     cat > "${ws}/TASK.md" << EOF
 # Task Brief — ${AGENT}
@@ -106,9 +173,7 @@ cmd_dispatch() {
 ${deliv}
 
 ## Output Contract
-Follow \`.claude/agents/uws-${AGENT}.md\`. Write ONLY under \`workspace/${AGENT}/\`.
-Complete artifacts, no stubs. Trace claims to REQ-IDs. STOP at your Quality Gate —
-do NOT advance the workflow or mark deliverables; the orchestrator + human review own that.
+${contract}
 EOF
 
     echo -e "${GREEN}✓ Prepared dispatch for ${AGENT} (${M}:${PHASE})${NC}"
@@ -145,15 +210,50 @@ cmd_collect() {
     echo -e "  ${CYAN}./scripts/${M:-sdlc}.sh check <n>${NC}  then  ${CYAN}./scripts/${M:-sdlc}.sh next${NC}"
 }
 
-case "${1:-help}" in
-    dispatch) cmd_dispatch "${2:-}" "${3:-}" ;;
-    collect)  cmd_collect  "${2:-}" "${3:-}" ;;
+usage() {
+    echo "Usage: $0 {dispatch \"<task>\" [target] | collect \"<summary>\" [ticket] | status}"
+    echo "       [--methodology sdlc|research] [--agent <role>]"
+}
+
+COMMAND="${1:-help}"
+[[ $# -gt 0 ]] && shift
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --methodology|--agent)
+            if [[ $# -lt 2 ]]; then
+                echo -e "${RED}Error: $1 needs a value${NC}" >&2
+                exit 1
+            fi
+            if [[ "$1" == "--methodology" ]]; then METHODOLOGY_OVERRIDE="$2"; else AGENT_OVERRIDE="$2"; fi
+            shift 2
+            ;;
+        --methodology=*) METHODOLOGY_OVERRIDE="${1#*=}"; shift ;;
+        --agent=*)       AGENT_OVERRIDE="${1#*=}"; shift ;;
+        *)               ARGS+=("$1"); shift ;;
+    esac
+done
+if [[ -n "$METHODOLOGY_OVERRIDE" && "$METHODOLOGY_OVERRIDE" != "sdlc" && "$METHODOLOGY_OVERRIDE" != "research" ]]; then
+    echo -e "${RED}Error: --methodology must be sdlc or research (got '${METHODOLOGY_OVERRIDE}')${NC}" >&2
+    exit 1
+fi
+if [[ -n "$AGENT_OVERRIDE" && "$KNOWN_AGENTS" != *" ${AGENT_OVERRIDE} "* ]]; then
+    echo -e "${RED}Error: unknown agent '${AGENT_OVERRIDE}' (known:${KNOWN_AGENTS})${NC}" >&2
+    exit 1
+fi
+[[ -n "$METHODOLOGY_OVERRIDE" ]] && M="$METHODOLOGY_OVERRIDE"
+ARG1="${ARGS[0]:-}"
+ARG2="${ARGS[1]:-}"
+
+case "$COMMAND" in
+    dispatch) cmd_dispatch "$ARG1" "$ARG2" ;;
+    collect)  cmd_collect  "$ARG1" "$ARG2" ;;
     status)   cmd_status ;;
     help|--help|-h)
-        echo "Usage: $0 {dispatch \"<task>\" [target] | collect \"<summary>\" [ticket] | status}"
+        usage
         ;;
     *)
-        echo -e "${RED}Unknown command: ${1}${NC}" >&2
+        echo -e "${RED}Unknown command: ${COMMAND}${NC}" >&2
         echo "Run: $0 help"
         exit 1
         ;;
