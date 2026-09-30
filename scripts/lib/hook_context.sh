@@ -26,6 +26,7 @@ if [[ "${_UWS_HOOK_CONTEXT_LOADED:-}" == "true" ]]; then
     return 0 2>/dev/null || true
 fi
 _UWS_HOOK_CONTEXT_LOADED="true"
+_UWS_HOOK_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 UWS_HOOK_MAX_BYTES="${UWS_HOOK_MAX_BYTES:-1200}"
 
@@ -213,6 +214,14 @@ uws_hook_context() {
     local tail="" git
     git="$(uws_git_summary "$root")"
     [[ -n "$git" ]] && tail+="${git}"$'\n'
+    # Tier-0 knowledge-base line (<= 120 bytes; nothing when there is no KB)
+    local kbline=""
+    if [[ -f "${_UWS_HOOK_LIB_DIR}/kb_utils.sh" ]]; then
+        # shellcheck source=kb_utils.sh
+        source "${_UWS_HOOK_LIB_DIR}/kb_utils.sh"
+        kbline="$(kb_summary_line "$root" 2>/dev/null || true)"
+    fi
+    [[ -n "$kbline" ]] && tail+="$(_uws_trunc "$kbline" 120)"$'\n'
     tail+="Full handoff: .workflow/handoff.md. Save progress with /uws:checkpoint <msg> (or: uws checkpoint create <msg>)."
 
     local note="(some items omitted; read .workflow/handoff.md)"

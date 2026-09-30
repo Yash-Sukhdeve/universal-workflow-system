@@ -93,6 +93,8 @@ jobs:
           test -x "$materialized/bin/uws"
           test -x "$materialized/scripts/init_workflow.sh"
           ls "$materialized"/agents/uws-*.md
+          test -f "$materialized/skills/uws-kb/SKILL.md"
+          test -x "$materialized/scripts/kb.sh"
 
   # ============================================================================
   # UNIT TESTS - Ubuntu

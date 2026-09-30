@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Knowledge base
+
+Increment 1 of `docs/design/knowledge-base.md`: a project knowledge base in `docs/kb/`,
+tracked in git, where every item has a source and only the PI promotes items to trusted.
+
+#### Added
+- `uws kb` (`scripts/kb.sh`, `scripts/lib/kb_utils.sh`): `add`, `search`, `links`, `show`,
+  `verify`, `recommend`, `review`, `approve`, `reject`, `pi`, `prune`, `retire`, `restore`,
+  `lint`, `stats`. One Markdown file per item with flat front matter (awk-parsed; yq not
+  needed), content-hash IDs (`K-<yyyymmdd>-<hex>`), and an append-only `docs/kb/events.tsv`
+- `add` is non-interactive and prints the new ID on stdout. It refuses unprovenanced or
+  unresolvable sources (exit 2; `file:` sources are pinned to `@<HEAD>`), claims over 240
+  bytes, duplicates (exit 3, prints the existing ID), undeclared overlaps with trusted items
+  (exit 4), destructive-looking checks and text that looks like a credential
+- PI-only promotion: `approve` and `reject` require `git config user.email` to equal `kb.pi`
+  in `.workflow/config.yaml` (or `UWS_KB_PI` when the config has none) and refuse (exit 6)
+  when run inside an AI agent (`CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `UWS_AGENT`, ...).
+  `verify` records `check-passed` but never promotes; agents use `recommend`. `lint` flags
+  trusted items whose reviewer is not the PI (I7)
+- `search` prints at most 5 lines of at most 200 bytes (1000 bytes total) with status and
+  evidence per line; `--status disputed` and `links --type contradicts <ID|words>` list
+  disputes
+- `verify --changed` re-runs checks of trusted items whose watched files changed (failure ->
+  `disputed`, timeout -> `stale`; no check -> `stale`); `prune` applies R1 superseded, R2
+  disproven, R3 expired and R5 unpromoted as a dry run, `--apply` moves items to
+  `docs/kb/retired/` with `git mv`
+- One tier-0 line (`KB: N trusted, N stale, N disputed, N to review. ...`) in the
+  SessionStart context, inside the existing 1.2 KB budget; `uws status -v` shows it too
+- `uws-kb` skill (`.claude/skills/` and the plugin's new `skills/` directory) and the
+  `/uws:kb` plugin command, both calling `${CLAUDE_PLUGIN_ROOT}/bin/uws kb` in the plugin
+- `tests/integration/test_kb.bats` (32 tests: the design's acceptance tests 1-14, the PI gate,
+  and the research-team interface)
+
+#### Removed
+- The `.workflow/knowledge/patterns.yaml` scaffold (nothing wrote to it): `init` no longer
+  creates it, `migrate_state.sh --clean` deletes it when it is still the empty template, and
+  the stale `.workflow/knowledge/` line is gone from `.gitignore`
+
 ### Context hygiene
 
 What UWS injects into Claude's context at session start is small,

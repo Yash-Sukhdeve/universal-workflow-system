@@ -137,6 +137,23 @@ if [[ "$CLEAN" == "true" ]]; then
             echo -e "  ${RED}!${NC} could not remove ${retired}; left in place" >&2
         fi
     done
+    # The knowledge/patterns.yaml scaffold was never written to by anything;
+    # the knowledge base is docs/kb/ (`uws kb`). Remove it only when it is
+    # still the untouched template, so no user content is lost.
+    kfile="${WORKFLOW_DIR}/knowledge/patterns.yaml"
+    if [[ -f "$kfile" ]]; then
+        template="$(printf '%s\n' '# Knowledge Base - Learned Patterns' \
+            '# This file accumulates patterns and solutions across sessions' '' \
+            'patterns: []' '' 'solutions: []' '' 'best_practices: []')"
+        if [[ "$(cat "$kfile")" == "$template" ]]; then
+            rm -f "$kfile"
+            rmdir "${WORKFLOW_DIR}/knowledge" 2>/dev/null || true
+            echo -e "  ${YELLOW}-${NC} removed the empty knowledge/patterns.yaml scaffold (the KB is docs/kb/: uws kb)"
+            changed=true
+        else
+            echo -e "  ${YELLOW}i${NC} knowledge/patterns.yaml has content; left in place (move it into docs/kb/ with uws kb add)"
+        fi
+    fi
 fi
 
 if [[ "$changed" == "true" ]]; then

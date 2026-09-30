@@ -1,6 +1,6 @@
 # UWS Knowledge Base and Meta-Learning: Design
 
-- Status: proposed (design only; no code written)
+- Status: increment 1 implemented (see section 16 for what was built and where it differs)
 - Author role: uws-architect subagent, 2026-09-24
 - Repo state read: `chore/cleanup`, started at `ad6ff7a`, rechecked at `8c2372f` (only Company OS
   removal in between; no cited file changed except `.gitignore` line numbers, updated here)
@@ -610,3 +610,53 @@ Defaults adopted until the PI says otherwise:
 - The first increment is Bash + awk to match the codebase; only the importer uses python3.
 - `git hash-object` is enough to detect a change; line-level anchoring is not needed at first.
 - No network access in hooks or `verify`, so URL sources expire by date only.
+
+## 16. Increment 1 as built (2026-09-26)
+
+Code: `scripts/kb.sh`, `scripts/lib/kb_utils.sh`; tests: `tests/integration/test_kb.bats`.
+Where the build differs from the text above, this section wins.
+
+**PI-only promotion (D4).** The only code path that writes `status: trusted` is
+`uws kb approve`. It refuses with exit 6 unless all of these hold:
+1. no AI-agent marker is in the environment (`CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`,
+   `CLAUDE_CODE_CHILD_SESSION`, `AI_AGENT`, `UWS_AGENT`, `GEMINI_CLI`, `CODEX_SANDBOX`;
+   Claude Code sets the first two in every tool call it runs);
+2. a PI is configured: `kb: pi:` in `.workflow/config.yaml`, or `UWS_KB_PI` when the config
+   has none (the config wins, so an exported variable cannot replace a configured PI);
+3. `git config user.email` equals the PI (case-insensitive), and `--as`, if given, equals it too.
+
+`reject` and `pi --set` use the same gate. Limits: on the PI's own machine an agent runs with
+the PI's git identity, so check 3 alone would not stop it; check 1 does, but an agent with shell
+access can unset variables or edit item files. The CLI therefore stops accidental and
+well-behaved agent promotion; the real control is review of the `docs/kb/` diff before commit.
+`lint` (I7) reports any trusted item whose `reviewer` is not the PI, which catches a
+hand-edited `status: trusted`.
+
+**verify and approve.** `verify` never promotes. On a candidate, stale or disputed item a
+passing check sets `check_status: pass` (shown as `check-passed` in search) and the item keeps
+its status. On a trusted item a passing check refreshes `verified_at` and `watch_blob`; a
+failure makes it `disputed`, a timeout makes it `stale`. `approve` re-resolves the sources and,
+if the item has a check, runs it and refuses with exit 5 unless it passes. So `stale -> trusted`
+and `disputed -> trusted` also need the PI. `recommend <ID>` (open to agents) records who thinks
+an item is ready; `review` lists the queue.
+
+**Other decisions.**
+- `watch` defaults to the paths of `file:` sources, so `verify --changed` notices edits to cited
+  files without an explicit `--watch`.
+- `status_since` (new field) dates the last status change; R2, R3 and R5 count from it, so a
+  restored item gets a fresh 30 days.
+- Approving an item that `contradicts` a trusted item retires the latter as
+  `disproven-by:<id>` (5.5: the PI settles the dispute).
+- `restore` also removes the item from the `supersedes` list that retired it, so R1 does not
+  retire it again.
+- The session line and `search` read the item files directly; `.cache/stats` is written by
+  write commands and `stats` but is never read back, so I5 holds by construction.
+- IDs use `git hash-object` of the normalised claim (git is present on every platform; `sha1sum`
+  is not on macOS).
+- Events are appended with a single `printf >>` per row, not `atomic_append` (which rewrites the
+  whole file); item files are replaced by temp file plus `mv`.
+
+**Not built in increment 1** (as planned in section 12): global scope, imports, `learn` and
+`outcomes.tsv`, R4, R6, `purge --secret`, vector cache, claim ledger, TASK.md injection,
+`verify --changed` inside `checkpoint.sh create`, and removal of the vector-memory SessionStart
+hook (kept per D3).
