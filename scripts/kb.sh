@@ -1232,10 +1232,10 @@ function whole(s,    n, i, c, need) {
 # Side table lines: "C<TAB>id" for items the PI approved (not inferred), and
 # "P<TAB>id<TAB>open<TAB>metric<TAB>key<TAB>created_ts<TAB>approved_ts<TAB>
 # followup_ts<TAB>kind<TAB>before<TAB>track_key<TAB>tracking" per proposal.
-# Output lines (sorted by the caller; empty values are "-"):
+# Output lines (sorted by the caller, so notes come first; empty values are "-"):
+#   A note
 #   M fam key n k value status window-start detail refs
 #       status: small-n | below | open:<id> | propose
-#   N note
 #   T id pending|improved|not-improved n after before k
 # shellcheck disable=SC2016
 KB_AWK_LEARN='
@@ -1424,9 +1424,9 @@ NF != 8 { BAD++; next }
     }
 }
 END {
-    if (BAD) printf "N\t%d malformed row(s) in outcomes.tsv skipped (want 8 tab-separated columns)\n", BAD
-    if (UNCONF) printf "N\t%d escape row(s) not counted: the lesson is not approved by the PI yet, or is inferred\n", UNCONF
-    if (RSKIP) printf "N\t%d retirement(s) not counted: candidates, inferred items, hypotheses, questions and proposals do not feed metrics\n", RSKIP
+    if (BAD) printf "A\t%d malformed row(s) in outcomes.tsv skipped (want 8 tab-separated columns)\n", BAD
+    if (UNCONF) printf "A\t%d escape row(s) not counted: the lesson is not approved by the PI yet, or is inferred\n", UNCONF
+    if (RSKIP) printf "A\t%d retirement(s) not counted: candidates, inferred items, hypotheses, questions and proposals do not feed metrics\n", RSKIP
     for (p in PH) eval_escape(p)
     for (fk in KEYS) { split(fk, a, SUBSEP); if (a[1] != "cr-role") eval_rate(a[1], a[2]) }
     for (i = 1; i <= FN; i++) if (FR[i] != "") RSN[FR[i]] = 1
@@ -1733,8 +1733,8 @@ proposal_body() {
         printf '`uws kb learn` measures this once the PI approves the proposal and proposes the revert if it does not improve.\n'
     fi
     printf '\n## Caveats\n\n'
-    printf -- '- Small n: %s samples; with n = %s one event moves the rate by %s, so this can be chance.\n' \
-        "$P_N" "$P_N" "$(pct "$(awk -v n="$P_N" 'BEGIN { print (n > 0 ? 1 / n : 1) }')")"
+    printf -- '- Small n: %s samples; with n = %s one event moves the rate by %s percentage points, so this can be chance.\n' \
+        "$P_N" "$P_N" "$(awk -v n="$P_N" 'BEGIN { printf "%d", (n > 0 ? 100 / n + 0.5 : 100) }')"
     printf -- '- Confounding: %s\n' "$P_CONFOUND"
     printf -- '- Inputs: only rows that scripts wrote to outcomes.tsv; candidate and inferred items were not counted (design 6.4).\n'
 }
@@ -1943,7 +1943,7 @@ cmd_learn() {
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         case "$line" in
-            N"$TAB"*) echo "  note: ${line#N"$TAB"}" ;;
+            A"$TAB"*) echo "  note: ${line#A"$TAB"}" ;;
             M"$TAB"*) any=true; learn_metric_line "$line" ;;
             T"$TAB"*) learn_track_line "$line" ;;
         esac
