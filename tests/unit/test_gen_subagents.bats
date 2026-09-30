@@ -17,7 +17,7 @@ setup() {
     AGENTS="${GEN_ROOT}/.claude/agents"
     unset UWS_AGENT_MODEL
     for r in RESEARCHER ARCHITECT IMPLEMENTER EXPERIMENTER OPTIMIZER DEPLOYER DOCUMENTER \
-             RT_SCOUT RT_VERIFIER RT_REDTEAM; do
+             RT_SCOUT RT_VERIFIER RT_REDTEAM RT_METHODOLOGIST RT_ENGINEER RT_WRITER; do
         unset "UWS_AGENT_MODEL_${r}"
     done
 }
@@ -122,12 +122,26 @@ expected_default() {
 
 # ── Research team roles (docs/design/research-team.md section 4) ─────────────
 
-@test "gen_subagents: research roles get their model tiers (verifier and red team on opus)" {
+@test "gen_subagents: research roles get their model tiers (verifier, red team, methodologist on opus)" {
     run "${GEN_ROOT}/scripts/gen_subagents.sh"
     assert_success
     [ "$(frontmatter_model "${AGENTS}/uws-rt-scout.md")" = "sonnet" ]
     [ "$(frontmatter_model "${AGENTS}/uws-rt-verifier.md")" = "opus" ]
     [ "$(frontmatter_model "${AGENTS}/uws-rt-redteam.md")" = "opus" ]
+    [ "$(frontmatter_model "${AGENTS}/uws-rt-methodologist.md")" = "opus" ]
+    [ "$(frontmatter_model "${AGENTS}/uws-rt-engineer.md")" = "sonnet" ]
+    [ "$(frontmatter_model "${AGENTS}/uws-rt-writer.md")" = "sonnet" ]
+}
+
+@test "gen_subagents: increment-2 research roles get their tools; the writer has no web access" {
+    run "${GEN_ROOT}/scripts/gen_subagents.sh"
+    assert_success
+    grep -q '^tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch$' "${AGENTS}/uws-rt-methodologist.md"
+    grep -q '^tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch$' "${AGENTS}/uws-rt-engineer.md"
+    grep -q '^tools: Read, Grep, Glob, Write, Edit, Bash$' "${AGENTS}/uws-rt-writer.md"
+    UWS_AGENT_MODEL_RT_METHODOLOGIST=sonnet run "${GEN_ROOT}/scripts/gen_subagents.sh"
+    assert_success
+    [ "$(frontmatter_model "${AGENTS}/uws-rt-methodologist.md")" = "sonnet" ]
 }
 
 @test "gen_subagents: UWS_AGENT_MODEL_RT_SCOUT overrides the scout (hyphen becomes underscore)" {
@@ -141,7 +155,7 @@ expected_default() {
     run "${GEN_ROOT}/scripts/gen_subagents.sh"
     assert_success
     local role n
-    for role in rt-scout rt-verifier rt-redteam; do
+    for role in rt-scout rt-verifier rt-redteam rt-methodologist rt-engineer rt-writer; do
         n="$(grep -c 'You are Apocalypt, pronounced' "${AGENTS}/uws-${role}.md" || true)"
         [ "$n" -eq 1 ]
         assert_file_contains "${AGENTS}/uws-${role}.md" "Research Output Contract"
@@ -160,7 +174,7 @@ expected_default() {
     assert_success
     local role
     for role in researcher architect implementer experimenter optimizer deployer documenter \
-                rt-scout rt-verifier rt-redteam; do
+                rt-scout rt-verifier rt-redteam rt-methodologist rt-engineer rt-writer; do
         cmp -s "${AGENTS}/uws-${role}.md" "${PROJECT_ROOT}/.claude/agents/uws-${role}.md"
     done
 }

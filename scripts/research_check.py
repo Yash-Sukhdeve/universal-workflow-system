@@ -13,17 +13,35 @@ Commands (increment 1):
     bib                 bib_sources/ provenance and references.bib equality
     quotes              recorded quotes are verbatim substrings of the cached source text
     numbers             number provenance: output hash, pointer value, rounding, macros,
-                        hand-typed decimals
-    slop                S1 S2 S4 S6 (prose) and C1 C3 C5 (code / disclosure)
+                        hand-typed decimals; formulas over other numbers; evaluation split
+    slop                S1 S2 S4 S6 (prose) and C1 C3 C5 C6 (code / disclosure)
     gate <phase>        the evidence gate for one research phase
     role-exit           SubagentStop hook check (reads the hook JSON on stdin)
     init                scaffold research/ and bib_sources/ (never overwrites)
+Commands (increment 2):
+    plan [new|freeze <EXP-ID>]
+                        pre-registration: plan fields, frozen hash, freeze before results,
+                        deviations after results need a PI decision
+    data [add <path> ...]
+                        data manifest (research/data/manifest.jsonl): hashes, sizes,
+                        seeds of generated data, inputs of every number
+    run [options] -- <command>
+                        run a command and write research/runs/RUN-*/run.json
+    repro <N-ID ...|all>
+                        re-run the recorded commands in a scratch copy and compare
+                        each number within its tolerance; writes research/repro/
+    retraction [--online]
+                        retraction notices (Crossref) for bib_sources/ DOIs; --online
+                        refreshes research/sources/retractions.jsonl, gates stay offline
+    manuscript-hash     the hash a red-team review must name (`Manuscript: sha256:...`)
+    macros              write the generated macro file from the number ledger
 Internal (called by scripts/research_bib.sh):
     bib-ingest          validate a downloaded BibTeX body and store it with .meta.json
     bib-build           write references.bib from bib_sources/ only
 
 Output: one line per finding, `file:line RULE-ID message` (`[warn]` marks a finding that
 does not fail the check). Exit codes: 0 pass, 1 findings, 2 environment error.
+Only `run`, `repro` and `retraction --online` execute commands or use the network.
 """
 
 import argparse
@@ -34,13 +52,19 @@ import hashlib
 import io
 import json
 import os
+import platform
 import re
+import shlex
+import shutil
+import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import tokenize
 import unicodedata
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_DOWN, ROUND_FLOOR, ROUND_HALF_EVEN, ROUND_HALF_UP
+from urllib.parse import quote as url_quote
 
 EXIT_OK, EXIT_FINDINGS, EXIT_ENV = 0, 1, 2
 # role-exit uses its own codes so the hook wrapper never confuses "block" with a crash.
@@ -68,6 +92,22 @@ NID_RE = re.compile(r"^N-\d+$")
 ROLE_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 DID_RE = re.compile(r"\bD-\d+\b")
 CITEKEY_RE = re.compile(r"^[^\s,{}()\"#%'=\\~]+$")
+EXP_RE = re.compile(r"^EXP-[A-Za-z0-9_-]+$")
+RUN_RE = re.compile(r"^RUN-[\w-]+$")
+DEV_RE = re.compile(r"\bDEV-\d+\b")
+
+# Increment 2 vocabulary.
+# How a number was evaluated. A cross-validation mean is not a held-out result (the
+# PROMISE audit found CV means reported as if they were held-out test values).
+EVALUATIONS = ("held-out", "validation", "cross-validation", "training", "n/a")
+EXPLORATORY = "exploratory"
+# Where the labels of a dataset come from; "generator-rule" labels are not ground truth.
+LABEL_ORIGINS = ("generator-rule", "annotation", "measurement", "none")
+UNRECORDED_SEEDS = ("", "none", "unrecorded", "unknown", "null")
+# Crossref update types (Crossmark schema, 12 types; see retraction_status()).
+RETRACTED_TYPES = ("retraction", "withdrawal", "removal")
+CONCERN_TYPES = ("partial_retraction", "expression_of_concern")
+TOLERANCE_KINDS = ("exact", "abs", "rel")
 
 DEFAULT_EXCLUDES = {".git", ".workflow", ".uws", "workspace", "node_modules", "venv", ".venv",
                     "__pycache__", "bib_sources", "archive"}
@@ -126,6 +166,9 @@ class Project(object):
             self.config.update(user)
         self._claims = None
         self._numbers = None
+        self._manifest = None
+        self._runs = None
+        self._plans = None
 
     def path(self, rel):
         return os.path.join(self.root, rel)
@@ -169,6 +212,39 @@ class Project(object):
         if self._numbers is None:
             self._numbers = Ledger(self, "research/ledger/numbers.jsonl", "N")
         return self._numbers
+
+    def manifest(self):
+        if self._manifest is None:
+            self._manifest = Manifest(self)
+        return self._manifest
+
+    def runs(self):
+        """RUN-ID -> (rel path of run.json, record dict or None, error message or None)."""
+        if self._runs is None:
+            self._runs = {}
+            d = self.path("research/runs")
+            if os.path.isdir(d):
+                for name in sorted(os.listdir(d)):
+                    path = os.path.join(d, name, "run.json")
+                    if not os.path.isfile(path):
+                        continue
+                    rel = self.rel(path)
+                    try:
+                        with open(path, encoding="utf-8") as fh:
+                            rec = json.load(fh)
+                    except (OSError, ValueError) as exc:
+                        self._runs[name] = (rel, None, "not valid JSON: %s" % exc)
+                        continue
+                    if not isinstance(rec, dict):
+                        self._runs[name] = (rel, None, "must be one JSON object")
+                        continue
+                    self._runs[name] = (rel, rec, None)
+        return self._runs
+
+    def plans(self):
+        if self._plans is None:
+            self._plans = Plans(self)
+        return self._plans
 
     # ---- prose and code scope
     def tex_files(self):
@@ -421,7 +497,38 @@ def _check_number_shapes(numbers):
         macro = row.get("macro")
         if macro and not re.match(r"^\\[A-Za-z]+$", str(macro)):
             out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: macro must look like \\\\Name" % nid))
+        # Optional fields (increment 2); their values are checked when present.
+        ev = row.get("evaluation")
+        if ev is not None and ev not in EVALUATIONS:
+            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: evaluation %r is not one of %s"
+                               % (nid, ev, ", ".join(EVALUATIONS))))
+        exp = row.get("exp")
+        if exp is not None and exp != EXPLORATORY and not EXP_RE.match(str(exp)):
+            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: exp must be EXP-<name> or %r (got %r)"
+                               % (nid, EXPLORATORY, exp)))
+        inputs = row.get("inputs")
+        if inputs is not None and (not isinstance(inputs, list) or not all(isinstance(i, str) for i in inputs)):
+            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: inputs must be a list of project paths" % nid))
+        if row.get("formula") is not None and not isinstance(row.get("formula"), str):
+            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: formula must be a string such as "
+                               "\"N-0002/(N-0002+N-0003)\"" % nid))
+        tol_err = tolerance_error(row.get("tolerance"))
+        if tol_err:
+            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: %s" % (nid, tol_err)))
     return out
+
+
+def tolerance_error(tol):
+    """None when `tol` is absent or a valid {"kind": exact|abs|rel, "value": x}."""
+    if tol is None:
+        return None
+    if not isinstance(tol, dict) or tol.get("kind") not in TOLERANCE_KINDS:
+        return "tolerance must be {\"kind\": \"exact\"|\"abs\"|\"rel\", \"value\": <number>}"
+    if tol["kind"] != "exact":
+        v = tol.get("value")
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+            return "tolerance value must be a number >= 0"
+    return None
 
 
 def _git(project, args):
@@ -441,18 +548,26 @@ def check_append_only(project, led, bases=None):
     Default bases: HEAD (catches uncommitted edits or deletions) and HEAD~1 (catches a
     committed deletion). Outside a git repository there is nothing to compare against.
     """
-    out = []
     if not led.exists:
+        return []
+    return append_only_findings(project, led.rel, "LEDGER-APPEND", bases)
+
+
+def append_only_findings(project, rel, rule, bases=None):
+    """Lines of a JSON Lines file committed at HEAD / HEAD~1 must still be present."""
+    out = []
+    path = project.path(rel)
+    if not os.path.isfile(path):
         return out
-    if _git(project, ["rev-parse", "--is-inside-work-tree"]) is None:
+    if not in_git(project):
         return out
     current = set()
-    with open(led.path, encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         for raw in fh:
             if raw.strip():
                 current.add(raw.rstrip("\n"))
     for ref in (bases or ["HEAD", "HEAD~1"]):
-        old = _git(project, ["show", "%s:./%s" % (ref, led.rel)])
+        old = _git(project, ["show", "%s:./%s" % (ref, rel)])
         if old is None:
             continue
         for oldline in old.splitlines():
@@ -461,13 +576,90 @@ def check_append_only(project, led, bases=None):
             label = "?"
             try:
                 obj = json.loads(oldline)
-                label = "%s@%s" % (obj.get("id"), obj.get("rev", 1))
-            except ValueError:
+                key = obj.get("id") or obj.get("exp") or obj.get("path") or obj.get("citekey") or "?"
+                label = "%s@%s" % (key, obj.get("rev", 1))
+            except (ValueError, AttributeError):
                 pass
-            out.append(Finding(led.rel, 1, "LEDGER-APPEND",
-                               "%s was removed or edited compared with %s; ledgers are append-only "
-                               "(restore it from git and append a new revision instead)" % (label, ref)))
+            out.append(Finding(rel, 1, rule,
+                               "%s was removed or edited compared with %s; this file is append-only "
+                               "(restore it from git and append a new row instead)" % (label, ref)))
     return out
+
+
+def in_git(project):
+    return _git(project, ["rev-parse", "--is-inside-work-tree"]) is not None
+
+
+def git_head(project):
+    out = _git(project, ["rev-parse", "HEAD"])
+    return out.strip() if out else None
+
+
+def is_ancestor(project, older, newer):
+    """True when `older` is `newer` or one of its ancestors."""
+    proc = _git_rc(project, ["merge-base", "--is-ancestor", older, newer])
+    return proc == 0
+
+
+def _git_rc(project, args):
+    try:
+        proc = subprocess.run(["git", "-C", project.root] + args, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return proc.returncode
+
+
+def first_appearance(project, rel, extract):
+    """Map each key that `extract(text)` finds in a committed version of `rel` to the first
+    commit (in HEAD's history, parents before children) whose version of `rel` contains it."""
+    log = _git(project, ["log", "--topo-order", "--reverse", "--format=%H", "--", rel])
+    first = {}
+    for commit in (log or "").split():
+        text = _git(project, ["show", "%s:./%s" % (commit, rel)])
+        if text is None:
+            continue
+        for key in extract(text):
+            first.setdefault(key, commit)
+    return first
+
+
+def _jsonl_objects(text):
+    for raw in text.splitlines():
+        if not raw.strip():
+            continue
+        try:
+            obj = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            yield obj
+
+
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def parse_utc(text):
+    try:
+        return datetime.datetime.strptime(str(text), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except ValueError:
+        return None
+
+
+def canonical_sha(obj):
+    """Hash of a JSON value that does not depend on key order or whitespace."""
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def safe_rel(project, rel):
+    """A project-relative path that stays inside the project, or None."""
+    if not isinstance(rel, str) or not rel.strip() or os.path.isabs(rel):
+        return None
+    norm = os.path.normpath(rel)
+    if norm == ".." or norm.startswith(".." + os.sep) or norm == ".":
+        return None
+    return norm.replace(os.sep, "/")
 
 
 # --------------------------------------------------------------------------- BibTeX
@@ -1332,7 +1524,9 @@ def check_numbers(project, only_ids=None):
                           % (row["printed"], row["rounding"], row["raw"], want), "NUM-ROUND")
         run = row.get("run")
         if run:
-            findings.extend(_check_run(project, numbers.rel, lineno, nid, run))
+            findings.extend(_check_run(project, numbers.rel, lineno, nid, run, row))
+        findings.extend(_check_formula(numbers, nid, lineno, row))
+        findings.extend(_check_evaluation(numbers.rel, nid, lineno, row))
         if macros is not None and row.get("macro"):
             if row["macro"] not in macros:
                 where("macro %s is not defined in %s" % (row["macro"], macro_rel), "NUM-MACRO")
@@ -1349,13 +1543,14 @@ def check_numbers(project, only_ids=None):
 
     if not only_ids:
         findings.extend(_hand_typed_decimals(project, macro_rel))
+        findings.extend(_split_disclosure(project, macro_rel))
     return findings
 
 
-def _check_run(project, rel, lineno, nid, run):
+def _check_run(project, rel, lineno, nid, run, row=None):
     out = []
     path = project.path("research/runs/%s/run.json" % run)
-    if not re.match(r"^RUN-[\w-]+$", str(run)):
+    if not RUN_RE.match(str(run)):
         return [Finding(rel, lineno, "NUM-RUN", "%s: run %r is not a RUN-ID" % (nid, run))]
     if not os.path.isfile(path):
         return [Finding(rel, lineno, "NUM-RUN", "%s: %s has no run record" % (nid, run))]
@@ -1364,14 +1559,187 @@ def _check_run(project, rel, lineno, nid, run):
             rec = json.load(fh)
     except (OSError, ValueError) as exc:
         return [Finding(project.rel(path), 1, "NUM-RUN", "not valid JSON: %s" % exc)]
+    if not isinstance(rec, dict):
+        return [Finding(project.rel(path), 1, "NUM-RUN", "must be one JSON object")]
     if rec.get("exit_code") != 0:
         out.append(Finding(project.rel(path), 1, "NUM-RUN", "%s: exit_code is %r, not 0" % (run, rec.get("exit_code"))))
     commit = rec.get("git_commit")
     if not commit:
         out.append(Finding(project.rel(path), 1, "NUM-RUN", "%s: git_commit is missing" % run))
-    elif _git(project, ["rev-parse", "--is-inside-work-tree"]) is not None:
+    elif in_git(project):
         if _git(project, ["merge-base", "--is-ancestor", commit, "HEAD"]) is None:
             out.append(Finding(project.rel(path), 1, "NUM-RUN", "%s: commit %s is not an ancestor of HEAD" % (run, commit)))
+    # The number's output must be a file this run wrote, in the version the run wrote.
+    if row is not None and row.get("output") and isinstance(rec.get("outputs"), list):
+        produced = {o.get("path"): o.get("sha256") for o in rec["outputs"] if isinstance(o, dict)}
+        out_rel = safe_rel(project, row["output"])
+        if out_rel not in produced:
+            out.append(Finding(rel, lineno, "NUM-RUN", "%s: %s does not list %s among its outputs; the number "
+                               "cannot be traced to that run" % (nid, run, row["output"])))
+        elif row.get("output_sha256") and produced[out_rel] != row["output_sha256"]:
+            out.append(Finding(rel, lineno, "NUM-RUN", "%s: %s wrote a different version of %s (sha256 %s, ledger %s)"
+                               % (nid, run, row["output"], str(produced[out_rel])[:12], str(row["output_sha256"])[:12])))
+    return out
+
+
+# ---- formulas (a declared metric definition is recomputed from other ledger values)
+
+_FORMULA_ID_RE = re.compile(r"\bN-(\d+)\b")
+
+
+def eval_formula(formula, values):
+    """Evaluate `formula` (N-IDs, numbers, + - * / and parentheses) with Decimal arithmetic.
+
+    `values` maps N-ID -> raw value. Raises ValueError with a readable reason."""
+    src = _FORMULA_ID_RE.sub(lambda m: "N_" + m.group(1), formula)
+    try:
+        tree = ast.parse(src, mode="eval")
+    except SyntaxError:
+        raise ValueError("formula %r does not parse (use N-IDs, numbers, + - * / and parentheses)" % formula)
+
+    def ev(node):
+        if isinstance(node, ast.Expression):
+            return ev(node.body)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)):
+            a, b = ev(node.left), ev(node.right)
+            if isinstance(node.op, ast.Add):
+                return a + b
+            if isinstance(node.op, ast.Sub):
+                return a - b
+            if isinstance(node.op, ast.Mult):
+                return a * b
+            if b == 0:
+                raise ValueError("formula %r divides by zero" % formula)
+            return a / b
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+            v = ev(node.operand)
+            return -v if isinstance(node.op, ast.USub) else v
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+            return Decimal(str(node.value))
+        if isinstance(node, ast.Name) and re.match(r"^N_\d+$", node.id):
+            nid = "N-" + node.id[2:]
+            if nid not in values:
+                raise ValueError("formula refers to %s, which is not in the number ledger" % nid)
+            try:
+                return Decimal(str(values[nid]))
+            except (InvalidOperation, ValueError):
+                raise ValueError("%s has a non-numeric raw value %r" % (nid, values[nid]))
+        raise ValueError("formula %r may only use N-IDs, numbers, + - * / and parentheses" % formula)
+
+    return ev(tree)
+
+
+def within_tolerance(expected, observed, tol, default_rel=None):
+    """Compare two values under a ledger tolerance. Non-numbers compare as strings."""
+    try:
+        a, b = Decimal(str(expected)), Decimal(str(observed))
+    except (InvalidOperation, ValueError):
+        return str(expected) == str(observed)
+    if not tol or tol.get("kind") == "exact":
+        if default_rel is not None:
+            return abs(a - b) <= abs(a) * Decimal(str(default_rel))
+        return a == b
+    limit = Decimal(str(tol.get("value", 0)))
+    if tol["kind"] == "rel":
+        limit = abs(a) * limit
+    return abs(a - b) <= limit
+
+
+def _check_formula(numbers, nid, lineno, row):
+    formula = row.get("formula")
+    if not isinstance(formula, str) or not formula.strip():
+        return []
+    rel = numbers.rel
+    refs = set("N-" + m for m in _FORMULA_ID_RE.findall(formula))
+    if nid in refs:
+        return [Finding(rel, lineno, "NUM-FORMULA", "%s: formula refers to itself" % nid)]
+    values = {k: numbers.latest[k][1].get("raw") for k in refs if k in numbers.latest}
+    try:
+        computed = eval_formula(formula, values)
+    except ValueError as exc:
+        return [Finding(rel, lineno, "NUM-FORMULA", "%s: %s" % (nid, exc))]
+    out = []
+    shown = ", ".join("%s=%s" % (k, values[k]) for k in sorted(refs))
+    # A float in a JSON file carries about 17 significant digits; 1e-9 relative covers that.
+    if row.get("raw") is not None and not within_tolerance(computed, row["raw"], row.get("tolerance"), default_rel="1e-9"):
+        out.append(Finding(rel, lineno, "NUM-FORMULA",
+                           "%s: formula %s = %s (%s), but raw is %r; the metric does not follow its definition"
+                           % (nid, formula, _fmt_decimal(computed), shown, row["raw"])))
+    if row.get("rounding") and row.get("printed") is not None:
+        try:
+            want = apply_rounding(computed, row["rounding"], row.get("scale"))
+        except (ValueError, InvalidOperation):
+            want = None
+        pm = re.match(r"^\s*(-?\d+(?:\.\d+)?)", str(row["printed"]))
+        if want is not None and (not pm or pm.group(1) != want):
+            out.append(Finding(rel, lineno, "NUM-FORMULA",
+                               "%s: printed %r, but %s applied to the formula's value gives %s"
+                               % (nid, row["printed"], row["rounding"], want)))
+    return out
+
+
+def _fmt_decimal(d):
+    return "%.6g" % float(d)
+
+
+# ---- evaluation split (cross-validation means are not held-out results)
+
+CV_WORD_RE = re.compile(r"(cross[- ]?validat\w*|\bCV\b|\b\d+[- ]fold\b|\bfolds?\b)", re.I)
+TRAIN_WORD_RE = re.compile(r"\b(training|train(?:ing)?[- ](?:set|split|data)|in[- ]sample)\b", re.I)
+VALID_WORD_RE = re.compile(r"\bvalidation\b", re.I)
+HELDOUT_WORD_RE = re.compile(r"(held[- ]out|\btest(?:ing)?[- ](?:set|split|data|score|AUC|F1|accuracy)\b|\bunseen\b|out[- ]of[- ]sample)", re.I)
+SPLIT_WORDS = {"cross-validation": CV_WORD_RE, "training": TRAIN_WORD_RE, "validation": VALID_WORD_RE}
+_CV_SOURCE_RE = re.compile(r"(\bcv\b|cv_|_cv|cross[-_ ]?valid|\bfolds?\b|\d+[-_ ]?fold)", re.I)
+_TEST_SOURCE_RE = re.compile(r"(\btest\b|test_|_test|held[-_ ]?out)", re.I)
+
+
+def _check_evaluation(rel, nid, lineno, row):
+    if row.get("data_origin") == "literature":
+        return []
+    ev = row.get("evaluation")
+    if ev is None:
+        return [Finding(rel, lineno, "NUM-SPLIT", "%s: missing 'evaluation' (%s); say which split the value "
+                        "comes from" % (nid, "|".join(EVALUATIONS)))]
+    source = "%s %s" % (row.get("metric") or "", row.get("pointer") or "")
+    if ev == "held-out" and _CV_SOURCE_RE.search(source) and not _TEST_SOURCE_RE.search(source):
+        return [Finding(rel, lineno, "NUM-SPLIT", "%s: evaluation is held-out, but its metric/pointer describe a "
+                        "cross-validation value (%s)" % (nid, source.strip()))]
+    if ev in ("cross-validation", "training") and _TEST_SOURCE_RE.search(source) and not _CV_SOURCE_RE.search(source):
+        return [Finding(rel, lineno, "NUM-SPLIT", "%s: evaluation is %s, but its metric/pointer describe a held-out "
+                        "test value (%s)" % (nid, ev, source.strip()))]
+    return []
+
+
+def _split_disclosure(project, macro_rel):
+    """A macro whose value is a CV, training or validation value must say so where it is used."""
+    out = []
+    by_macro = {}
+    for nid, (_ln, row) in project.numbers().latest.items():
+        if row.get("macro") and row.get("evaluation") in SPLIT_WORDS:
+            by_macro[row["macro"]] = (nid, row["evaluation"])
+    if not by_macro:
+        return out
+    for path in project.tex_files():
+        doc = Doc(project, path)
+        if doc.rel == macro_rel:
+            continue
+        for start, sent, _cids, line_of in doc.sentences():
+            fid = doc.env[start - 1]
+            context = sent + " " + (doc.captions.get(fid, "") if fid is not None else "")
+            for mm in MACRO_USE_RE.finditer(sent):
+                info = by_macro.get("\\" + mm.group(1))
+                if not info:
+                    continue
+                nid, ev = info
+                if not SPLIT_WORDS[ev].search(context):
+                    out.append(Finding(doc.rel, line_of(mm.start()), "NUM-SPLIT",
+                                       "\\%s (%s) is a %s value, but the sentence/caption does not say so; "
+                                       "a reader will take it for a held-out result" % (mm.group(1), nid, ev)))
+                elif HELDOUT_WORD_RE.search(sent):
+                    out.append(Finding(doc.rel, line_of(mm.start()), "NUM-SPLIT",
+                                       "\\%s (%s) is a %s value in a sentence that also says %r; check that it is "
+                                       "not presented as held-out" % (mm.group(1), nid, ev,
+                                                                       HELDOUT_WORD_RE.search(sent).group(0)), "warn"))
     return out
 
 
@@ -1414,6 +1782,9 @@ S6_PROOF_RE = re.compile(r"\b(prove[sdn]?|proving|proof that)\b", re.I)
 S6_CAUSAL_RE = re.compile(r"\b(caus(?:e|es|ed|ing|al|ally|ation)|enables? causal)\b", re.I)
 CITE_RE = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{|\[-?@\w")
 DISCLOSURE_RE = re.compile(r"\b(simulat\w*|synthetic\w*|generated|modell?ed|artificial)\b", re.I)
+GROUND_TRUTH_RE = re.compile(r"\b(ground[- ]truth|gold[- ]standard|gold labels?|human[- ]annotated|annotated|"
+                             r"manually (?:labell?ed|annotated)|expert[- ]labell?ed)\b", re.I)
+GEN_LABEL_DISCLOSURE_RE = re.compile(r"\b(generator\w*|generated labels?|rule[- ]based|by construction|simulat\w*|synthetic labels?)\b", re.I)
 MACRO_USE_RE = re.compile(r"\\([A-Za-z]+)")
 LOG_UNDEF_RE = re.compile(r"(?:LaTeX|Package \w+) Warning: (?:Reference|Citation) [`'](.+?)' .*undefined")
 
@@ -1506,7 +1877,50 @@ def _slop_prose(project, doc):
                 if r and r.get("data_origin") in NON_MEASURED:
                     out.append(Finding(doc.rel, start, "C3",
                                        "%s rests on %s data but the sentence does not say so" % (c, r.get("data_origin"))))
+        # C6: labels a generator assigned are not ground truth (PROMISE audit).
+        m = GROUND_TRUTH_RE.search(sent)
+        if m and not GEN_LABEL_DISCLOSURE_RE.search(sent):
+            why = _generated_label_trace(project, sent, rows)
+            if why:
+                out.append(Finding(doc.rel, line_of(m.start()), "C6",
+                                   "%r, but %s; call them generator-assigned labels" % (m.group(0), why)))
+            elif not rows and not MACRO_USE_RE.search(sent) and _manifest_has_generator_labels(project):
+                out.append(Finding(doc.rel, line_of(m.start()), "C6",
+                                   "%r in a sentence with no C-ID or number macro, while the data manifest has "
+                                   "generator-rule labels; trace the sentence or qualify the wording" % m.group(0), "warn"))
     return out
+
+
+def _manifest_has_generator_labels(project):
+    return any(r.get("labels") == "generator-rule" for _l, r in project.manifest().latest.values())
+
+
+def _generated_label_trace(project, sent, rows):
+    """Why the data behind a sentence is not ground truth, or None."""
+    numbers = project.numbers()
+    nids = set()
+    for c, r in rows:
+        if r and r.get("data_origin") in NON_MEASURED:
+            return "%s rests on %s data" % (c, r.get("data_origin"))
+        for nid in (r or {}).get("numbers") or []:
+            nids.add(nid)
+    macro_to_nid = {row.get("macro"): nid for nid, (_l, row) in numbers.latest.items() if row.get("macro")}
+    for mm in MACRO_USE_RE.finditer(sent):
+        if "\\" + mm.group(1) in macro_to_nid:
+            nids.add(macro_to_nid["\\" + mm.group(1)])
+    man = project.manifest()
+    for nid in sorted(nids):
+        item = numbers.latest.get(nid)
+        if not item:
+            continue
+        row = item[1]
+        if row.get("data_origin") in NON_MEASURED:
+            return "%s is %s data" % (nid, row.get("data_origin"))
+        for p, _sha in number_inputs(project, row):
+            entry = man.latest.get(p)
+            if entry and entry[1].get("labels") == "generator-rule":
+                return "%s uses %s, whose labels come from generator rules" % (nid, p)
+    return None
 
 
 # A table cell that holds a number (optionally in math mode, with sign, %, or \pm).
@@ -1662,6 +2076,1480 @@ def _c3_measured_random(project):
     return out
 
 
+# --------------------------------------------------------------------------- plans (pre-registration)
+
+PLANS_REL = "research/ledger/plans.jsonl"
+EXPERIMENTS_REL = "research/experiments"
+
+# apocalypt.md P5 (hypothesis, independent unit, baseline, metric, controls, decision rule,
+# fixed before outcomes are inspected), P7 (stopping condition) and design section 5
+# (grouping variable when samples repeat; power analysis or a reason for the sample size).
+PLAN_FIELDS = (
+    ("hypothesis", ("hypothesis",)),
+    ("unit of evaluation", ("unit of evaluation", "evaluation unit", "independent unit", "unit")),
+    ("baseline", ("baseline", "baselines")),
+    ("metric", ("metric", "metrics", "primary metric")),
+    ("controls", ("controls", "control")),
+    ("split and grouping", ("split and grouping", "split", "splits", "data split", "grouping")),
+    ("sample size", ("sample size", "power analysis", "sample size and power")),
+    ("decision rule", ("decision rule",)),
+    ("stopping condition", ("stopping condition", "stopping conditions", "stopping rule")),
+)
+
+PLAN_TEMPLATE = """# {exp}: pre-registered plan
+
+<!-- apocalypt.md P5/P7. Fill every section BEFORE any result exists, then freeze it:
+       uws research check plan freeze {exp}
+     and commit the freeze. The analysis gate fails for results that were committed before
+     the freeze, and for a plan changed after results without a PI-approved deviation. -->
+
+## Hypothesis
+<!-- The claim under test, with its C-ID (a hypothesis row in research/ledger/claims.jsonl). -->
+
+## Unit of evaluation
+<!-- The independent unit (e.g. scenario, subject, repository), not a row if rows repeat. -->
+
+## Baseline
+
+## Metric
+<!-- Exact definition, e.g. FPR = FP / (FP + TN) on the held-out test split. -->
+
+## Controls
+
+## Split and grouping
+<!-- Train/validation/test or cross-validation; the grouping variable if units repeat. -->
+
+## Sample size
+<!-- A power analysis, or the written reason for this sample size. -->
+
+## Decision rule
+<!-- What result supports, and what result refutes, the hypothesis. -->
+
+## Stopping condition
+"""
+
+
+class Plans(object):
+    """research/ledger/plans.jsonl: one freeze record per (exp, rev), append-only."""
+
+    def __init__(self, project):
+        self.rel = PLANS_REL
+        self.path = project.path(self.rel)
+        self.rows, self.parse_errors = [], []
+        self.by_exp = {}
+        if os.path.isfile(self.path):
+            for lineno, obj, err in _read_jsonl(self.path):
+                if err:
+                    self.parse_errors.append(Finding(self.rel, lineno, "PLAN-SCHEMA", err))
+                    continue
+                self.rows.append((lineno, obj))
+                if isinstance(obj.get("exp"), str):
+                    self.by_exp.setdefault(obj["exp"], []).append((lineno, obj))
+
+
+def _read_jsonl(path):
+    """Yield (lineno, dict, None) or (lineno, None, error) for each non-blank line."""
+    with open(path, encoding="utf-8") as fh:
+        for lineno, raw in enumerate(fh, 1):
+            if not raw.strip():
+                continue
+            try:
+                obj = json.loads(raw)
+            except ValueError as exc:
+                yield lineno, None, "not valid JSON: %s" % exc
+                continue
+            if not isinstance(obj, dict):
+                yield lineno, None, "each line must be one JSON object"
+                continue
+            yield lineno, obj, None
+
+
+def _append_jsonl(path, obj):
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    line = json.dumps(obj, sort_keys=True, separators=(", ", ": ")) + "\n"
+    prefix = ""
+    if os.path.isfile(path) and os.path.getsize(path) > 0:
+        with open(path, "rb") as fh:
+            fh.seek(-1, os.SEEK_END)
+            if fh.read(1) != b"\n":
+                prefix = "\n"
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(prefix + line)
+
+
+def parse_labelled_fields(text, spec):
+    """Sections of a Markdown brief: `## Label` headings or `Label: value` lines.
+
+    Returns ({canonical: body}, {canonical: lineno}). HTML comments are ignored."""
+    text = _strip_html_comments(text)
+    sections, current, label_line = {}, None, {}
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        heading = re.match(r"^\s*#+\s*(.+?)\s*:?\s*$", raw)
+        labelled = re.match(r"^\s*(?:[-*]\s*)?(?:\*\*)?([A-Za-z ]+?)(?:\*\*)?\s*:\s*(?:\*\*)?\s*(.*)$", raw)
+        label, rest = "", ""
+        if heading:
+            label = heading.group(1).strip("* ").lower()
+        elif labelled:
+            label, rest = labelled.group(1).strip().lower(), labelled.group(2)
+        matched = None
+        for canon, names in spec:
+            if label in names:
+                matched = canon
+        if matched:
+            current = matched
+            label_line[current] = lineno
+            sections[current] = sections.get(current, "") + " " + rest
+        elif heading:
+            current = None
+        elif current:
+            sections[current] += " " + raw
+    return sections, label_line
+
+
+def _empty_field(body):
+    body = (body or "").strip()
+    return not body or bool(re.fullmatch(r"(?i)(tbd|todo|n/?a|-|\.\.\.)", body))
+
+
+def experiment_ids(project):
+    d = project.path(EXPERIMENTS_REL)
+    if not os.path.isdir(d):
+        return []
+    return sorted(n for n in os.listdir(d) if os.path.isdir(os.path.join(d, n)) and not n.startswith("."))
+
+
+def plan_field_findings(project, exp):
+    rel = "%s/%s/plan.md" % (EXPERIMENTS_REL, exp)
+    path = project.path(rel)
+    if not os.path.isfile(path):
+        return [Finding(rel, 1, "PLAN-FIELDS", "%s has no plan.md (create one with `uws research check plan new %s`)"
+                        % (exp, exp))]
+    sections, lines = parse_labelled_fields(read_text(path), PLAN_FIELDS)
+    out = []
+    for canon, _names in PLAN_FIELDS:
+        if _empty_field(sections.get(canon)):
+            out.append(Finding(rel, lines.get(canon, 1), "PLAN-FIELDS", "%s: '%s' is missing or empty" % (exp, canon)))
+    claims = project.claims()
+    for cid in sorted(set(CID_RE.findall(sections.get("hypothesis", "")))):
+        item = claims.latest.get(cid)
+        if item is None:
+            out.append(Finding(rel, lines.get("hypothesis", 1), "PLAN-REF", "%s: %s is not in the claim ledger" % (exp, cid)))
+        elif item[1].get("category") != "hypothesis":
+            out.append(Finding(rel, lines.get("hypothesis", 1), "PLAN-REF",
+                               "%s: %s is a %s, not a hypothesis" % (exp, cid, item[1].get("category"))))
+    return out
+
+
+def plan_results(project):
+    """exp -> [(label, kind, key)]: number rows and run records that report results for it."""
+    res = {}
+    for nid, (_ln, row) in sorted(project.numbers().latest.items()):
+        exp = row.get("exp")
+        if isinstance(exp, str) and exp != EXPLORATORY:
+            res.setdefault(exp, []).append((nid, "number", nid))
+    for run_id, (rel, rec, _err) in sorted(project.runs().items()):
+        exp = rec.get("exp") if rec else None
+        if isinstance(exp, str) and exp != EXPLORATORY:
+            res.setdefault(exp, []).append((run_id, "run", rel))
+    return res
+
+
+def _short(sha):
+    return str(sha or "")[:12]
+
+
+def check_plans(project, require_plan=False):
+    """Pre-registration (design section 5, experiment_design and analysis rows)."""
+    out = []
+    plans = project.plans()
+    out.extend(plans.parse_errors)
+    out.extend(append_only_findings(project, plans.rel, "PLAN-APPEND"))
+    decisions = pi_decision_ids(project)
+
+    # Freeze-record schema.
+    for exp, rows in sorted(plans.by_exp.items()):
+        prev = None
+        for i, (lineno, row) in enumerate(rows, 1):
+            if not EXP_RE.match(exp):
+                out.append(Finding(plans.rel, lineno, "PLAN-SCHEMA", "exp %r is not EXP-<name>" % exp))
+            if row.get("rev") != i:
+                out.append(Finding(plans.rel, lineno, "PLAN-SCHEMA", "%s: freeze rev should be %d (got %r)" % (exp, i, row.get("rev"))))
+            if not re.match(r"^[0-9a-f]{64}$", str(row.get("sha256") or "")):
+                out.append(Finding(plans.rel, lineno, "PLAN-SCHEMA", "%s: sha256 must be 64 hex digits" % exp))
+            for key in ("plan", "frozen_at", "frozen_by"):
+                if not row.get(key):
+                    out.append(Finding(plans.rel, lineno, "PLAN-SCHEMA", "%s: missing '%s'" % (exp, key)))
+            if prev is not None and row.get("previous_sha256") != prev.get("sha256"):
+                out.append(Finding(plans.rel, lineno, "PLAN-SCHEMA", "%s@%d: previous_sha256 must name the freeze it replaces (%s)"
+                                   % (exp, i, _short(prev.get("sha256")))))
+            prev = row
+
+    exps = experiment_ids(project)
+    if require_plan and not exps:
+        out.append(Finding(EXPERIMENTS_REL, 1, "PLAN-FREEZE", "no experiment plan: experiment_design produces at least one "
+                           "research/experiments/EXP-<name>/plan.md (`uws research check plan new EXP-<name>`)"))
+    results = plan_results(project)
+    for exp in exps:
+        if not EXP_RE.match(exp):
+            out.append(Finding("%s/%s" % (EXPERIMENTS_REL, exp), 1, "PLAN-ID", "experiment directory must be named EXP-<name>"))
+            continue
+        out.extend(plan_field_findings(project, exp))
+        plan_rel = "%s/%s/plan.md" % (EXPERIMENTS_REL, exp)
+        if not os.path.isfile(project.path(plan_rel)):
+            continue
+        rows = plans.by_exp.get(exp)
+        if not rows:
+            out.append(Finding(plan_rel, 1, "PLAN-FREEZE", "%s is not frozen: run `uws research check plan freeze %s` "
+                               "and commit it before collecting data" % (exp, exp)))
+            continue
+        current = sha256_file(project.path(plan_rel))
+        latest = rows[-1][1]
+        if latest.get("sha256") != current:
+            if results.get(exp):
+                how = ("results exist (%s), so the change is a deviation: `uws research check plan freeze %s "
+                       "--reason \"...\" --pi-decision D-<n>` after the PI decides"
+                       % (", ".join(r[0] for r in results[exp][:3]), exp))
+            else:
+                how = "no results exist yet, so re-freeze it: `uws research check plan freeze %s`" % exp
+            out.append(Finding(plan_rel, 1, "PLAN-DRIFT", "%s changed after it was frozen (sha256 %s, frozen %s); %s"
+                               % (exp, _short(current), _short(latest.get("sha256")), how)))
+    known = set(exps)
+    for exp, rows in sorted(plans.by_exp.items()):
+        if exp not in known:
+            out.append(Finding(plans.rel, rows[-1][0], "PLAN-FREEZE", "%s is frozen but %s/%s/plan.md is gone" % (exp, EXPERIMENTS_REL, exp)))
+
+    # Every result is linked to a plan, or labelled exploratory.
+    numbers = project.numbers()
+    for nid in sorted(numbers.latest):
+        lineno, row = numbers.latest[nid]
+        if row.get("data_origin") == "literature":
+            continue
+        exp = row.get("exp")
+        if exp is None:
+            out.append(Finding(numbers.rel, lineno, "PLAN-LINK", "%s: set exp to the EXP-ID whose frozen plan it answers, "
+                               "or to %r (then it is not a pre-registered result)" % (nid, EXPLORATORY)))
+        elif exp != EXPLORATORY and exp not in known:
+            out.append(Finding(numbers.rel, lineno, "PLAN-LINK", "%s: exp %s has no %s/%s/plan.md" % (nid, exp, EXPERIMENTS_REL, exp)))
+    for run_id, (rel, rec, _err) in sorted(project.runs().items()):
+        exp = rec.get("exp") if rec else None
+        if isinstance(exp, str) and exp != EXPLORATORY and exp not in known:
+            out.append(Finding(rel, 1, "PLAN-LINK", "%s: exp %s has no %s/%s/plan.md" % (run_id, exp, EXPERIMENTS_REL, exp)))
+
+    out.extend(_plan_order(project, plans, results, decisions, known))
+    return out
+
+
+def _freeze_key(row):
+    return (str(row.get("exp")), str(row.get("rev")), str(row.get("sha256")))
+
+
+def _plan_order(project, plans, results, decisions, known):
+    """Results must be committed after the plan's first freeze; later re-freezes need a PI decision."""
+    out = []
+    todo = [exp for exp in sorted(results) if exp in known and plans.by_exp.get(exp)]
+    if not todo:
+        return out
+    if not in_git(project):
+        for exp in todo:
+            out.append(Finding(plans.rel, plans.by_exp[exp][0][0], "PLAN-ORDER",
+                               "%s: not a git repository, so the freeze cannot be shown to precede its results" % exp))
+        return out
+    numbers_rel = project.numbers().rel
+    num_first = first_appearance(project, numbers_rel,
+                                 lambda t: {o["id"] for o in _jsonl_objects(t) if isinstance(o.get("id"), str)})
+    # Keyed on the frozen hash too: a freeze row edited in place counts from the commit
+    # that introduced the edit, not from the commit of the original row.
+    plan_first = first_appearance(project, plans.rel,
+                                  lambda t: {_freeze_key(o) for o in _jsonl_objects(t)})
+
+    def result_commit(kind, key):
+        if kind == "number":
+            return num_first.get(key)
+        log = _git(project, ["log", "--topo-order", "--reverse", "--diff-filter=A", "--format=%H", "--", key])
+        commits = (log or "").split()
+        return commits[0] if commits else None
+
+    for exp in todo:
+        rows = plans.by_exp[exp]
+        res = [(label, result_commit(kind, key)) for label, kind, key in results[exp]]
+        first_line, first_row = rows[0]
+        f1 = plan_first.get(_freeze_key(first_row))
+        if f1 is None:
+            out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
+                               "%s: the freeze is not committed, but results exist (%s); commit the freeze first"
+                               % (exp, ", ".join(label for label, _c in res[:3]))))
+        else:
+            for label, c in res:
+                if c is not None and (c == f1 or not is_ancestor(project, f1, c)):
+                    out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
+                                       "%s: %s was committed in %s, not after the plan was frozen (%s); a plan "
+                                       "written after its results is not a pre-registration"
+                                       % (exp, label, c[:12], f1[:12])))
+        dev_path = project.path("%s/%s/deviations.md" % (EXPERIMENTS_REL, exp))
+        dev_text = read_text(dev_path) if os.path.isfile(dev_path) else ""
+        for lineno, row in rows[1:]:
+            ck = plan_first.get(_freeze_key(row))
+            if ck is None:
+                after = True
+            else:
+                after = any(c is not None and is_ancestor(project, c, ck) for _l, c in res)
+            if not after:
+                continue
+            problems = []
+            if not row.get("reason"):
+                problems.append("a reason")
+            did = str(row.get("pi_decision") or "")
+            if not DID_RE.fullmatch(did) or did not in decisions:
+                problems.append("a PI decision ID recorded in research/pi/decisions.md")
+            dev = str(row.get("deviation") or "")
+            if not DEV_RE.fullmatch(dev) or not re.search(r"(?m)^\|\s*%s\s*\|" % re.escape(dev), dev_text):
+                problems.append("a DEV row in %s/%s/deviations.md" % (EXPERIMENTS_REL, exp))
+            if problems:
+                out.append(Finding(plans.rel, lineno, "PLAN-DEVIATION",
+                                   "%s@%s re-froze the plan after results existed without %s"
+                                   % (exp, row.get("rev"), ", ".join(problems))))
+    return out
+
+
+def plan_new(project, args):
+    exp = args.exp
+    if not exp or not EXP_RE.match(exp):
+        print("refused: give an experiment ID such as EXP-LEAK", file=sys.stderr)
+        return EXIT_FINDINGS
+    rel = "%s/%s/plan.md" % (EXPERIMENTS_REL, exp)
+    path = project.path(rel)
+    if os.path.exists(path):
+        print("refused: %s exists (plans are never overwritten)" % rel, file=sys.stderr)
+        return EXIT_FINDINGS
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(PLAN_TEMPLATE.format(exp=exp))
+    print("created %s; fill every section, then `uws research check plan freeze %s`" % (rel, exp))
+    return EXIT_OK
+
+
+def plan_freeze(project, args):
+    exp = args.exp
+    if not exp or not EXP_RE.match(exp):
+        print("refused: give an experiment ID such as EXP-LEAK", file=sys.stderr)
+        return EXIT_FINDINGS
+    by = args.by or "methodologist"
+    if not ROLE_RE.match(by):
+        print("refused: --by must be a role name such as methodologist", file=sys.stderr)
+        return EXIT_FINDINGS
+    rel = "%s/%s/plan.md" % (EXPERIMENTS_REL, exp)
+    if not os.path.isfile(project.path(rel)):
+        print("refused: %s does not exist (`uws research check plan new %s`)" % (rel, exp), file=sys.stderr)
+        return EXIT_FINDINGS
+    incomplete = [f for f in plan_field_findings(project, exp) if f.level == "block"]
+    if incomplete:
+        emit(incomplete, False)
+        print("refused: an incomplete plan cannot be pre-registered", file=sys.stderr)
+        return EXIT_FINDINGS
+    plans = project.plans()
+    rows = plans.by_exp.get(exp, [])
+    sha = sha256_file(project.path(rel))
+    results = plan_results(project).get(exp, [])
+    if rows and rows[-1][1].get("sha256") == sha:
+        print("%s is already frozen at sha256 %s (rev %s); nothing to do" % (exp, _short(sha), rows[-1][1].get("rev")))
+        return EXIT_OK
+    row = {"exp": exp, "rev": len(rows) + 1, "plan": rel, "sha256": sha, "frozen_at": utc_now(), "frozen_by": by}
+    dev_row = None
+    if not rows:
+        if results:
+            print("refused: results for %s already exist (%s). A plan frozen now is not a pre-registration: label "
+                  "those numbers exp \"%s\", or ask the PI." % (exp, ", ".join(r[0] for r in results[:5]), EXPLORATORY),
+                  file=sys.stderr)
+            return EXIT_FINDINGS
+    else:
+        row["previous_sha256"] = rows[-1][1].get("sha256")
+        if args.reason:
+            row["reason"] = args.reason
+        if results:
+            did = args.pi_decision or ""
+            if not args.reason or not DID_RE.fullmatch(did) or did not in pi_decision_ids(project):
+                print("refused: results for %s exist (%s), so changing the frozen plan is a deviation. It needs "
+                      "--reason \"...\" and --pi-decision D-<n> recorded in research/pi/decisions.md "
+                      "(apocalypt.md P5; design section 7.3)." % (exp, ", ".join(r[0] for r in results[:5])),
+                      file=sys.stderr)
+                return EXIT_FINDINGS
+            dev_rel = "%s/%s/deviations.md" % (EXPERIMENTS_REL, exp)
+            dev_path = project.path(dev_rel)
+            existing = read_text(dev_path) if os.path.isfile(dev_path) else ""
+            nums = [int(n) for n in re.findall(r"(?m)^\|\s*DEV-(\d+)\s*\|", existing)]
+            dev_id = "DEV-%03d" % (max(nums) + 1 if nums else 1)
+            row.update({"deviation": dev_id, "pi_decision": did})
+            dev_row = (dev_path, existing, "| %s | %s | %s -> %s | %s | %s |\n" % (
+                dev_id, row["frozen_at"], _short(row["previous_sha256"]), _short(sha),
+                args.reason.replace("|", "/").replace("\n", " "), did))
+    if dev_row:
+        dev_path, existing, line = dev_row
+        if not existing:
+            existing = ("# Deviations from the frozen plan of %s\n\n<!-- Written by `uws research check plan freeze`. "
+                        "One row per change made after results existed; each needs a PI decision. -->\n\n"
+                        "| ID | Date (UTC) | Frozen sha256 before -> after | Reason | PI decision |\n"
+                        "|---|---|---|---|---|\n" % exp)
+        _atomic_write(dev_path, existing + line)
+    _append_jsonl(plans.path, row)
+    print("froze %s rev %d at sha256 %s%s" % (exp, row["rev"], _short(sha),
+                                              " (deviation %s, %s)" % (row["deviation"], row["pi_decision"]) if dev_row else ""))
+    print("commit it before collecting data: git add %s %s && git commit" % (PLANS_REL, rel))
+    return EXIT_OK
+
+
+# --------------------------------------------------------------------------- data manifest and run records
+
+MANIFEST_REL = "research/data/manifest.jsonl"
+RAW_DATA_REL = "research/data/raw"
+MANIFEST_REQUIRED = ("path", "sha256", "size", "source", "version", "split", "origin")
+RUN_REQUIRED = ("id", "command", "git_commit", "git_dirty", "started_at", "ended_at", "exit_code", "inputs", "outputs")
+
+
+class Manifest(object):
+    """research/data/manifest.jsonl: one row per registered version of a data file."""
+
+    def __init__(self, project):
+        self.rel = MANIFEST_REL
+        self.path = project.path(self.rel)
+        self.rows, self.parse_errors = [], []
+        self.latest = {}
+        if os.path.isfile(self.path):
+            for lineno, obj, err in _read_jsonl(self.path):
+                if err:
+                    self.parse_errors.append(Finding(self.rel, lineno, "DATA-SCHEMA", err))
+                    continue
+                self.rows.append((lineno, obj))
+                p = safe_rel(project, obj.get("path"))
+                if p:
+                    self.latest[p] = (lineno, obj)
+
+
+def is_generated(row):
+    return row.get("origin") in NON_MEASURED or bool(row.get("generator"))
+
+
+def seed_recorded(seed):
+    if seed is None or isinstance(seed, bool):
+        return False
+    return str(seed).strip().lower() not in UNRECORDED_SEEDS
+
+
+_SEEDING_CALLS = {"seed", "manual_seed", "set_seed", "manual_seed_all"}
+_RNG_CONSTRUCTORS = {"default_rng", "RandomState", "Random", "SeedSequence", "PCG64", "MT19937", "Philox", "SFC64"}
+
+
+def seeding_calls(path):
+    """(seeded, unseeded): calls that fix a seed, and RNGs constructed without one."""
+    try:
+        tree = ast.parse(read_text(path))
+    except (SyntaxError, OSError, ValueError):
+        return [], []
+    seeded, unseeded = [], []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _dotted(node.func)
+        last = name.split(".")[-1]
+        has_arg = bool(node.args) or any(kw.arg in ("seed", "a", "x", "entropy") for kw in node.keywords)
+        if last in _SEEDING_CALLS or last in _RNG_CONSTRUCTORS:
+            (seeded if has_arg else unseeded).append((node.lineno, name))
+    return seeded, unseeded
+
+
+def number_inputs(project, row):
+    """Input paths of a number: its own `inputs` plus the inputs of its run record."""
+    paths = []
+    for p in row.get("inputs") or []:
+        if isinstance(p, str):
+            paths.append((safe_rel(project, p) or p, None))
+    run = row.get("run")
+    if run:
+        _rel, rec, _err = project.runs().get(str(run), (None, None, None))
+        for inp in (rec or {}).get("inputs") or []:
+            if isinstance(inp, dict) and isinstance(inp.get("path"), str):
+                paths.append((safe_rel(project, inp["path"]) or inp["path"], inp.get("sha256")))
+            elif isinstance(inp, str):
+                paths.append((safe_rel(project, inp) or inp, None))
+    # One entry per path; a recorded hash (from the run) wins over a bare path.
+    merged = {}
+    for p, sha in paths:
+        if p not in merged or (sha and not merged[p]):
+            merged[p] = sha
+    return sorted(merged.items())
+
+
+def check_data(project):
+    """Data manifest, generated-data seeds, number inputs and run-record completeness (section 8)."""
+    out = []
+    man = project.manifest()
+    out.extend(man.parse_errors)
+    out.extend(append_only_findings(project, man.rel, "DATA-APPEND"))
+    decisions = pi_decision_ids(project)
+
+    history = {}
+    for lineno, row in man.rows:
+        p = safe_rel(project, row.get("path"))
+        label = p or repr(row.get("path"))
+        for key in MANIFEST_REQUIRED:
+            if row.get(key) in (None, ""):
+                out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "%s: missing '%s'" % (label, key)))
+        if not p:
+            out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "path %r must be a relative path inside the project" % row.get("path")))
+            continue
+        if row.get("origin") not in (None, "") and row.get("origin") not in DATA_ORIGINS:
+            out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "%s: origin %r is not one of %s" % (p, row.get("origin"), ", ".join(DATA_ORIGINS))))
+        if row.get("sha256") and not re.match(r"^[0-9a-f]{64}$", str(row["sha256"])):
+            out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "%s: sha256 must be 64 hex digits" % p))
+        if row.get("size") is not None and (isinstance(row["size"], bool) or not isinstance(row["size"], int) or row["size"] < 0):
+            out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "%s: size must be a byte count" % p))
+        if row.get("labels") is not None and row["labels"] not in LABEL_ORIGINS:
+            out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "%s: labels %r is not one of %s" % (p, row["labels"], ", ".join(LABEL_ORIGINS))))
+        prev = history.get(p)
+        if prev is not None and prev.get("sha256") != row.get("sha256"):
+            # A new version of a registered file: say which version it replaces and why.
+            if row.get("supersedes_sha256") != prev.get("sha256") or not row.get("reason"):
+                out.append(Finding(man.rel, lineno, "DATA-REPLACE", "%s: a new version must name supersedes_sha256 %s and a reason"
+                                   % (p, _short(prev.get("sha256")))))
+            if p.startswith(RAW_DATA_REL + "/"):
+                did = str(row.get("pi_decision") or "")
+                if not DID_RE.fullmatch(did) or did not in decisions:
+                    out.append(Finding(man.rel, lineno, "DATA-REPLACE", "%s: raw data was replaced without a PI decision "
+                                       "ID recorded in research/pi/decisions.md" % p))
+        history[p] = row
+
+    for p in sorted(man.latest):
+        lineno, row = man.latest[p]
+        path = project.path(p)
+        if not os.path.isfile(path):
+            out.append(Finding(man.rel, lineno, "DATA-MISSING", "%s is registered but missing: the data behind the results "
+                               "is not archived" % p))
+        else:
+            if isinstance(row.get("size"), int) and os.path.getsize(path) != row["size"]:
+                out.append(Finding(man.rel, lineno, "DATA-HASH", "%s: size is %d bytes, manifest says %d"
+                                   % (p, os.path.getsize(path), row["size"])))
+            if row.get("sha256") and sha256_file(path) != row["sha256"]:
+                out.append(Finding(man.rel, lineno, "DATA-HASH", "%s changed after it was registered (sha256 %s, manifest %s); "
+                                   "restore it, or register the new version with a reason"
+                                   % (p, _short(sha256_file(path)), _short(row["sha256"]))))
+            elif p.startswith(RAW_DATA_REL + "/") and os.stat(path).st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+                out.append(Finding(man.rel, lineno, "DATA-WRITABLE", "%s is writable; raw data should be read-only "
+                                   "(chmod a-w; git does not keep this bit, so re-apply it after a clone)" % p, "warn"))
+        if is_generated(row):
+            gen = row.get("generator")
+            gen_rel = safe_rel(project, gen) if gen else None
+            if not gen:
+                out.append(Finding(man.rel, lineno, "DATA-GEN", "%s is %s data but names no generator script" % (p, row.get("origin"))))
+            elif not gen_rel or not os.path.isfile(project.path(gen_rel)):
+                out.append(Finding(man.rel, lineno, "DATA-GEN", "%s: generator %s does not exist" % (p, gen)))
+            if not seed_recorded(row.get("seed")):
+                out.append(Finding(man.rel, lineno, "DATA-SEED", "%s was generated without a recorded seed (seed=%r); it "
+                                   "cannot be regenerated" % (p, row.get("seed"))))
+            if row.get("labels") is None:
+                out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "%s: generated data must declare labels (%s)"
+                                   % (p, "|".join(LABEL_ORIGINS))))
+            if gen_rel and gen_rel.endswith(".py") and os.path.isfile(project.path(gen_rel)):
+                draws = _random_draws(project.path(gen_rel))
+                seeded, unseeded = seeding_calls(project.path(gen_rel))
+                for ln, name in unseeded:
+                    out.append(Finding(man.rel, lineno, "DATA-SEED", "%s: its generator %s:%d creates %s() without a seed"
+                                       % (p, gen_rel, ln, name)))
+                if draws and not seeded:
+                    out.append(Finding(man.rel, lineno, "DATA-SEED", "%s: its generator %s draws random values (%s() at line %d) "
+                                       "but never sets a seed" % (p, gen_rel, draws[0][1], draws[0][0])))
+
+    # Raw data must be registered.
+    raw_dir = project.path(RAW_DATA_REL)
+    if os.path.isdir(raw_dir):
+        for dirpath, dirnames, filenames in os.walk(raw_dir):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            for name in sorted(filenames):
+                if name.startswith("."):
+                    continue
+                rel = project.rel(os.path.join(dirpath, name)).replace(os.sep, "/")
+                if rel not in man.latest:
+                    out.append(Finding(rel, 1, "DATA-UNMANIFESTED", "raw data file is not in %s "
+                                       "(`uws research check data add %s ...`)" % (man.rel, rel)))
+
+    # Every number names its inputs, and every input is registered in the version it used.
+    numbers = project.numbers()
+    for nid in sorted(numbers.latest):
+        lineno, row = numbers.latest[nid]
+        if row.get("data_origin") == "literature":
+            continue
+        if not row.get("run") and row.get("inputs") is None:
+            out.append(Finding(numbers.rel, lineno, "DATA-NOINPUT", "%s names no run and no inputs, so the data behind "
+                               "it is unknown" % nid))
+            continue
+        for p, used_sha in number_inputs(project, row):
+            entry = man.latest.get(p)
+            if entry is None:
+                out.append(Finding(numbers.rel, lineno, "DATA-UNMANIFESTED", "%s: input %s is not in %s; register it "
+                                   "(path, sha256, source, version, split)" % (nid, p, man.rel)))
+            elif used_sha and used_sha != entry[1].get("sha256"):
+                out.append(Finding(numbers.rel, lineno, "DATA-RUNHASH", "%s: %s used %s version %s, but the manifest "
+                                   "now registers %s" % (nid, row.get("run"), p, _short(used_sha), _short(entry[1].get("sha256")))))
+
+    # Run records are complete.
+    for run_id, (rel, rec, err) in sorted(project.runs().items()):
+        if err:
+            out.append(Finding(rel, 1, "RUN-SCHEMA", err))
+            continue
+        for key in RUN_REQUIRED:
+            if key not in rec:
+                out.append(Finding(rel, 1, "RUN-SCHEMA", "%s: missing '%s' (record runs with `uws research check run`)" % (run_id, key)))
+        for key in ("inputs", "outputs"):
+            items = rec.get(key)
+            if key in rec and (not isinstance(items, list) or
+                               not all(isinstance(i, dict) and i.get("path") and "sha256" in i for i in items)):
+                out.append(Finding(rel, 1, "RUN-SCHEMA", "%s: %s must be a list of {path, sha256}" % (run_id, key)))
+    return out
+
+
+def data_add(project, args):
+    rel = _project_rel_arg(project, args.path)
+    if not rel or not os.path.isfile(project.path(rel)):
+        print("refused: %s is not a file inside the project" % args.path, file=sys.stderr)
+        return EXIT_FINDINGS
+    if args.origin not in DATA_ORIGINS:
+        print("refused: --origin must be one of %s" % ", ".join(DATA_ORIGINS), file=sys.stderr)
+        return EXIT_FINDINGS
+    for flag, value in (("--source", args.source), ("--version", args.version), ("--split", args.split)):
+        if not value or not value.strip():
+            print("refused: %s is required" % flag, file=sys.stderr)
+            return EXIT_FINDINGS
+    generated = args.origin in NON_MEASURED or bool(args.generator)
+    if generated:
+        gen_rel = _project_rel_arg(project, args.generator) if args.generator else None
+        if not gen_rel or not os.path.isfile(project.path(gen_rel)):
+            print("refused: %s data needs --generator <script in the project>" % args.origin, file=sys.stderr)
+            return EXIT_FINDINGS
+        if args.seed is None:
+            print("refused: generated data needs --seed <value> (use --seed unrecorded if the generator ran unseeded; "
+                  "the data check will then report it)", file=sys.stderr)
+            return EXIT_FINDINGS
+        if args.labels not in LABEL_ORIGINS:
+            print("refused: generated data needs --labels %s" % "|".join(LABEL_ORIGINS), file=sys.stderr)
+            return EXIT_FINDINGS
+    elif args.labels is not None and args.labels not in LABEL_ORIGINS:
+        print("refused: --labels must be one of %s" % ", ".join(LABEL_ORIGINS), file=sys.stderr)
+        return EXIT_FINDINGS
+    path = project.path(rel)
+    sha, size = sha256_file(path), os.path.getsize(path)
+    man = project.manifest()
+    prev = man.latest.get(rel)
+    if prev and prev[1].get("sha256") == sha:
+        print("%s is already registered at sha256 %s; nothing to do" % (rel, _short(sha)))
+        return EXIT_OK
+    row = {"path": rel, "sha256": sha, "size": size, "source": args.source, "version": args.version,
+           "split": args.split, "origin": args.origin, "registered_at": utc_now(), "registered_by": args.by or "engineer"}
+    if args.license:
+        row["license"] = args.license
+    if args.labels is not None:
+        row["labels"] = args.labels
+    if generated:
+        row["generator"] = gen_rel
+        row["seed"] = args.seed
+    if prev:
+        if not args.reason:
+            print("refused: %s is registered at sha256 %s; a new version needs --reason" % (rel, _short(prev[1].get("sha256"))),
+                  file=sys.stderr)
+            return EXIT_FINDINGS
+        if rel.startswith(RAW_DATA_REL + "/"):
+            did = args.pi_decision or ""
+            if not DID_RE.fullmatch(did) or did not in pi_decision_ids(project):
+                print("refused: replacing raw data needs --pi-decision D-<n> recorded in research/pi/decisions.md",
+                      file=sys.stderr)
+                return EXIT_FINDINGS
+            row["pi_decision"] = did
+        row["supersedes_sha256"] = prev[1].get("sha256")
+        row["reason"] = args.reason
+    _append_jsonl(man.path, row)
+    if rel.startswith(RAW_DATA_REL + "/"):
+        try:
+            os.chmod(path, os.stat(path).st_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
+        except OSError as exc:
+            print("warning: could not make %s read-only: %s" % (rel, exc), file=sys.stderr)
+    print("registered %s (sha256 %s, %d bytes, %s)" % (rel, _short(sha), size, args.origin))
+    if generated and not seed_recorded(args.seed):
+        print("warning: seed %r is not a recorded seed; `uws research check data` reports it" % args.seed, file=sys.stderr)
+    return EXIT_OK
+
+
+def _project_rel_arg(project, value, must_exist=True):
+    """A path argument as a project path, or None when it is outside the project.
+
+    Relative paths are taken from the project root first (commands run there), then from
+    the current directory. With must_exist, the first candidate that is a file wins."""
+    if not value:
+        return None
+    if os.path.isabs(value):
+        cands = [value]
+    else:
+        cands = [os.path.join(project.root, value), os.path.abspath(value)]
+    for cand in cands:
+        rel = safe_rel(project, os.path.relpath(cand, project.root))
+        if rel and (not must_exist or os.path.isfile(project.path(rel))):
+            return rel
+    return None
+
+
+def cmd_run(project, args):
+    """Run a command from the project root and write research/runs/<RUN-ID>/run.json (section 8)."""
+    cmd = list(args.command or [])
+    if cmd and cmd[0] == "--":
+        cmd = cmd[1:]
+    if not cmd:
+        raise EnvError("usage: run [--exp EXP-ID|exploratory] [--input P]... [--output P]... -- <command> [args]")
+    runs_dir = project.path("research/runs")
+    run_id = args.id
+    if not run_id:
+        existing = [int(m.group(1)) for n in (os.listdir(runs_dir) if os.path.isdir(runs_dir) else [])
+                    for m in [re.match(r"^RUN-(\d+)$", n)] if m]
+        run_id = "RUN-%04d" % (max(existing) + 1 if existing else 1)
+    if not RUN_RE.match(run_id):
+        print("refused: --id must look like RUN-0001", file=sys.stderr)
+        return EXIT_FINDINGS
+    run_dir = os.path.join(runs_dir, run_id)
+    if os.path.exists(run_dir):
+        print("refused: research/runs/%s exists (run records are never overwritten)" % run_id, file=sys.stderr)
+        return EXIT_FINDINGS
+    exp = args.exp
+    if exp and exp != EXPLORATORY:
+        if not EXP_RE.match(exp):
+            print("refused: --exp must be EXP-<name> or %s" % EXPLORATORY, file=sys.stderr)
+            return EXIT_FINDINGS
+        if not project.plans().by_exp.get(exp):
+            print("refused: %s has no frozen plan; freeze and commit it before running its experiment "
+                  "(`uws research check plan freeze %s`)" % (exp, exp), file=sys.stderr)
+            return EXIT_FINDINGS
+        if in_git(project) and (_git(project, ["status", "--porcelain", "--", PLANS_REL]) or "").strip():
+            print("warning: %s has uncommitted changes; commit the freeze before recording results, "
+                  "or the plan check reports PLAN-ORDER" % PLANS_REL, file=sys.stderr)
+    inputs = []
+    for p in args.input or []:
+        rel = _project_rel_arg(project, p)
+        if not rel or not os.path.isfile(project.path(rel)):
+            print("refused: input %s is not a file inside the project" % p, file=sys.stderr)
+            return EXIT_FINDINGS
+        inputs.append({"path": rel, "sha256": sha256_file(project.path(rel)), "size": os.path.getsize(project.path(rel))})
+    outputs = []
+    for p in args.output or []:
+        # Outputs may not exist yet; the command runs in the project root, so a relative
+        # output path is relative to it.
+        rel = _project_rel_arg(project, p, must_exist=False)
+        if not rel:
+            print("refused: output %s is not inside the project" % p, file=sys.stderr)
+            return EXIT_FINDINGS
+        outputs.append(rel)
+    env_vars = {}
+    for item in args.env or []:
+        if "=" not in item or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", item):
+            print("refused: --env takes NAME=VALUE", file=sys.stderr)
+            return EXIT_FINDINGS
+        k, v = item.split("=", 1)
+        env_vars[k] = v
+    seeds = {}
+    for item in args.seed or []:
+        k, _, v = item.partition("=")
+        if not v:
+            k, v = "seed", item
+        seeds[k] = v
+
+    commit = git_head(project) if in_git(project) else None
+    dirty = None
+    if commit:
+        status = _git(project, ["status", "--porcelain", "--untracked-files=no"])
+        dirty = bool(status and status.strip())
+        if dirty:
+            print("warning: the working tree has uncommitted changes; this run cannot be reproduced from commit %s "
+                  "and `repro` will report it" % commit[:12], file=sys.stderr)
+    else:
+        print("warning: not a git repository; the run cannot be tied to a commit", file=sys.stderr)
+    man = project.manifest()
+    before = {}
+    for rel in outputs:
+        path = project.path(rel)
+        if os.path.isfile(path):
+            st = os.stat(path)
+            before[rel] = (st.st_mtime_ns, st.st_size)
+    os.makedirs(run_dir)
+    env = dict(os.environ)
+    env.update(env_vars)
+    started = utc_now()
+    out_path, err_path = os.path.join(run_dir, "stdout.txt"), os.path.join(run_dir, "stderr.txt")
+    rc = None
+    note = None
+    try:
+        with open(out_path, "wb") as so, open(err_path, "wb") as se:
+            proc = subprocess.run(cmd, cwd=project.root, env=env, stdout=so, stderr=se,
+                                  timeout=args.timeout if args.timeout else None)
+            rc = proc.returncode
+    except FileNotFoundError:
+        rc, note = 127, "command not found: %s" % cmd[0]
+    except subprocess.TimeoutExpired:
+        rc, note = 124, "timed out after %s s" % args.timeout
+    ended = utc_now()
+    out_records, missing, untouched = [], [], []
+    for rel in outputs:
+        path = project.path(rel)
+        if os.path.isfile(path):
+            item = {"path": rel, "sha256": sha256_file(path), "size": os.path.getsize(path)}
+            st = os.stat(path)
+            if before.get(rel) == (st.st_mtime_ns, st.st_size):
+                # The file existed and was not rewritten: the command may not produce it.
+                item["written_by_run"] = False
+                untouched.append(rel)
+            out_records.append(item)
+        else:
+            out_records.append({"path": rel, "sha256": None, "size": None})
+            missing.append(rel)
+    rec = {
+        "id": run_id, "exp": exp, "command": cmd, "cwd": ".",
+        "git_commit": commit, "git_dirty": dirty,
+        "started_at": started, "ended_at": ended, "exit_code": rc,
+        "inputs": inputs, "outputs": out_records, "seeds": seeds, "env_vars": env_vars,
+        "environment": {"python": platform.python_version(), "platform": platform.platform(),
+                        "machine": platform.machine(), "cpu_count": os.cpu_count()},
+        "manifest_sha256": sha256_file(man.path) if os.path.isfile(man.path) else None,
+        "stdout": {"path": project.rel(out_path).replace(os.sep, "/"), "sha256": sha256_file(out_path)},
+        "stderr": {"path": project.rel(err_path).replace(os.sep, "/"), "sha256": sha256_file(err_path)},
+        "recorded_by": "research_check.py run",
+    }
+    if note:
+        rec["note"] = note
+    _atomic_write(os.path.join(run_dir, "run.json"), json.dumps(rec, indent=2, sort_keys=True) + "\n")
+    print("research/runs/%s/run.json: exit %s, %d input(s), %d output(s)%s"
+          % (run_id, rc, len(inputs), len(out_records), " (%s)" % note if note else ""))
+    if untouched:
+        print("warning: output(s) existed before the run and were not rewritten: %s; `repro` deletes outputs "
+              "before re-running, so a command that does not write them fails there" % ", ".join(untouched),
+              file=sys.stderr)
+    if missing:
+        print("error: declared output(s) not written: %s" % ", ".join(missing), file=sys.stderr)
+        return rc if rc else EXIT_FINDINGS
+    return rc if rc is not None else EXIT_ENV
+
+
+# --------------------------------------------------------------------------- repro
+
+REPRO_DIR_REL = "research/repro"
+
+
+def repro_tolerance(row):
+    tol = row.get("tolerance")
+    if tol:
+        return tol
+    env = (os.environ.get("UWS_RESEARCH_TOLERANCE_DEFAULT") or "exact").strip()
+    kind, _, value = env.partition(":")
+    if kind in ("abs", "rel"):
+        try:
+            return {"kind": kind, "value": float(value)}
+        except ValueError:
+            raise EnvError("UWS_RESEARCH_TOLERANCE_DEFAULT must be exact, abs:<x> or rel:<x> (got %r)" % env)
+    if kind != "exact":
+        raise EnvError("UWS_RESEARCH_TOLERANCE_DEFAULT must be exact, abs:<x> or rel:<x> (got %r)" % env)
+    return {"kind": "exact"}
+
+
+def _extract_commit(project, commit, dest):
+    """Write the tree of `commit` into dest (never touches the project's working tree).
+
+    The whole repository is archived from its top level, so code outside a research project
+    that lives in a subdirectory is there too; the project root inside dest is returned."""
+    top = (_git(project, ["rev-parse", "--show-toplevel"]) or "").strip()
+    if not top:
+        raise ValueError("cannot find the top level of the git repository")
+    tar_path = dest + ".tar"
+    with open(tar_path, "wb") as fh:
+        try:
+            proc = subprocess.run(["git", "-C", top, "archive", "--format=tar", commit],
+                                  stdout=fh, stderr=subprocess.PIPE, timeout=600)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("git archive failed: %s" % exc)
+    if proc.returncode != 0:
+        raise ValueError("git archive %s failed: %s" % (commit[:12], proc.stderr.decode("utf-8", "replace").strip()))
+    os.makedirs(dest)
+    with tarfile.open(tar_path) as tf:
+        if hasattr(tarfile, "data_filter"):
+            tf.extractall(dest, filter="data")
+        else:
+            tf.extractall(dest)
+    os.unlink(tar_path)
+    prefix = (_git(project, ["rev-parse", "--show-prefix"]) or "").strip()
+    return os.path.join(dest, prefix) if prefix else dest
+
+
+def _guarded_files(project, rows):
+    paths = set()
+    for _nid, row in rows:
+        if row.get("output"):
+            paths.add(row["output"])
+    paths.update(project.manifest().latest)
+    return {p: (sha256_file(project.path(p)) if os.path.isfile(project.path(p)) else None) for p in sorted(paths)}
+
+
+def cmd_repro(project, args):
+    if not in_git(project):
+        raise EnvError("repro needs a git repository: it re-runs each run at its recorded commit")
+    numbers = project.numbers()
+    wanted = args.ids or []
+    if not wanted:
+        raise EnvError("usage: repro <N-ID ...|all>")
+    if wanted == ["all"]:
+        ids = [nid for nid in sorted(numbers.latest) if numbers.latest[nid][1].get("data_origin") != "literature"]
+    else:
+        unknown = [i for i in wanted if i not in numbers.latest]
+        if unknown:
+            raise EnvError("not in the number ledger: %s" % ", ".join(unknown))
+        ids = sorted(set(wanted))
+    if not ids:
+        raise EnvError("no numbers to reproduce")
+    timeout = args.timeout or int(os.environ.get("UWS_RESEARCH_REPRO_TIMEOUT", "3600") or 3600)
+    rows = [(nid, numbers.latest[nid][1]) for nid in ids]
+    before = _guarded_files(project, rows)
+    results = {}
+    by_run = {}
+    for nid, row in rows:
+        base = {"id": nid, "rev": _rev(row), "row_sha256": canonical_sha(row), "run": row.get("run"),
+                "run_sha256": None, "expected": row.get("raw"), "observed": None,
+                "tolerance": repro_tolerance(row), "byte_identical": None}
+        results[nid] = base
+        if not row.get("run"):
+            base.update(status="fail", message="no run record: there is no recorded command to re-run")
+            continue
+        by_run.setdefault(str(row["run"]), []).append((nid, row))
+    runs = project.runs()
+    for run_id, members in sorted(by_run.items()):
+        rel, rec, err = runs.get(run_id, (None, None, "research/runs/%s/run.json does not exist" % run_id))
+        if rel:
+            for nid, _row in members:
+                results[nid]["run_sha256"] = sha256_file(project.path(rel))
+        problem = err
+        if not problem:
+            if rec.get("exit_code") != 0:
+                problem = "%s exited %r when it was recorded" % (run_id, rec.get("exit_code"))
+            elif not rec.get("git_commit"):
+                problem = "%s has no git_commit" % run_id
+            elif rec.get("git_dirty") is not False:
+                problem = ("%s was recorded on a working tree with uncommitted changes (git_dirty=%r), so the code "
+                           "that produced it is not in any commit" % (run_id, rec.get("git_dirty")))
+            elif not rec.get("command"):
+                problem = "%s has no command" % run_id
+            elif _git_rc(project, ["cat-file", "-e", "%s^{commit}" % rec["git_commit"]]) != 0:
+                problem = "commit %s of %s is not in this repository" % (str(rec["git_commit"])[:12], run_id)
+        if problem:
+            for nid, _row in members:
+                results[nid].update(status="fail", message=problem)
+            continue
+        outcome = _repro_run(project, run_id, rec, members, timeout, args.keep)
+        for nid, info in outcome.items():
+            results[nid].update(info)
+    after = _guarded_files(project, rows)
+    mutated = [p for p in before if before[p] != after.get(p)]
+    if mutated:
+        for nid in results:
+            results[nid].update(status="fail", message="the re-run changed files in the original project (%s); "
+                                "restore them from git" % ", ".join(mutated[:5]))
+    report = {
+        "created_at": utc_now(), "tool": "research_check.py repro", "git_head": git_head(project),
+        "environment": {"python": platform.python_version(), "platform": platform.platform()},
+        "selection": wanted, "results": [results[nid] for nid in ids],
+        "summary": {"pass": sum(1 for r in results.values() if r.get("status") == "pass"),
+                    "fail": sum(1 for r in results.values() if r.get("status") != "pass")},
+    }
+    rdir = project.path(REPRO_DIR_REL)
+    os.makedirs(rdir, exist_ok=True)
+    stamp = report["created_at"].replace("-", "").replace(":", "")
+    name, n = "report-%s.json" % stamp, 1
+    while os.path.exists(os.path.join(rdir, name)):
+        n += 1
+        name = "report-%s-%d.json" % (stamp, n)
+    _atomic_write(os.path.join(rdir, name), json.dumps(report, indent=2, sort_keys=True) + "\n")
+    findings = []
+    for nid in ids:
+        r = results[nid]
+        line = numbers.latest[nid][0]
+        if r.get("status") == "pass":
+            print("%s pass %s: expected %r, observed %r (%s)%s"
+                  % (nid, r["run"], r["expected"], r["observed"], _tol_text(r["tolerance"]),
+                     "" if r.get("byte_identical") else "; output file differs byte-wise"))
+        else:
+            findings.append(Finding(numbers.rel, line, "REPRO", "%s: %s" % (nid, r.get("message"))))
+    emit(findings, False)
+    print("repro: %d pass, %d fail; report %s/%s" % (report["summary"]["pass"], report["summary"]["fail"], REPRO_DIR_REL, name),
+          file=sys.stderr)
+    return EXIT_FINDINGS if findings else EXIT_OK
+
+
+def _tol_text(tol):
+    return "exact" if tol.get("kind") == "exact" else "%s %s" % (tol.get("kind"), tol.get("value"))
+
+
+def _repro_run(project, run_id, rec, members, timeout, keep):
+    info = {}
+    scratch = tempfile.mkdtemp(prefix="uws-repro-")
+    try:
+        try:
+            root = _extract_commit(project, rec["git_commit"], os.path.join(scratch, "src"))
+        except ValueError as exc:
+            return {nid: {"status": "fail", "message": str(exc)} for nid, _r in members}
+        # Inputs: the version the run recorded, from the commit or the project's archive.
+        for inp in rec.get("inputs") or []:
+            p = safe_rel(project, inp.get("path")) if isinstance(inp, dict) else None
+            want = inp.get("sha256") if isinstance(inp, dict) else None
+            if not p:
+                return {nid: {"status": "fail", "message": "%s has an invalid input entry %r" % (run_id, inp)} for nid, _r in members}
+            dest = os.path.join(root, p)
+            if os.path.isfile(dest) and (want is None or sha256_file(dest) == want):
+                continue
+            src = project.path(p)
+            if not os.path.isfile(src) or (want and sha256_file(src) != want):
+                found = _short(sha256_file(src)) if os.path.isfile(src) else "missing"
+                return {nid: {"status": "fail", "message": "input %s is not available in the version %s used (recorded %s, "
+                              "found %s)" % (p, run_id, _short(want), found)} for nid, _r in members}
+            os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+            shutil.copyfile(src, dest)
+        # Outputs are deleted first, so a command that does not write them cannot pass on a
+        # committed copy.
+        for out in rec.get("outputs") or []:
+            p = safe_rel(project, out.get("path")) if isinstance(out, dict) else None
+            if p and os.path.isfile(os.path.join(root, p)):
+                os.unlink(os.path.join(root, p))
+        cmd = rec["command"] if isinstance(rec["command"], list) else shlex.split(str(rec["command"]))
+        env = dict(os.environ)
+        env.update({k: str(v) for k, v in (rec.get("env_vars") or {}).items()})
+        env["UWS_REPRO"] = "1"
+        cwd = os.path.join(root, safe_rel(project, rec.get("cwd") or ".") or "") if rec.get("cwd") not in (None, ".") else root
+        try:
+            proc = subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+        except FileNotFoundError:
+            return {nid: {"status": "fail", "message": "command not found: %s" % cmd[0]} for nid, _r in members}
+        except subprocess.TimeoutExpired:
+            return {nid: {"status": "fail", "message": "re-run timed out after %d s" % timeout} for nid, _r in members}
+        tail = proc.stdout.decode("utf-8", "replace").strip().splitlines()[-3:]
+        if proc.returncode != 0:
+            return {nid: {"status": "fail", "message": "re-run of %s exited %d: %s" % (run_id, proc.returncode, " | ".join(tail))}
+                    for nid, _r in members}
+        for nid, row in members:
+            out_rel = safe_rel(project, row.get("output") or "")
+            path = os.path.join(root, out_rel) if out_rel else None
+            if not path or not os.path.isfile(path):
+                info[nid] = {"status": "fail", "message": "the re-run did not write %s" % row.get("output")}
+                continue
+            try:
+                value = resolve_pointer(path, str(row.get("pointer") or ""))
+            except (ValueError, IndexError, KeyError, OSError) as exc:
+                info[nid] = {"status": "fail", "message": "pointer %s in the re-run output: %s" % (row.get("pointer"), exc)}
+                continue
+            tol = repro_tolerance(row)
+            ok = within_tolerance(row.get("raw"), value, tol)
+            info[nid] = {"status": "pass" if ok else "fail", "observed": value,
+                         "byte_identical": sha256_file(path) == row.get("output_sha256")}
+            if not ok:
+                info[nid]["message"] = "re-run gives %r, ledger raw is %r (tolerance %s)" % (value, row.get("raw"), _tol_text(tol))
+        return info
+    finally:
+        if keep:
+            print("scratch copy kept at %s" % scratch, file=sys.stderr)
+        else:
+            _rmtree(scratch)
+
+
+def _rmtree(path):
+    """Remove a scratch tree, including read-only files a re-run may have created."""
+    def retry(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWUSR | stat.S_IRUSR | stat.S_IXUSR)
+            func(p)
+        except OSError:
+            pass
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=retry)   # `onerror` is deprecated from 3.12
+    else:
+        shutil.rmtree(path, onerror=retry)
+
+
+def load_repro_reports(project):
+    out, findings = [], []
+    d = project.path(REPRO_DIR_REL)
+    if not os.path.isdir(d):
+        return out, findings
+    for name in sorted(os.listdir(d)):
+        if not (name.startswith("report-") and name.endswith(".json")):
+            continue
+        rel = "%s/%s" % (REPRO_DIR_REL, name)
+        try:
+            with open(os.path.join(d, name), encoding="utf-8") as fh:
+                rep = json.load(fh)
+        except (OSError, ValueError) as exc:
+            findings.append(Finding(rel, 1, "REPRO", "not valid JSON: %s" % exc))
+            continue
+        if not isinstance(rep, dict) or parse_utc(rep.get("created_at")) is None or not isinstance(rep.get("results"), list):
+            findings.append(Finding(rel, 1, "REPRO", "not a repro report (created_at and results are required)"))
+            continue
+        # Reports written in the same second get -2, -3 ... suffixes; order by that
+        # sequence, never by file modification time.
+        m = re.match(r"^report-.+?(?:-(\d+))?\.json$", name)
+        seq = int(m.group(1)) if m and m.group(1) else 1
+        out.append((rep["created_at"], seq, rel, rep))
+    out.sort(key=lambda t: (t[0], t[1], t[2]))
+    return [(created, rel, rep) for created, _seq, rel, rep in out], findings
+
+
+def check_repro_current(project):
+    """Every non-literature number has a passing repro entry for its current row and run record."""
+    reports, out = load_repro_reports(project)
+    numbers = project.numbers()
+    runs = project.runs()
+    max_age = os.environ.get("UWS_RESEARCH_REPRO_MAX_AGE_DAYS", "0").strip()
+    max_age = int(max_age) if max_age.isdigit() else 0
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for nid in sorted(numbers.latest):
+        lineno, row = numbers.latest[nid]
+        if row.get("data_origin") == "literature":
+            continue
+        entry = None
+        for created, rel, rep in reports:
+            for r in rep["results"]:
+                if isinstance(r, dict) and r.get("id") == nid:
+                    entry = (created, rel, r)
+        if entry is None:
+            out.append(Finding(numbers.rel, lineno, "REPRO", "%s has never been reproduced (`uws research check repro all`)" % nid))
+            continue
+        created, rel, r = entry
+        if r.get("status") != "pass":
+            out.append(Finding(rel, 1, "REPRO", "%s failed its latest repro: %s" % (nid, r.get("message"))))
+            continue
+        if r.get("row_sha256") != canonical_sha(row):
+            out.append(Finding(numbers.rel, lineno, "REPRO", "%s changed after its latest repro (%s); re-run the repro job" % (nid, rel)))
+            continue
+        run_rel = runs.get(str(row.get("run")), (None,))[0] if row.get("run") else None
+        if run_rel and r.get("run_sha256") != sha256_file(project.path(run_rel)):
+            out.append(Finding(run_rel, 1, "REPRO", "%s: %s changed after the latest repro (%s)" % (nid, row.get("run"), rel)))
+            continue
+        if max_age:
+            age = (now - parse_utc(created)).days
+            if age > max_age:
+                out.append(Finding(rel, 1, "REPRO", "%s was last reproduced %d days ago (limit %d, "
+                                   "UWS_RESEARCH_REPRO_MAX_AGE_DAYS)" % (nid, age, max_age)))
+    return out
+
+
+# --------------------------------------------------------------------------- manuscript hash (red team)
+
+def manuscript_files(project):
+    files = set(project.prose_files())
+    for rel in (project.config.get("numbers_tex") or "paper/generated/numbers.tex",):
+        if os.path.isfile(project.path(rel)):
+            files.add(project.path(rel))
+    refs = project.references_path()
+    if refs and os.path.isfile(refs):
+        files.add(refs)
+    return sorted(set(os.path.normpath(project.rel(f)).replace(os.sep, "/") for f in files))
+
+
+def manuscript_hash(project):
+    lines = ["%s  %s\n" % (sha256_file(project.path(rel)), rel) for rel in manuscript_files(project)]
+    return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest(), lines
+
+
+REVIEW_HASH_RE = re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?manuscript(?:[ _-]?sha256)?(?:\*\*)?\s*:\s*(?:\*\*)?\s*`?(?:sha256:)?([0-9a-f]{64})")
+
+
+def check_review_hash(project):
+    """The red team reviewed the manuscript as it is now (edits after review re-open review)."""
+    current, _lines = manuscript_hash(project)
+    d = project.path("research/reviews")
+    reviewed = []
+    if os.path.isdir(d):
+        for name in sorted(os.listdir(d)):
+            if name.startswith("REV-") and name.endswith(".md"):
+                m = REVIEW_HASH_RE.search(read_text(os.path.join(d, name)))
+                reviewed.append((name, m.group(1) if m else None))
+    if not reviewed:
+        return [Finding("research/reviews", 1, "GATE-REVIEW-HASH", "no red-team review (research/reviews/REV-*.md) exists")]
+    if any(h == current for _n, h in reviewed):
+        return []
+    seen = ", ".join("%s: %s" % (n, _short(h) if h else "no Manuscript line") for n, h in reviewed)
+    return [Finding("research/reviews", 1, "GATE-REVIEW-HASH",
+                    "no red-team review covers the current manuscript (sha256:%s); reviews name %s. The manuscript "
+                    "changed after review: dispatch the red team again" % (_short(current), seen))]
+
+
+def cmd_manuscript_hash(project, args):
+    digest, lines = manuscript_hash(project)
+    if not lines:
+        raise EnvError("no manuscript files found (.tex, paper/**/*.md, numbers macros, references.bib)")
+    if args.files:
+        for line in lines:
+            print(line.rstrip("\n"))
+    print("sha256:%s" % digest)
+    return EXIT_OK
+
+
+# --------------------------------------------------------------------------- retractions
+
+RETRACTIONS_REL = "research/sources/retractions.jsonl"
+CROSSREF_API = "https://api.crossref.org"
+DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
+
+
+def bib_doi(project, stem):
+    """The DOI of bib_sources/<stem>.bib: its doi field, else the DOI it was fetched by."""
+    path = project.path("bib_sources/%s.bib" % stem)
+    try:
+        entry = validate_fetched_bib(read_text(path))
+        doi = entry.fields.get("doi")
+    except (BibError, OSError):
+        doi = None
+    if not doi:
+        meta_path = path[:-4] + ".meta.json"
+        try:
+            with open(meta_path, encoding="utf-8") as fh:
+                meta = json.load(fh)
+            if meta.get("id_type") == "doi":
+                doi = meta.get("identifier")
+        except (OSError, ValueError):
+            doi = None
+    if not doi:
+        return None
+    doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)", "", doi.strip(), flags=re.I)
+    return doi if DOI_RE.match(doi) else None
+
+
+def load_retractions(project):
+    path = project.path(RETRACTIONS_REL)
+    latest, findings = {}, []
+    if not os.path.isfile(path):
+        return latest, findings
+    for lineno, obj, err in _read_jsonl(path):
+        if err:
+            findings.append(Finding(RETRACTIONS_REL, lineno, "RETRACTION", err))
+            continue
+        key = obj.get("citekey")
+        if not key:
+            continue
+        # An unreachable attempt does not hide an earlier answer; its age is still reported.
+        prev = latest.get(key)
+        if obj.get("status") == "unreachable" and prev is not None and prev[1].get("status") != "unreachable":
+            continue
+        latest[key] = (lineno, obj)
+    return latest, findings
+
+
+def _curl_json(url, timeout):
+    """GET url with curl. Returns (http_status or None, parsed JSON or None, error or None)."""
+    curl = os.environ.get("UWS_RESEARCH_CURL") or os.environ.get("UWS_BIB_CURL") or "curl"
+    agent = "uws-research-check/1.0 (+https://github.com/Yash-Sukhdeve/universal-workflow-system)"
+    mailto = os.environ.get("UWS_RESEARCH_MAILTO", "").strip()
+    if mailto:
+        agent += " (mailto:%s)" % mailto
+    fd, tmp = tempfile.mkstemp(prefix="uws-crossref-")
+    os.close(fd)
+    try:
+        try:
+            proc = subprocess.run([curl, "-sS", "-L", "--max-time", str(timeout), "-A", agent,
+                                   "-H", "Accept: application/json", "-o", tmp, "-w", "%{http_code}", url],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout + 15)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return None, None, "curl could not run: %s" % exc
+        if proc.returncode != 0:
+            return None, None, "curl exit %d: %s" % (proc.returncode, proc.stderr.decode("utf-8", "replace").strip()[:200])
+        code = proc.stdout.decode("ascii", "replace").strip()
+        status = int(code) if code.isdigit() else None
+        body = open(tmp, "rb").read()
+        if status != 200:
+            return status, None, None
+        try:
+            return status, json.loads(body.decode("utf-8")), None
+        except (UnicodeDecodeError, ValueError):
+            return status, None, "HTTP 200 but the body is not JSON"
+    finally:
+        os.unlink(tmp)
+
+
+def _norm_type(t):
+    return str(t or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def retraction_status(project, doi, timeout):
+    """Look a DOI up in Crossref. Never claims 'no notice' unless both lookups succeeded.
+
+    Crossref documents that retractions (including those from the Retraction Watch database)
+    appear in the `update-to` field of the notice, with `source` publisher or retraction-watch
+    (https://www.crossref.org/documentation/retrieve-metadata/retraction-watch/); the
+    retracted work lists them under `updated-by` (observed 2026-09-30 for
+    10.1016/S0140-6736(97)11096-0). Both are read here."""
+    base = os.environ.get("UWS_RESEARCH_CROSSREF_API", CROSSREF_API).rstrip("/")
+    enc = url_quote(doi, safe="/:;()._-")
+    work_url = "%s/works/%s" % (base, enc)
+    rec = {"doi": doi, "checked_at": utc_now(), "endpoint": work_url, "updates": []}
+    status, work, err = _curl_json(work_url, timeout)
+    rec["http_status"] = status
+    if err or status is None:
+        rec.update(status="unreachable", error=err or "no HTTP status")
+        return rec
+    if status == 404:
+        rec["status"] = "not-in-crossref"
+        return rec
+    if status != 200 or not isinstance(work, dict) or not isinstance(work.get("message"), dict):
+        rec.update(status="unreachable", error="HTTP %s from Crossref" % status)
+        return rec
+    updates = []
+    for u in work["message"].get("updated-by") or []:
+        if isinstance(u, dict):
+            updates.append({"notice_doi": u.get("DOI"), "type": _norm_type(u.get("type")), "source": u.get("source"),
+                            "date": (u.get("updated") or {}).get("date-time")})
+    notices_url = "%s/works?filter=updates:%s&rows=100" % (base, enc)
+    status2, notices, err2 = _curl_json(notices_url, timeout)
+    if err2 or status2 != 200 or not isinstance(notices, dict):
+        rec.update(status="unreachable", error=err2 or "HTTP %s from Crossref (notice search)" % status2)
+        return rec
+    for item in (notices.get("message") or {}).get("items") or []:
+        for u in item.get("update-to") or []:
+            if isinstance(u, dict) and str(u.get("DOI", "")).lower() == doi.lower():
+                updates.append({"notice_doi": item.get("DOI"), "type": _norm_type(u.get("type")), "source": u.get("source"),
+                                "date": (u.get("updated") or {}).get("date-time")})
+    seen, uniq = set(), []
+    for u in updates:
+        key = (str(u.get("notice_doi")).lower(), u.get("type"))
+        if key not in seen:
+            seen.add(key)
+            uniq.append(u)
+    rec["updates"] = uniq
+    types = {u["type"] for u in uniq}
+    if types & set(RETRACTED_TYPES):
+        rec["status"] = "retracted"
+    elif types & set(CONCERN_TYPES):
+        rec["status"] = "concern"
+    elif types:
+        rec["status"] = "corrected"
+    else:
+        rec["status"] = "no-notice"
+    return rec
+
+
+def cmd_retraction_online(project, args):
+    """Look up every bib_sources DOI in Crossref and append the answers to the cache.
+
+    Exit 0 when every lookup got an answer, 2 when any was unreachable (network down,
+    rate limit): an unreachable row never replaces an earlier answer in the cache view."""
+    stems = [os.path.basename(p)[:-4] for p in bib_source_files(project)]
+    if args.key:
+        missing = [k for k in args.key if k not in stems]
+        if missing:
+            raise EnvError("no bib_sources entry for %s" % ", ".join(missing))
+        stems = [s for s in stems if s in args.key]
+    if not stems:
+        raise EnvError("bib_sources/ has no entries to check")
+    timeout = args.timeout or 20
+    counts = {}
+    for stem in stems:
+        doi = bib_doi(project, stem)
+        if doi is None:
+            rec = {"doi": None, "checked_at": utc_now(), "status": "no-doi", "updates": []}
+        else:
+            rec = retraction_status(project, doi, timeout)
+        rec["citekey"] = stem
+        rec["tool"] = "research_check.py retraction --online"
+        _append_jsonl(project.path(RETRACTIONS_REL), rec)
+        counts[rec["status"]] = counts.get(rec["status"], 0) + 1
+        detail = ", ".join("%s %s" % (u["type"], u.get("notice_doi")) for u in rec.get("updates") or [])
+        print("%s: %s%s%s" % (stem, rec["status"], " (%s)" % doi if doi else "", "; " + detail if detail else ""))
+    print("retraction lookup: %s; cached in %s" % (", ".join("%d %s" % (v, k) for k, v in sorted(counts.items())), RETRACTIONS_REL),
+          file=sys.stderr)
+    return EXIT_ENV if counts.get("unreachable") else EXIT_OK
+
+
+RETRACT_WORD_RE = re.compile(r"\bretract\w*", re.I)
+
+
+def check_retractions(project):
+    """Offline: read the cache. Unchecked sources are warnings, never a pass by silence."""
+    latest, out = load_retractions(project)
+    stems = [os.path.basename(p)[:-4] for p in bib_source_files(project)]
+    max_age = os.environ.get("UWS_RESEARCH_RETRACTION_MAX_AGE_DAYS", "180").strip()
+    max_age = int(max_age) if max_age.isdigit() else 180
+    now = datetime.datetime.now(datetime.timezone.utc)
+    bad = {}
+    for stem in stems:
+        item = latest.get(stem)
+        where = "bib_sources/%s.bib" % stem
+        if item is None:
+            out.append(Finding(where, 1, "RETRACTION", "%s: retraction status never checked "
+                               "(`uws research check retraction --online`)" % stem, "warn"))
+            continue
+        lineno, rec = item
+        st = rec.get("status")
+        if st in ("unreachable", "no-doi", "not-in-crossref"):
+            why = {"unreachable": "Crossref was unreachable (%s)" % rec.get("error"),
+                   "no-doi": "it has no DOI to look up",
+                   "not-in-crossref": "its DOI %s is not registered with Crossref" % rec.get("doi")}[st]
+            out.append(Finding(RETRACTIONS_REL, lineno, "RETRACTION", "%s: retraction status unknown: %s" % (stem, why), "warn"))
+            continue
+        checked = parse_utc(rec.get("checked_at"))
+        if checked and max_age and (now - checked).days > max_age:
+            out.append(Finding(RETRACTIONS_REL, lineno, "RETRACTION", "%s: retraction status last checked %d days ago"
+                               % (stem, (now - checked).days), "warn"))
+        if st in ("retracted", "concern", "corrected"):
+            bad[stem] = (lineno, rec)
+    if not bad:
+        return out
+    claims = project.claims()
+    for cid in sorted(claims.latest):
+        lineno, row = claims.latest[cid]
+        for src in row.get("sources") or []:
+            key = src.get("citekey") if isinstance(src, dict) else None
+            if key not in bad:
+                continue
+            rec = bad[key][1]
+            notice = ", ".join("%s %s" % (u.get("type"), u.get("notice_doi")) for u in rec.get("updates") or [])
+            if rec["status"] == "retracted" and row.get("status") == "verified":
+                out.append(Finding(claims.rel, lineno, "RETRACTION", "%s rests on %s, which Crossref lists as retracted (%s); "
+                                   "append a revision with status 'retracted' or find another source" % (cid, key, notice)))
+            elif row.get("status") == "verified":
+                out.append(Finding(claims.rel, lineno, "RETRACTION", "%s rests on %s, which has a %s notice (%s); check the "
+                                   "claim against it" % (cid, key, rec["status"], notice), "warn"))
+    retracted = {k for k, (_l, r) in bad.items() if r["status"] == "retracted"}
+    if retracted:
+        cite_re = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{([^}]*)\}")
+        for path in project.tex_files():
+            doc = Doc(project, path)
+            for _start, sent, _cids, line_of in doc.sentences():
+                for m in cite_re.finditer(sent):
+                    keys = {k.strip() for k in m.group(1).split(",")}
+                    for key in sorted(keys & retracted):
+                        if not RETRACT_WORD_RE.search(sent):
+                            out.append(Finding(doc.rel, line_of(m.start()), "RETRACTION",
+                                               "\\cite{%s}: Crossref lists this source as retracted, and the sentence "
+                                               "does not say so" % key))
+    return out
+
+
+# --------------------------------------------------------------------------- macros
+
+def cmd_macros(project, args):
+    rel = args.out or project.config.get("numbers_tex") or "paper/generated/numbers.tex"
+    numbers = project.numbers()
+    problems = [f for f in numbers.parse_errors + _check_number_shapes(numbers) if f.level == "block"]
+    if problems:
+        emit(problems, False)
+        print("refused: fix the number ledger first (%s was not written)" % rel, file=sys.stderr)
+        return EXIT_FINDINGS
+    lines = ["% Generated from research/ledger/numbers.jsonl by `uws research check macros`. Do not edit by hand.\n"]
+    for nid in sorted(numbers.latest):
+        row = numbers.latest[nid][1]
+        if row.get("macro"):
+            lines.append("\\newcommand{%s}{%s}\n" % (row["macro"], row.get("printed")))
+    path = project.path(rel)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    _atomic_write(path, "".join(lines))
+    print("%s (%d macros)" % (rel, len(lines) - 1))
+    return EXIT_OK
+
+
 # --------------------------------------------------------------------------- gate
 
 def _strip_html_comments(text):
@@ -1684,32 +3572,10 @@ def check_question(project):
     if not os.path.isfile(path):
         return [Finding(rel, 1, "GATE-QUESTION", "missing: state the objective, success criteria, available "
                         "evidence, constraints and consequences of failure (apocalypt.md P1)")]
-    text = _strip_html_comments(read_text(path))
-    sections, current, label_line = {}, None, {}
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        heading = re.match(r"^\s*#+\s*(.+?)\s*:?\s*$", raw)
-        labelled = re.match(r"^\s*(?:[-*]\s*)?(?:\*\*)?([A-Za-z ]+?)(?:\*\*)?\s*:\s*(?:\*\*)?\s*(.*)$", raw)
-        label, rest = "", ""
-        if heading:
-            label = heading.group(1).strip("* ").lower()
-        elif labelled:
-            label, rest = labelled.group(1).strip().lower(), labelled.group(2)
-        matched = None
-        for canon, names in QUESTION_FIELDS:
-            if label in names:
-                matched = canon
-        if matched:
-            current = matched
-            label_line[current] = lineno
-            sections[current] = sections.get(current, "") + " " + rest
-        elif heading:
-            current = None
-        elif current:
-            sections[current] += " " + raw
+    sections, label_line = parse_labelled_fields(read_text(path), QUESTION_FIELDS)
     out = []
     for canon, _names in QUESTION_FIELDS:
-        body = sections.get(canon, "").strip()
-        if not body or re.fullmatch(r"(?i)(tbd|todo|n/?a|-|\.\.\.)", body):
+        if _empty_field(sections.get(canon)):
             out.append(Finding(rel, label_line.get(canon, 1), "GATE-QUESTION", "'%s' is missing or empty" % canon))
     doc = Doc(project, path)
     for _s, sent, _c, line_of in doc.sentences():
@@ -1810,13 +3676,10 @@ def kb_note(project):
     return "KB available (advisory): check `uws kb search <terms>` for disputed items and raise them as Q-IDs"
 
 
-GATE_NOT_YET = {
-    "experiment_design": "EXP plan fields, frozen_sha256 and power analysis are checked from increment 2",
-    "data_collection": "MANIFEST.tsv hashes, read-only raw files and run-record completeness are checked from increment 2",
-    "analysis": "the repro job is checked from increment 2",
-    "peer_review": "the red-team manuscript hash is checked from increment 2",
-    "publication": "the data manifest and repro job are checked from increment 2",
-}
+# Rules of design section 6.5 that no check implements yet. The gates say so instead of
+# passing silently.
+NOT_CHECKED = ("slop rules S3 (fabricated precision), S5 (padding), S7 ('significant' without a test), "
+               "C2 (untested path) and C4 (fragile paths); the research/INVENTORY.md report")
 
 
 def run_gate(project, phase, allow_missing_cache=None):
@@ -1830,23 +3693,32 @@ def run_gate(project, phase, allow_missing_cache=None):
     if idx >= PHASES.index("literature_review"):
         findings.extend(check_bib(project))
         findings.extend(check_quotes(project, allow_missing_cache))
+        findings.extend(check_retractions(project))
     if phase == "literature_review":
         findings.extend(check_lit_verified(project))
         findings.extend(check_search_log(project))
+    if idx >= PHASES.index("experiment_design"):
+        # Pre-registration: fields, frozen hash, freeze committed before any result,
+        # deviations after results carry a PI decision.
+        findings.extend(check_plans(project, require_plan=True))
     if phase == "experiment_design":
         findings.extend(check_reviews(project, strict_major=False))
+    if idx >= PHASES.index("data_collection"):
+        findings.extend(check_data(project))
     if phase == "data_collection":
         findings.extend(check_slop(project, prose=False, code=True))
     if idx >= PHASES.index("analysis"):
         findings.extend(check_numbers(project))
         findings.extend(check_slop(project))
+        findings.extend(check_repro_current(project))
     if idx >= PHASES.index("peer_review"):
         findings.extend(check_reviews(project, strict_major=True))
+        findings.extend(check_review_hash(project))
     if phase == "publication":
         findings.extend(check_pi_approval(project))
     notes = []
-    if phase in GATE_NOT_YET:
-        notes.append("not checked yet: " + GATE_NOT_YET[phase])
+    if idx >= PHASES.index("analysis"):
+        notes.append("not checked yet: " + NOT_CHECKED)
     if phase in ("literature_review", "analysis"):
         notes.append(kb_note(project))
     return findings, notes
@@ -1959,7 +3831,8 @@ QUESTION_TEMPLATE = """# Research brief
 def cmd_init(project):
     created = []
     for d in ("research/ledger", "research/lit", "research/pi", "research/reviews",
-              "research/sources/cache", "bib_sources"):
+              "research/sources/cache", "research/experiments", "research/data/raw",
+              "research/runs", "research/repro", "bib_sources"):
         p = project.path(d)
         if not os.path.isdir(p):
             os.makedirs(p)
@@ -1967,6 +3840,8 @@ def cmd_init(project):
     files = {
         "research/ledger/claims.jsonl": "",
         "research/ledger/numbers.jsonl": "",
+        "research/ledger/plans.jsonl": "",
+        "research/data/manifest.jsonl": "",
         "research/sources/index.jsonl": "",
         "research/QUESTION.md": QUESTION_TEMPLATE,
         "research/pi/decisions.md": "# PI decisions\n\n<!-- One record per decision: `D-001 | raised <date> by <role> | phase <phase>`, then\n"
@@ -2030,8 +3905,49 @@ def build_parser():
     s.add_argument("--allow-missing-cache", action="store_true", help="report a missing cache as a warning (CI without caches)")
     s = sub.add_parser("numbers", help="number provenance and hand-typed decimals")
     s.add_argument("--id", action="append", help="check only these N-IDs (repeatable)")
-    s = sub.add_parser("slop", help="S1 S2 S4 S6 C1 C3 C5")
+    s = sub.add_parser("slop", help="S1 S2 S4 S6 C1 C3 C5 C6")
     s.add_argument("files", nargs="*", help="limit to these files")
+    s = sub.add_parser("plan", help="pre-registration: check plans, or `new`/`freeze <EXP-ID>`")
+    s.add_argument("action", nargs="?", default="check", choices=("check", "new", "freeze"))
+    s.add_argument("exp", nargs="?", help="experiment ID (EXP-<name>) for new/freeze")
+    s.add_argument("--by", help="role that freezes the plan (default methodologist)")
+    s.add_argument("--reason", help="why the frozen plan changed")
+    s.add_argument("--pi-decision", help="PI decision ID (D-<n>) approving a change after results exist")
+    s = sub.add_parser("data", help="data manifest: check, or `add <path>`")
+    s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
+    s.add_argument("path", nargs="?", help="file to register (for add)")
+    s.add_argument("--source", help="where the file came from (URL, instrument, or the generating command)")
+    s.add_argument("--version", help="dataset version or release")
+    s.add_argument("--split", help="split definition: which rows are train/validation/test, or how splits are made")
+    s.add_argument("--origin", help="measured | simulated | synthetic-generated | literature")
+    s.add_argument("--generator", help="script that generated the file (required for generated data)")
+    s.add_argument("--seed", help="seed the generator used (required for generated data; 'unrecorded' if unknown)")
+    s.add_argument("--labels", help="where labels come from: generator-rule | annotation | measurement | none")
+    s.add_argument("--license", help="license of the data")
+    s.add_argument("--by", help="role registering the file (default engineer)")
+    s.add_argument("--reason", help="why a registered file has a new version")
+    s.add_argument("--pi-decision", help="PI decision ID (D-<n>) for replacing raw data")
+    s = sub.add_parser("run", help="run a command and record research/runs/RUN-*/run.json")
+    s.add_argument("--id", help="run ID (default: next RUN-<nnnn>)")
+    s.add_argument("--exp", help="experiment the run belongs to (EXP-<name>, or exploratory)")
+    s.add_argument("--input", action="append", help="input file (repeatable; hashed before the run)")
+    s.add_argument("--output", action="append", help="output file (repeatable; hashed after the run)")
+    s.add_argument("--seed", action="append", help="seed the command uses, NAME=VALUE (repeatable; recorded)")
+    s.add_argument("--env", action="append", help="environment variable NAME=VALUE set for the run and its re-runs")
+    s.add_argument("--timeout", type=int, help="seconds before the command is stopped")
+    s.add_argument("command", nargs=argparse.REMAINDER, help="-- <command> [args]")
+    s = sub.add_parser("repro", help="re-run recorded commands in a scratch copy and compare numbers")
+    s.add_argument("ids", nargs="*", help="N-IDs, or all")
+    s.add_argument("--timeout", type=int, help="seconds per re-run (default UWS_RESEARCH_REPRO_TIMEOUT or 3600)")
+    s.add_argument("--keep", action="store_true", help="keep the scratch copy for inspection")
+    s = sub.add_parser("retraction", help="retraction notices for bib_sources (offline from the cache, or --online)")
+    s.add_argument("--online", action="store_true", help="look up Crossref now and append to the cache")
+    s.add_argument("--key", action="append", help="only these citekeys (repeatable)")
+    s.add_argument("--timeout", type=int, help="seconds per request (default 20)")
+    s = sub.add_parser("manuscript-hash", help="hash of the manuscript files a red-team review must name")
+    s.add_argument("--files", action="store_true", help="also list the files and their hashes")
+    s = sub.add_parser("macros", help="write the generated number macros from the ledger")
+    s.add_argument("--out", help="output file (default: numbers_tex in research/checks.json)")
     s = sub.add_parser("gate", help="evidence gate for a phase")
     s.add_argument("phase")
     s.add_argument("--allow-missing-cache", action="store_true")
@@ -2095,6 +4011,22 @@ def main(argv=None):
         if not os.path.isdir(project.path("research/ledger")):
             raise EnvError("research/ledger/ not found under %s (run: research_check.py init)" % root)
         notes = []
+        if args.cmd == "plan" and args.action == "new":
+            return plan_new(project, args)
+        if args.cmd == "plan" and args.action == "freeze":
+            return plan_freeze(project, args)
+        if args.cmd == "data" and args.action == "add":
+            if not args.path:
+                raise EnvError("usage: data add <path> --source ... --version ... --split ... --origin ...")
+            return data_add(project, args)
+        if args.cmd == "run":
+            return cmd_run(project, args)
+        if args.cmd == "repro":
+            return cmd_repro(project, args)
+        if args.cmd == "manuscript-hash":
+            return cmd_manuscript_hash(project, args)
+        if args.cmd == "macros":
+            return cmd_macros(project, args)
         if args.cmd == "ledger":
             findings = check_ledger(project, args.base)
         elif args.cmd == "bib":
@@ -2109,6 +4041,14 @@ def main(argv=None):
                 if not os.path.isfile(f):
                     raise EnvError("no such file: %s" % f)
             findings = check_slop(project, files)
+        elif args.cmd == "plan":
+            findings = check_plans(project)
+        elif args.cmd == "data":
+            findings = check_data(project)
+        elif args.cmd == "retraction":
+            if args.online:
+                return cmd_retraction_online(project, args)
+            findings = check_retractions(project)
         elif args.cmd == "gate":
             findings, notes = run_gate(project, args.phase, True if args.allow_missing_cache else None)
         else:

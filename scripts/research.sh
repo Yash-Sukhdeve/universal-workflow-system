@@ -62,7 +62,7 @@ PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
 # Subcommands of `research.sh check <name>` that run the evidence checker instead of
 # ticking a numbered deliverable (docs/design/research-team.md section 6.6).
-RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers slop gate init role-exit "
+RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers slop gate init role-exit plan data run repro retraction manuscript-hash macros "
 
 #######################################
 # Validate workflow is initialized
@@ -710,6 +710,13 @@ main() {
             echo "  check init                 Scaffold research/ and bib_sources/"
             echo "  check ledger|bib|quotes|numbers|slop   Run one evidence check"
             echo "  check gate <phase>         Run a phase's evidence gate (next runs it too)"
+            echo "  check plan [new|freeze <EXP-ID>]   Pre-register an experiment plan (frozen by hash)"
+            echo "  check data [add <path> ...]        Data manifest: hashes, sources, splits, seeds"
+            echo "  check run [--exp E] [--input P] [--output P] -- <cmd>   Run and record a command"
+            echo "  check repro <N-ID ...|all> Re-run recorded commands in a scratch copy and compare"
+            echo "  check retraction [--online]        Retraction notices (Crossref) for bib_sources/"
+            echo "  check manuscript-hash      The hash a red-team review must name"
+            echo "  check macros               Write the number macros from the number ledger"
             echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
             echo "  bib build                  Write references.bib from bib_sources/ only"
             echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"

@@ -291,16 +291,26 @@ hypothesis → literature_review → experiment_design → data_collection → a
 
 For work that has to hold up to review, UWS provides a research team led by the
 `uws-research-lead` skill in your session. The team follows the Apocalypt persona
-(`docs/personas/apocalypt.md`) and has three subagents: `uws-rt-scout` (finds sources and
-proposes claims), `uws-rt-verifier` (checks each claim against its source, independently)
-and `uws-rt-redteam` (adversarial review). Their work is recorded in plain-text ledgers
-under `research/`, and a deterministic checker (Python 3 standard library) checks those
-ledgers at every phase gate:
+(`docs/personas/apocalypt.md`) and has six subagents: `uws-rt-scout` (finds sources and
+proposes claims), `uws-rt-verifier` (checks each claim against its source, independently),
+`uws-rt-methodologist` (pre-registers experiments and defines every metric),
+`uws-rt-engineer` (data manifest, recorded runs, reproduction), `uws-rt-writer` (drafts text
+only from verified ledger rows) and `uws-rt-redteam` (adversarial review). Their work is
+recorded in plain-text ledgers under `research/`, and a deterministic checker (Python 3
+standard library) checks those ledgers at every phase gate:
 
 ```bash
 uws research check init              # scaffold research/ and bib_sources/
 uws research bib fetch doi:10.1371/journal.pcbi.1003285 --key sandve2013
 uws research bib build               # references.bib only from bib_sources/
+uws research check retraction --online      # cache Crossref retraction notices
+uws research check plan new EXP-LEAK        # write the plan, then freeze and commit it
+uws research check plan freeze EXP-LEAK     #   before any data or run exists
+uws research check data add research/data/raw/x.csv --source ... --version 1 \
+    --split "..." --origin measured         # register every input (sha256, size)
+uws research check run --exp EXP-LEAK --input research/data/raw/x.csv \
+    --output results.json -- python3 analysis.py   # recorded in research/runs/
+uws research check repro all         # re-run in a scratch copy, compare each number
 uws research check gate literature_review   # file:line findings; exit 1 blocks
 uws research next                    # runs the gate; --force "<reason>" is logged,
                                      # and refused at publication
@@ -310,7 +320,14 @@ The checks enforce that no claim is verified by its own author, that ledgers are
 append-only, that BibTeX is downloaded (never hand-written), that quotes appear verbatim in
 the cached source, that every number in the paper comes from a generated macro traced to
 an output file and its hash, and a set of "slop" rules (unsupported novelty, vague
-attribution, placeholders, overclaimed causality, undisclosed simulated data). The plugin
+attribution, placeholders, overclaimed causality, undisclosed simulated data, generator
+labels called ground truth). They also check that each experiment's plan was frozen and
+committed before its results (a later change needs a PI decision), that every input is in
+the data manifest with its hash and, when generated, its seed, that derived metrics match
+their declared formula (for example FP / (FP + TN)), that cross-validation values are not
+presented as held-out results, that every number reproduces from its recorded run, that the
+red team reviewed the current manuscript, and that no verified claim rests on a source
+Crossref lists as retracted (an unchecked source is a warning, never a pass). The plugin
 command is `/uws:research-check`. Design: `docs/design/research-team.md`.
 
 ---

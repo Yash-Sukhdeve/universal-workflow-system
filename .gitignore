@@ -84,6 +84,8 @@ artifacts/cache/
 data/*
 !data/.gitkeep
 *.csv
+# ...except the small, registered data of the research-team test fixture
+!tests/fixtures/research/project/research/data/raw/*.csv
 *.parquet
 *.arrow
 *.feather

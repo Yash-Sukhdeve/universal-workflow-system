@@ -50,6 +50,9 @@ Before you stop, run `uws research check ledger`, `uws research check quotes` an
    text. A mismatch is a `does-not-support` verdict with the note "wrong source".
 4. Numbers: the printed value in the claim matches the source table, including the split
    and the rounding.
+5. Retraction: `uws research check retraction` shows the source's cached Crossref status. A
+   retracted source cannot support a `verified` claim; an expression of concern or a
+   correction goes in `note`, and the claim is checked against the corrected version.
 
 ## Quality Gate
 - [ ] Every verdict has your own verbatim quote and locator.
