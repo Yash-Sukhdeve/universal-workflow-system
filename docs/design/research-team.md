@@ -207,8 +207,8 @@ tests stay green.
 | experiment_design | Methodologist (Red Team) | Every EXP plan has the P5 fields and a `frozen_sha256` that matches the file. The evaluation unit is named, and so is the grouping variable if samples repeat. There is a power analysis or a written reason for the sample size. The red team review has no open blocking rows. |
 | data_collection | Engineer (Methodologist) | `MANIFEST.tsv` hashes match. Raw files are read-only. Every run record is complete (Section 8). Deviations from the plan are recorded as rows in `research/experiments/EXP-*/deviations.md`, and there may be zero. |
 | analysis | Methodologist (Verifier) | Every number in the number ledger resolves to its output file and hash. Printed values equal rounded raw values. Every own-observation claim links N-IDs. Every non-measured origin is disclosed (rule C3). Negative results are ledger rows, never deleted. The repro job for cited numbers passes within tolerance. |
-| peer_review | Red Team (Lead) | The red team ran on the frozen manuscript hash. Zero open `blocking` findings. Every `major` finding is fixed or has a PI decision ID. |
-| publication | Writer (Lead, PI) | All checks pass on the final hash: ledger, bib, numbers, slop (no block-level hits), data. A PI approval CR ID is recorded. **No `--force`.** Submission is done by the PI. |
+| peer_review | Red Team (Lead) | The red team ran on the frozen manuscript hash. Zero open `blocking` findings. Every `major` finding is fixed or has a PI decision ID. Every plan deviation (DEV row) is named in the manuscript. A CV value in a sentence that calls it held-out blocks. |
+| publication | Writer (Lead, PI) | All checks pass on the final hash: ledger, bib, numbers, slop (no block-level hits), data. The PI's approval is recorded in `research/pi/decisions.md` as `PUBLICATION-APPROVAL: sha256:<manuscript hash> by <PI>` (or the CR ID of a change request approved with review.sh). Every `uws:literal` number is listed as a warning. **No `--force`.** Submission is done by the PI. |
 
 ---
 
@@ -266,7 +266,8 @@ Nothing is edited in place and nothing is deleted.
   - `inference` needs `depends_on`, and it is never stronger than its weakest dependency.
   - `hypothesis` can never be `verified`. It becomes `supported` or `refuted` only through
     an EXP.
-  - Every ID in `HEAD~` is still present, so the ledger is append-only (acceptance test AT9).
+  - Every line of `HEAD` and of every commit that touched the ledger is still present, so
+    the ledger is append-only (acceptance test AT9; until section 11c only `HEAD` and `HEAD~1`).
 
 ### 6.3 Citation verification pipeline
 
@@ -329,7 +330,12 @@ hash, seeds, hardware, exit code) → `MANIFEST.tsv` row. Checks:
   by pattern. Since the field test (section 11b) this also covers the introduction,
   evaluation, experiments and discussion, integers and decimals with a unit (`1.1ms`, `1.1\,ms`, `30\%`), and any
   hand-typed value at a place a row's `where` names, which is judged like a use of the row's
-  macro (`NUM-SPLIT`, C3, C6), with or without `uws:literal`.
+  macro (`NUM-SPLIT`, C3, C6), with or without `uws:literal`. Since section 11c,
+  `uws:literal` does not accept a number within 10% of a ledger value (a typo or a stale
+  copy) or one in a sentence that names a ledger metric, unless it cites a recorded PI
+  decision (`% uws:literal D-<n> <reason>`); headings named findings, analysis, performance
+  or outcomes are results sections; and outside the results sections a number is reported
+  when its sentence names a ledger metric or it is a ledger value.
 - (e) `run.json` exit code is 0 and the run's commit is an ancestor of HEAD.
 
 ### 6.5 What "AI slop" means, as checkable rules
@@ -911,6 +917,39 @@ EXP-LEAK numbers were run outside the wrapper, no macro file, review or PI appro
    a user macro such as `\mycite{key}` is checked; a macro with "cite" in its name that takes
    no keys (other than natbib's `\citetext` and `\citestyle`) would be read as citing its
    argument. The .tex files of the PROMISE audit use no citation command but `\cite`.
+
+## 11c. Release-readiness probe fixes (implemented 2026-10-01)
+
+A probe tried to get a wrong or unreported result past the gates of a small synthetic
+project, using only the documented commands. These are the changes; each has a test in
+`tests/integration/test_research_team_probe.bats`.
+
+1. **`uws:literal`** (NUM-LITERAL). The marker no longer silences a number within 10% of a
+   ledger value or a number in a sentence that names a metric of the number ledger (AUC,
+   accuracy, F1 ...). Those need a recorded PI decision: `% uws:literal D-<n> <reason>`.
+   The publication gate lists every number a marker accepts, as a warning.
+2. **Scope.** Findings, analysis, performance and outcomes headings are results sections.
+   Elsewhere a hand-typed number is reported when its sentence names a ledger metric or it
+   is a ledger value. Where results are reported, a unit-less integer is reported when it
+   is within 10% of a ledger count that its sentence is about (120 typed for 115 test rows).
+3. **CV as held-out.** The key pattern also recognises `cv5_...`, `cv10`, `cvacc`, `kfold`,
+   `oof` and `fold_mean`. A held-out row whose pointer names no split, in an output that
+   also holds CV values, is a warning. In prose, a CV value in a sentence that also says
+   held-out blocks at peer_review and publication (unless the line cites a recorded PI
+   decision); a negated mention ("not a held-out result") is not counted.
+4. **Append-only.** Ledgers are compared with HEAD and every commit that touched them, so an
+   in-place edit stays reported however many commits follow; the finding names the row's
+   real line.
+5. **PI decisions.** A D-ID counts only when its record has a non-empty `PI DECISION:` line.
+   A plan deviation must be named (DEV-ID or EXP-ID) in the manuscript before peer_review.
+6. **Publication approval.** `PUBLICATION-APPROVAL: sha256:<manuscript hash> by <PI>` is
+   checked against the manuscript as it is now. A `CR-...` approval is accepted only where
+   `.uws/crs/` exists to check it.
+7. **C3.** A non-measured number whose sentence does not disclose it, but whose paragraph,
+   section heading or document title does, is a warning instead of a block.
+8. **Messages and defaults.** An invalid rounding rule is named when the row is added; a
+   review without a `Manuscript:` line and an unrecorded `--pi-decision` say so; `bib build`
+   writes a new references.bib under `paper/` when the project has one.
 
 ## 12. Risks and failure modes
 

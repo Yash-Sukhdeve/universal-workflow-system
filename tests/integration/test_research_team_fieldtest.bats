@@ -823,8 +823,10 @@ inst_listing() {
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research bib build
     echo "$output"
     [ "$status" -eq 0 ]
-    [ -f "$NOSTATE/references.bib" ]
-    [ ! -e "$NOSTATE/paper/references.bib" ]
+    # the project root is found from paper/; a new references.bib goes into its paper/
+    [ -f "$NOSTATE/paper/references.bib" ]
+    [ ! -e "$NOSTATE/references.bib" ]
+    [ ! -e "$NOSTATE/paper/paper" ]
     [ ! -e "$NOSTATE/paper/.workflow" ]
 }
 

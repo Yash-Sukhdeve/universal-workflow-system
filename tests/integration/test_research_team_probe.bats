@@ -70,6 +70,19 @@ refresh_review_hash() {
     [ "$status" -eq 1 ]
 }
 
+@test "literal: the publication gate lists every number accepted by uws:literal" {
+    research_make_reproducible
+    printf '\nThe synthetic run took 2.5 hours. %% uws:literal wall-clock note, not a result\n' >> "$P/paper/main.tex"
+    refresh_review_hash
+    commit_all "literal"
+    local l
+    l="$(line_of 'took 2.5 hours')"
+    run check gate publication
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL [warn] 2.5 hours is typed by hand (uws:literal: wall-clock note, not a result)"* ]] || false
+}
+
 # ── hand-typed results outside the results sections ──────────────────────────
 
 @test "scope: Findings, Analysis and Performance sections are results sections" {
@@ -151,29 +164,6 @@ refresh_review_hash() {
 
 # ── append-only ledgers ──────────────────────────────────────────────────────
 
-# ── post-hoc plan changes ────────────────────────────────────────────────────
-
-# ── the PI's publication approval ────────────────────────────────────────────
-
-# ── C3: disclosure of synthetic data ─────────────────────────────────────────
-
-# ── error messages ────────────────────────────────────────────────────────────
-
-# ── defaults ──────────────────────────────────────────────────────────────────
-
-@test "literal: the publication gate lists every number accepted by uws:literal" {
-    research_make_reproducible
-    printf '\nThe synthetic run took 2.5 hours. %% uws:literal wall-clock note, not a result\n' >> "$P/paper/main.tex"
-    refresh_review_hash
-    commit_all "literal"
-    local l
-    l="$(line_of 'took 2.5 hours')"
-    run check gate publication
-    echo "$output"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL [warn] 2.5 hours is typed by hand (uws:literal: wall-clock note, not a result)"* ]] || false
-}
-
 @test "ledger: an in-place edit stays reported after later commits, with its real line" {
     python3 - "$P/research/ledger/claims.jsonl" << 'EOF'
 import sys
@@ -191,6 +181,8 @@ EOF
     [ "$status" -eq 1 ]
     [[ "$output" == *"research/ledger/claims.jsonl:4 LEDGER-APPEND C-0002@2 was removed or edited"* ]] || false
 }
+
+# ── post-hoc plan changes ────────────────────────────────────────────────────
 
 @test "plan: a bare D-<n> line is not a PI decision; a deviation must be reported in the manuscript" {
     research_make_reproducible
@@ -215,6 +207,8 @@ EOF
     [[ "$output" != *"PLAN-DEVIATION"* ]] || false
 }
 
+# ── the PI's publication approval ────────────────────────────────────────────
+
 @test "publication: without .uws/crs a CR approval cannot be checked; the PI approves the manuscript hash" {
     research_make_reproducible
     run check gate publication
@@ -229,4 +223,52 @@ EOF
     run check gate publication
     [ "$status" -eq 1 ]
     [[ "$output" == *"GATE-PI the PI approved sha256:000000000000, but the manuscript is now sha256:"* ]] || false
+}
+
+# ── C3: disclosure of synthetic data ─────────────────────────────────────────
+
+@test "C3: a sentence whose section heading says synthetic is a warning, not a block" {
+    # the heading starts the paragraph; the sentence itself does not say synthetic
+    printf '\n\\section{Results on the synthetic benchmark}\nThe models ran once.\nGradient Boosting scored \\GbAucCv{} as a CV mean.\n' >> "$P/paper/main.tex"
+    local l
+    l="$(line_of 'scored \GbAucCv{} as a CV mean')"
+    run check slop
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"paper/main.tex:${l} C3 [warn]"* ]] || false
+    sed_inplace 's/\\section{Results on the synthetic benchmark}/\\section{More results}/' "$P/paper/main.tex"
+    run check slop
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"paper/main.tex:${l} C3 \\GbAucCv (N-0001) is synthetic-generated data"* ]] || false
+}
+
+# ── error messages ────────────────────────────────────────────────────────────
+
+@test "messages: an invalid rounding rule is named when the row is added" {
+    extra_results
+    run check numbers add "$(number_row '\\HeldAcc' /test_accuracy held-out '' | sed 's/"rounding": "exact"/"rounding": "int"/')"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"rounding 'int' is not valid: use exact or <kind>:<digits> (kind: ceil, floor, round, round-half-even, trunc), e.g. round:3"* ]] || false
+}
+
+@test "messages: a review with no Manuscript line, and an unrecorded --pi-decision, say so" {
+    research_make_reproducible
+    sed_inplace '/^Manuscript: /d' "$P/research/reviews/REV-001.md"
+    run check gate peer_review
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REV-001.md has no Manuscript line"* ]] || false
+    [[ "$output" != *"The manuscript changed after review"* ]] || false
+    printf 'Changed after the results.\n' >> "$P/research/experiments/EXP-LEAK/plan.md"
+    run check plan freeze EXP-LEAK --reason "x" --pi-decision D-007
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"D-007 is not recorded in research/pi/decisions.md"* ]] || false
+}
+
+# ── defaults ──────────────────────────────────────────────────────────────────
+
+@test "bib build: writes paper/references.bib when the project has a paper/ directory" {
+    rm -f "$P/paper/references.bib"
+    run env UWS_RESEARCH_ROOT="$P" bash "${PROJECT_ROOT}/scripts/research_bib.sh" build
+    [ "$status" -eq 0 ]
+    [ -f "$P/paper/references.bib" ]
+    [ ! -f "$P/references.bib" ]
 }

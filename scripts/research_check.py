@@ -131,7 +131,8 @@ DEFAULT_CONFIG = {
     "tex_main": None,            # restrict prose to files reachable from this .tex via \input
     "prose_dirs": None,          # default: every .tex under the root, plus paper/**/*.md
     "code_dirs": ["research", "benchmarks"],
-    "references": None,          # default: paper/references.bib, then references.bib
+    "references": None,          # default: paper/references.bib, then references.bib (bib build
+                                 # writes a new one under paper/ when paper/ exists)
     "numbers_tex": "paper/generated/numbers.tex",
     "exclude_dirs": [],
     "min_quote_words": 5,
@@ -594,6 +595,12 @@ def _number_shape(rel, nid, lineno, row):
     macro = row.get("macro")
     if macro and not re.match(r"^\\[A-Za-z]+$", str(macro)):
         bad("macro must look like \\\\Name")
+    rounding = row.get("rounding")
+    if rounding not in (None, ""):
+        kind, _, digits = str(rounding).partition(":")
+        if rounding != "exact" and (kind not in ROUNDING or not digits.isdigit()):
+            bad("rounding %r is not valid: use exact or <kind>:<digits> (kind: %s), e.g. round:3"
+                % (rounding, ", ".join(sorted(ROUNDING))))
     # Optional fields; their values are checked when present.
     ev = row.get("evaluation")
     if ev is not None and ev not in EVALUATIONS:
@@ -1286,7 +1293,10 @@ def _keymap_set(project, citekey, source_key):
 
 
 def bib_build(project, args):
-    out = project.path(args.out) if args.out else (project.references_path() or project.path("references.bib"))
+    # Default: the configured or existing references.bib; a new one goes next to the
+    # manuscript (paper/references.bib) when the project has a paper/ directory
+    default_new = "paper/references.bib" if os.path.isdir(project.path("paper")) else "references.bib"
+    out = project.path(args.out) if args.out else (project.references_path() or project.path(default_new))
     findings = []
     for path in bib_source_files(project):
         try:
@@ -2046,6 +2056,15 @@ class WhereLinks(object):
                                          % (nid, place, row.get("printed"), shown), "warn"))
 
 
+def doc_title(doc):
+    """The \\title{...} of a .tex file (or its first Markdown H1), '' when there is none."""
+    for code in doc.code:
+        m = re.search(r"\\title\{([^}]*)\}", code) if doc.is_tex else re.match(r"^#\s+(.*)", code)
+        if m:
+            return m.group(1)
+    return ""
+
+
 def number_occurrences(project, doc, sent):
     """Ledger numbers in a sentence: [(offset, label, N-ID, row)] for uses of ledger macros
     (never other LaTeX commands) and for hand-typed values located by a row's `where`."""
@@ -2726,21 +2745,29 @@ def _slop_prose(project, doc):
                                    % (m.group(0), need, need)))
         # Ledger numbers in the sentence: macro uses and hand-typed values located by `where`.
         occurrences = number_occurrences(project, doc, sentence)
-        # C3 disclosure: non-measured numbers or claims need a disclosure word nearby.
+        # C3 disclosure: non-measured numbers or claims need a disclosure word nearby: in the
+        # sentence or its caption (else it blocks), or only in its paragraph, section
+        # heading or the document title (then it warns: a reader who quotes the sentence
+        # alone loses the disclosure).
         disclosed = bool(DISCLOSURE_RE.search(sent))
         if not disclosed:
             fid = doc.env[start - 1]
             if fid is not None and DISCLOSURE_RE.search(doc.captions.get(fid, "")):
                 disclosed = True
         if not disclosed:
+            lo, hi = doc.paragraph_lines(start)
+            near = " ".join(doc.code[lo - 1:hi]) + " " + doc.section[start - 1] + " " + doc.top_section[start - 1]
+            near_ok = bool(DISCLOSURE_RE.search(near) or DISCLOSURE_RE.search(doc_title(doc)))
+            level = "warn" if near_ok else "block"
+            note = "; only its paragraph, section heading or title says so" if near_ok else ""
             for off, label, nid, row in occurrences:
                 if row.get("data_origin") in NON_MEASURED:
                     out.append(Finding(doc.rel, line_of(off), "C3", "%s (%s) is %s data but the sentence/caption "
-                                       "does not say so" % (label, nid, row.get("data_origin"))))
+                                       "does not say so%s" % (label, nid, row.get("data_origin"), note), level))
             for c, r in rows:
                 if r and r.get("data_origin") in NON_MEASURED:
-                    out.append(Finding(doc.rel, start, "C3",
-                                       "%s rests on %s data but the sentence does not say so" % (c, r.get("data_origin"))))
+                    out.append(Finding(doc.rel, start, "C3", "%s rests on %s data but the sentence does not say so%s"
+                                       % (c, r.get("data_origin"), note), level))
         # C6: labels a generator assigned are not ground truth (PROMISE audit). Evidence
         # tied to the sentence (a C-ID on it, a claim row whose `where` names its line, or a
         # ledger number in it) blocks; without such a link the only evidence is that some
@@ -4818,6 +4845,12 @@ def check_review_hash(project):
     if any(h == current for _n, h in reviewed):
         return []
     seen = ", ".join("%s: %s" % (n, _short(h) if h else "no Manuscript line") for n, h in reviewed)
+    if not any(h for _n, h in reviewed):
+        missing = ", ".join(n for n, _h in reviewed)
+        return [Finding("research/reviews", 1, "GATE-REVIEW-HASH",
+                        "%s has no Manuscript line, so no review names the manuscript it covers; the red team writes "
+                        "`Manuscript: sha256:<hash>` (`uws research check manuscript-hash`; now sha256:%s) in its "
+                        "review" % (missing if len(reviewed) == 1 else "No review (%s)" % missing, _short(current)))]
     return [Finding("research/reviews", 1, "GATE-REVIEW-HASH",
                     "no red-team review covers the current manuscript (sha256:%s); reviews name %s. The manuscript "
                     "changed after review: dispatch the red team again" % (_short(current), seen))]

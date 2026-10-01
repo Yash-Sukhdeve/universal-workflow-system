@@ -748,7 +748,7 @@ EOF
     sed_inplace '/^Manuscript: /d' "$P/research/reviews/REV-001.md"
     run check gate publication
     [ "$status" -eq 1 ]
-    [[ "$output" == *"REV-001.md: no Manuscript line"* ]] || false
+    [[ "$output" == *"REV-001.md has no Manuscript line"* ]] || false
     local h1 h2
     h1="$(check manuscript-hash)"
     [[ "$h1" == sha256:56dbe621093513baaf97e7be7d30a608ce2d860e18a55a29116677480ea38d29 ]] || false
