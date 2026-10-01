@@ -47,7 +47,10 @@ field() { grep -E "^$2:" "$1" | head -1 | sed -e "s/^$2:[[:space:]]*//" -e 's/^"
 item_count() { local n=0 f; for f in "$1"/items/*.md; do [[ -f "$f" ]] && n=$((n + 1)); done; echo "$n"; }
 item_with() { grep -l -F -- "$2" "$1"/items/*.md | head -1; }        # item_with <kb> <text>
 id_of() { basename "$1" .md; }
-src_state() { (cd "$SRC" && ls -la && cat local.db global.db | git hash-object --stdin); }
+# What a read-only import must leave unchanged: the entries of the source directory (names,
+# modes, sizes; `ls -lA` leaves out `.` and `..`, whose link count and mtime change whenever
+# anything else creates a file in the shared TMPDIR) and the bytes of the files
+src_state() { (cd "$SRC" && ls -lA && cat local.db global.db | git hash-object --stdin); }
 
 init_global() {
     "$UWS" kb init --global >/dev/null
@@ -296,10 +299,10 @@ EOF
     chmod 444 "$mem"/*.md
     chmod 555 "$mem" "$SRC"
     local before
-    before="$(cd "$mem" && ls -la && cat ./*.md | git hash-object --stdin)"
+    before="$(cd "$mem" && ls -lA && cat ./*.md | git hash-object --stdin)"
     run "$UWS" kb import automemory --dir "$mem"
     [ "$status" -eq 0 ]
-    [ "$(cd "$mem" && ls -la && cat ./*.md | git hash-object --stdin)" = "$before" ]
+    [ "$(cd "$mem" && ls -lA && cat ./*.md | git hash-object --stdin)" = "$before" ]
     [[ "$output" == *"skip automemory#MEMORY.md: the auto-memory index: not read (--include-index imports its entries; UWS never edits it)"* ]]
     [[ "$output" == *"skip automemory#prefers-short.md: a user memory (preference or correction): it stays in auto-memory"* ]]
     [[ "$output" == *"skip automemory#no-emoji.md: a feedback memory"* ]]
@@ -356,7 +359,7 @@ EOF
     chmod 444 "$mem"/*.md
     chmod 555 "$mem" "$SRC"
     local before
-    before="$(cd "$mem" && ls -la && cat ./*.md | git hash-object --stdin)"
+    before="$(cd "$mem" && ls -lA && cat ./*.md | git hash-object --stdin)"
     # a dry run lists the entries and writes nothing
     run "$UWS" kb import automemory --dir "$mem" --include-index --dry-run
     [ "$status" -eq 0 ]
@@ -364,7 +367,7 @@ EOF
     [ ! -e "$KB" ]
     run "$UWS" kb import automemory --dir "$mem" --include-index
     [ "$status" -eq 0 ]
-    [ "$(cd "$mem" && ls -la && cat ./*.md | git hash-object --stdin)" = "$before" ]
+    [ "$(cd "$mem" && ls -lA && cat ./*.md | git hash-object --stdin)" = "$before" ]
     [[ "$output" == *"skip automemory#MEMORY.md:L7: an index line pointing to the topic file deploy-notes.md"* ]]
     [[ "$output" == *"skip automemory#MEMORY.md:L8: too short to be a fact"* ]]
     [[ "$output" == *"skip import:automemory#MEMORY.md:L12: text looks like a secret (assignment)"* ]]
