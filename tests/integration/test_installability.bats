@@ -128,6 +128,38 @@ EOF
     grep -q "cli check" "$PROJ/.workflow/checkpoints.log"
 }
 
+@test "cli: checkpoint restore finds a checkpoint created in an init'd project" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" checkpoint create "first" </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" sdlc start </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" checkpoint create "second" </dev/null >/dev/null
+    grep -q 'sdlc_phase' "$PROJ/.workflow/state.yaml"
+    # The log separates fields with " | "; restore used to look for "|CP_1_002|"
+    run bash -c "echo y | '${PROJECT_ROOT}/bin/uws' checkpoint restore CP_1_002"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Restored to checkpoint CP_1_002"* ]] || false
+    run grep -c '^sdlc_phase:' "$PROJ/.workflow/state.yaml"
+    [ "$output" = "0" ]
+    grep -Eq 'current_checkpoint: "?CP_1_002"?$' "$PROJ/.workflow/state.yaml"
+    # an ID that was never created is still refused
+    run bash -c "echo y | '${PROJECT_ROOT}/bin/uws' checkpoint restore CP_1_009"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"CP_1_009 not found"* ]] || false
+}
+
+@test "cli: checkpoint list counts checkpoints, not log lines" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" checkpoint create "first" </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" sdlc start </dev/null >/dev/null      # PHASE_TRANSITION-free, but
+    "${PROJECT_ROOT}/bin/uws" orchestrate dispatch "x" </dev/null >/dev/null   # AGENT_DISPATCHED
+    # the log now holds comments, INIT, CP_1_001, CP_1_002 and an AGENT_DISPATCHED line
+    run "${PROJECT_ROOT}/bin/uws" checkpoint list </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Total checkpoints: 2"* ]] || false
+}
+
 @test "cli: uws status succeeds without a terminal or TERM (agents, hooks, CI)" {
     cd "$PROJ"
     UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
@@ -239,18 +271,9 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "output: piped output carries no ANSI escapes, and init prints no yq notice" {
-    cd "$PROJ"
-    run bash -c "UWS_SKIP_VECTOR_MEMORY=true PATH='/usr/bin:/bin' '${PROJECT_ROOT}/bin/uws' init software </dev/null 2>&1 | cat"
-    [ "$status" -eq 0 ]
-    [[ "$output" != *$'\033'* ]] || false
-    [[ "$output" != *"yq not found"* ]] || false
-    local c
-    for c in "status" "sdlc status" "checkpoint list" "recover" "sdlc nope"; do
-        run bash -c "'${PROJECT_ROOT}/bin/uws' $c </dev/null 2>&1 | cat"
-        [[ "$output" != *$'\033'* && "$output" != *'\033'* ]] || false
-    done
-}
+# ── Next-step hints name a command the user can run ───────────────────────
+# A user's project has no scripts/ directory, and from the plugin a bare `uws` may be
+# an older install earlier on PATH (Claude Code appends the plugin's bin/ last).
 
 # materialize_plugin: a dereferenced copy, as the plugin cache holds it
 materialize_plugin() {
@@ -296,54 +319,6 @@ no_stale_hint() {
     rm -rf "$(dirname "$MAT")"
 }
 
-@test "hints: from the CLI, an older uws earlier on PATH is not named; the right one is" {
-    cd "$PROJ"
-    local other bin
-    other="$(mktemp -d)"; bin="$(mktemp -d)"
-    printf '#!/bin/sh\necho OLD UWS\n' > "$other/uws"; chmod +x "$other/uws"
-    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
-    # another uws first on PATH: hints give this install's bin/uws by absolute path
-    run env -u UWS_CMD PATH="$other:$PATH" "${PROJECT_ROOT}/bin/uws" sdlc goal "A parser" </dev/null
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"${PROJECT_ROOT}/bin/uws sdlc check <n>"* ]] || false
-    no_stale_hint "$output"
-    # `uws` on PATH is this install (a symlink, as install.sh makes it): plain `uws`
-    ln -s "${PROJECT_ROOT}/bin/uws" "$bin/uws"
-    run env -u UWS_CMD PATH="$bin:$other:$PATH" "$bin/uws" sdlc start </dev/null
-    [[ "$output" == *"Run uws sdlc next when complete"* ]] || false
-    no_stale_hint "$output"
-    rm -rf "$other" "$bin"
-}
-
-@test "init research: next steps name the research workflow" {
-    cd "$PROJ"
-    UWS_SKIP_VECTOR_MEMORY=true run "${PROJECT_ROOT}/bin/uws" init research </dev/null
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"research start to begin the research workflow"* ]] || false
-    [[ "$output" != *"to begin SDLC"* ]] || false
-}
-
-@test "kb: an approve refused inside an agent names the CLI the PI can run" {
-    cd "$PROJ"
-    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
-    echo "# demo project" > README.md
-    local id
-    id="$("${PROJECT_ROOT}/bin/uws" kb add --type fact --claim "The README names the demo project" \
-        --evidence verified --source file:README.md:1 --check "grep -q 'demo project' README.md" </dev/null | grep -o 'K-[0-9]*-[0-9a-f]*' | head -1)"
-    [ -n "$id" ]
-    run env -u UWS_CMD CLAUDECODE=1 "${PROJECT_ROOT}/bin/uws" kb approve "$id" </dev/null
-    [ "$status" -eq 6 ]
-    [[ "$output" == *"own terminal, from this project:"*"/bin/uws kb approve <ID>"* || "$output" == *"own terminal, from this project: uws kb approve <ID>"* ]] || false
-    run env -u UWS_CMD CLAUDECODE=1 "${PROJECT_ROOT}/bin/uws" kb pi --set pi@example.com </dev/null
-    [ "$status" -eq 6 ]
-    [[ "$output" == *"own terminal, from this project: "*"kb pi --set pi@example.com"* ]] || false
-    # with no PI set, `kb pi` names the command too
-    run env -u UWS_CMD "${PROJECT_ROOT}/bin/uws" kb pi </dev/null
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"kb pi --set <email>, in your own terminal"* ]] || false
-    [[ "$output" == *"${PROJECT_ROOT}/bin/uws kb pi --set"* || "$output" == *": uws kb pi --set"* ]] || false
-}
-
 @test "hints: the plugin's session context names /uws:checkpoint and the bootstrap steps, then drops them once done" {
     materialize_plugin
     cd "$PROJ"
@@ -368,6 +343,38 @@ no_stale_hint() {
     run "$MAT/bin/uws" recover </dev/null
     [[ "$output" != *"Declare the project goal"* && "$output" != *"Start a methodology"* ]] || false
     rm -rf "$(dirname "$MAT")"
+}
+
+@test "hints: from the CLI, an older uws earlier on PATH is not named; the right one is" {
+    cd "$PROJ"
+    local other bin
+    other="$(mktemp -d)"; bin="$(mktemp -d)"
+    printf '#!/bin/sh\necho OLD UWS\n' > "$other/uws"; chmod +x "$other/uws"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    # another uws first on PATH: hints give this install's bin/uws by absolute path
+    run env -u UWS_CMD PATH="$other:$PATH" "${PROJECT_ROOT}/bin/uws" sdlc goal "A parser" </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${PROJECT_ROOT}/bin/uws sdlc check <n>"* ]] || false
+    no_stale_hint "$output"
+    # `uws` on PATH is this install (a symlink, as install.sh makes it): plain `uws`
+    ln -s "${PROJECT_ROOT}/bin/uws" "$bin/uws"
+    run env -u UWS_CMD PATH="$bin:$other:$PATH" "$bin/uws" sdlc start </dev/null
+    [[ "$output" == *"Run uws sdlc next when complete"* ]] || false
+    no_stale_hint "$output"
+    rm -rf "$other" "$bin"
+}
+
+@test "output: piped output carries no ANSI escapes, and init prints no yq notice" {
+    cd "$PROJ"
+    run bash -c "UWS_SKIP_VECTOR_MEMORY=true PATH='/usr/bin:/bin' '${PROJECT_ROOT}/bin/uws' init software </dev/null 2>&1 | cat"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *$'\033'* ]] || false
+    [[ "$output" != *"yq not found"* ]] || false
+    local c
+    for c in "status" "sdlc status" "checkpoint list" "recover" "sdlc nope"; do
+        run bash -c "'${PROJECT_ROOT}/bin/uws' $c </dev/null 2>&1 | cat"
+        [[ "$output" != *$'\033'* && "$output" != *'\033'* ]] || false
+    done
 }
 
 @test "orchestrate: without the plugin or agent files, dispatch warns how to get the subagent" {
@@ -418,34 +425,52 @@ no_stale_hint() {
     [ "$status" -ne 0 ]
 }
 
-@test "cli: checkpoint restore finds a checkpoint created in an init'd project" {
+@test "init research: next steps name the research workflow" {
     cd "$PROJ"
-    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
-    "${PROJECT_ROOT}/bin/uws" checkpoint create "first" </dev/null >/dev/null
-    "${PROJECT_ROOT}/bin/uws" sdlc start </dev/null >/dev/null
-    "${PROJECT_ROOT}/bin/uws" checkpoint create "second" </dev/null >/dev/null
-    grep -q 'sdlc_phase' "$PROJ/.workflow/state.yaml"
-    # The log separates fields with " | "; restore used to look for "|CP_1_002|"
-    run bash -c "echo y | '${PROJECT_ROOT}/bin/uws' checkpoint restore CP_1_002"
+    UWS_SKIP_VECTOR_MEMORY=true run "${PROJECT_ROOT}/bin/uws" init research </dev/null
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Restored to checkpoint CP_1_002"* ]] || false
-    run grep -c '^sdlc_phase:' "$PROJ/.workflow/state.yaml"
-    [ "$output" = "0" ]
-    grep -Eq 'current_checkpoint: "?CP_1_002"?$' "$PROJ/.workflow/state.yaml"
-    # an ID that was never created is still refused
-    run bash -c "echo y | '${PROJECT_ROOT}/bin/uws' checkpoint restore CP_1_009"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"CP_1_009 not found"* ]] || false
+    [[ "$output" == *"research start to begin the research workflow"* ]] || false
+    [[ "$output" != *"to begin SDLC"* ]] || false
 }
 
-@test "cli: checkpoint list counts checkpoints, not log lines" {
+@test "kb: an approve refused inside an agent names the CLI the PI can run" {
     cd "$PROJ"
     UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
-    "${PROJECT_ROOT}/bin/uws" checkpoint create "first" </dev/null >/dev/null
-    "${PROJECT_ROOT}/bin/uws" sdlc start </dev/null >/dev/null      # PHASE_TRANSITION-free, but
-    "${PROJECT_ROOT}/bin/uws" orchestrate dispatch "x" </dev/null >/dev/null   # AGENT_DISPATCHED
-    # the log now holds comments, INIT, CP_1_001, CP_1_002 and an AGENT_DISPATCHED line
-    run "${PROJECT_ROOT}/bin/uws" checkpoint list </dev/null
+    echo "# demo project" > README.md
+    local id
+    id="$("${PROJECT_ROOT}/bin/uws" kb add --type fact --claim "The README names the demo project" \
+        --evidence verified --source file:README.md:1 --check "grep -q 'demo project' README.md" </dev/null | grep -o 'K-[0-9]*-[0-9a-f]*' | head -1)"
+    [ -n "$id" ]
+    run env -u UWS_CMD CLAUDECODE=1 "${PROJECT_ROOT}/bin/uws" kb approve "$id" </dev/null
+    [ "$status" -eq 6 ]
+    [[ "$output" == *"own terminal, from this project:"*"/bin/uws kb approve <ID>"* || "$output" == *"own terminal, from this project: uws kb approve <ID>"* ]] || false
+    run env -u UWS_CMD CLAUDECODE=1 "${PROJECT_ROOT}/bin/uws" kb pi --set pi@example.com </dev/null
+    [ "$status" -eq 6 ]
+    [[ "$output" == *"own terminal, from this project: "*"kb pi --set pi@example.com"* ]] || false
+    # with no PI set, `kb pi` names the command too
+    run env -u UWS_CMD "${PROJECT_ROOT}/bin/uws" kb pi </dev/null
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"kb pi --set <email>, in your own terminal"* ]] || false
+    [[ "$output" == *"${PROJECT_ROOT}/bin/uws kb pi --set"* || "$output" == *": uws kb pi --set"* ]] || false
+}
+
+# ── CLI installer (install.sh) ────────────────────────────────────────────
+
+@test "install.sh: a run without a terminal says vector memory was skipped and how to get it" {
+    local home
+    home="$(mktemp -d)"
+    run env -i HOME="$home" PATH="/usr/bin:/bin:$(dirname "$(command -v python3)")" \
+        bash "${PROJECT_ROOT}/install.sh" </dev/null
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Total checkpoints: 2"* ]] || false
+    [ -L "$home/.local/bin/uws" ]
+    if [[ "$output" == *"Optional: Vector memory"* ]]; then
+        [[ "$output" == *"skipped (no terminal to ask); to install it: UWS_VECTOR_MEMORY=true"* ]] || false
+    fi
+    rm -rf "$home"
+}
+
+@test "install.sh: the Bash floor is 3.2, as CI enforces for scripts/ and bin/" {
+    grep -q 'Bash 3.2+ required' "${PROJECT_ROOT}/install.sh"
+    run grep -c 'Bash 4.0+ required' "${PROJECT_ROOT}/install.sh"
+    [ "$output" = "0" ]
 }
