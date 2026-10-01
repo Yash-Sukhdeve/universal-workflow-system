@@ -3618,6 +3618,7 @@ def check_data(project):
                                    "now registers %s" % (nid, row.get("run"), p, _short(used_sha), _short(entry[1].get("sha256")))))
 
     # Run records are complete.
+    git_ok = in_git(project)
     for run_id, (rel, rec, err) in sorted(project.runs().items()):
         if err:
             out.append(Finding(rel, 1, "RUN-SCHEMA", err))
@@ -3631,8 +3632,19 @@ def check_data(project):
                                not all(isinstance(i, dict) and i.get("path") and "sha256" in i for i in items)):
                 out.append(Finding(rel, 1, "RUN-SCHEMA", "%s: %s must be a list of {path, sha256}" % (run_id, key)))
         # The code a run executed must be in the commit it records, or no re-run can use it.
+        # A commit this repository does not have (a squash merge, rebase or shallow clone
+        # drops it; a hand-edited record) or no commit at all shows nothing about the code.
         commit = rec.get("git_commit")
-        if commit and in_git(project) and _git_rc(project, ["cat-file", "-e", "%s^{commit}" % commit]) == 0:
+        if not git_ok or "git_commit" not in rec:
+            continue   # outside git there is no commit to check; RUN-SCHEMA reports a missing key
+        if not commit:
+            out.append(Finding(rel, 1, "RUN-CODE", "%s: the record names no git_commit, so the code it ran is in no "
+                               "commit; commit the code and record the run again" % run_id))
+        elif _git_rc(project, ["cat-file", "-e", "%s^{commit}" % commit]) != 0:
+            out.append(Finding(rel, 1, "RUN-CODE", "%s: its commit %s is not in this repository, so the code it ran "
+                               "cannot be shown to exist (a squash merge, rebase or shallow clone drops commits); record "
+                               "the run again on a commit of this history" % (run_id, str(commit)[:12])))
+        else:
             for p in run_code_paths(rec):
                 p_rel = safe_rel(project, p)
                 if p_rel and _git_rc(project, ["cat-file", "-e", "%s:./%s" % (commit, p_rel)]) != 0:

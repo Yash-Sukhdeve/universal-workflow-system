@@ -337,6 +337,38 @@ EOF
     [[ "$output" == *"RUN-CODE RUN-0002: code research/code/untracked.py is not in commit"* ]]
 }
 
+# set_run_commit <RUN-ID> <commit or null>: rewrite the git_commit of a run record.
+set_run_commit() {
+    python3 - "$P/research/runs/$1/run.json" "$2" << 'EOF'
+import json, sys
+path, commit = sys.argv[1], sys.argv[2]
+rec = json.load(open(path))
+rec["git_commit"] = None if commit == "null" else commit
+open(path, "w").write(json.dumps(rec, indent=2, sort_keys=True) + "\n")
+EOF
+}
+
+@test "P1 RUN-CODE: a run whose commit is not in the repository, or that names none, cannot show its code exists" {
+    printf 'import json\njson.dump({"v": 1}, open("artifacts/f.json", "w"))\n' > "$P/research/code/new_untracked.py"
+    run check run --exp exploratory --code research/code/new_untracked.py --output artifacts/f.json -- python3 research/code/new_untracked.py
+    [ "$status" -eq 0 ]
+    run check data
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"RUN-CODE RUN-0001: code research/code/new_untracked.py is not in commit"* ]]
+    set_run_commit RUN-0001 0123456789abcdef0123456789abcdef01234567
+    run check data
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"RUN-CODE RUN-0001: its commit 0123456789ab is not in this repository, so the code it ran cannot be shown to exist"* ]]
+    run check gate data_collection
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"RUN-CODE RUN-0001: its commit 0123456789ab"* ]]
+    set_run_commit RUN-0001 null
+    run check data
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"RUN-CODE RUN-0001: the record names no git_commit"* ]]
+}
+
 @test "P1 BIB-UNDEFINED: a \\cite key that references.bib does not define is its own finding" {
     printf 'See \\cite{autogen2023}.\n' >> "$P/paper/main.tex"
     run check bib
