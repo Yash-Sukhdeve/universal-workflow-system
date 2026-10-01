@@ -727,7 +727,29 @@ cmd_search() {
     local via="${UWS_KB_USAGE_VIA:-search}"
     [[ "$via" =~ ^[a-z-]+$ ]] || via="search"
     mark_search_session "$via"
-    [[ -n "$out" ]] || exit 1
+    if [[ -z "$out" ]]; then
+        # The default shows trusted items only: say when other items match, so an empty
+        # result does not read as "the KB knows nothing about this"
+        if [[ -z "$status" && "$all" != "true" && "$via" == "search" ]]; then
+            local others n
+            others="|candidate|disputed|"
+            [[ "$stale" == "true" ]] || others="|candidate|stale|disputed|"
+            n="$( { if [[ "$SEARCH_SCOPE" == "all" ]]; then
+                        search_scored "$KB" "" "$others" "$type" "" "" "${words[@]}"
+                        [[ "$g" == "$KB" ]] || search_scored "$g" "global:" "$others" "$type" "" "" "${words[@]}"
+                    else
+                        search_lines "$others" "$type" "" "" "${words[@]}"
+                    fi; } 2>/dev/null | wc -l | tr -d '[:space:]')"
+            if [[ "${n:-0}" -gt 0 ]]; then
+                if [[ "$n" -eq 1 ]]; then
+                    echo "uws kb: no trusted item matches; 1 candidate, stale or disputed item does (search --all, or --status candidate)" >&2
+                else
+                    echo "uws kb: no trusted item matches; ${n} candidate, stale or disputed items do (search --all, or --status candidate)" >&2
+                fi
+            fi
+        fi
+        exit 1
+    fi
     printf '%s\n' "$out"
     record_usage "$via" "$out"
 }
