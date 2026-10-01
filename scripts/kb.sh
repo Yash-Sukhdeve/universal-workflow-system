@@ -3064,18 +3064,10 @@ SEARCH_SCOPE="project"
 main() {
     local verb="${1:-help}" scope_arg=""
     shift 2>/dev/null || true
-    # Scope: --global, --scope <s>, --scope=<s>, or an ID written global:K-...
-    local -a args=()
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --global) scope_arg="global"; shift ;;
-            --scope) [[ $# -ge 2 ]] || die 2 "--scope needs project, global or all"; scope_arg="$2"; shift 2 ;;
-            --scope=*) scope_arg="${1#--scope=}"; shift ;;
-            global:K-*) args+=("${1#global:}"); [[ -n "$scope_arg" ]] || scope_arg="global"; shift ;;
-            --) args+=("$@"); break ;;
-            *) args+=("$1"); shift ;;
-        esac
-    done
+    # Scope: --global, --scope <s>, --scope=<s>, or a global:K-... ID in an ID
+    # position (kb_scan_scope_args); option values such as a --quote are text
+    kb_scan_scope_args "$@" || die 2 "--scope needs project, global or all"
+    scope_arg="$KB_SCAN_SCOPE"
     case "$scope_arg" in
         ""|project) ;;
         global)
@@ -3092,7 +3084,7 @@ main() {
             *) SEARCH_SCOPE="$scope_arg" ;;
         esac
     fi
-    set -- ${args[@]+"${args[@]}"}
+    set -- ${KB_SCAN_ARGS[@]+"${KB_SCAN_ARGS[@]}"}
     case "$verb" in
         add) cmd_add "$@" ;;
         search) cmd_search "$@" ;;

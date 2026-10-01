@@ -238,6 +238,49 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "global: text that starts with global:K- is not a scope switch; only ID positions reach the global KB" {
+    init_global
+    add_global_lesson "Retries need jitter"
+    local g="${KB_OUT#global:}" n before
+    before="$(ls "$GKB/items")"
+    # a project add whose quote, claim and body start with a global ID stays in the project KB, verbatim
+    n="$("$UWS" kb add --type fact --claim "global:${g} names a retry rule that the release build ignores" \
+        --evidence reported --source url:https://example.org/rel \
+        --quote "global:${g} was wrong; signing is required" --body "global:${g}" --no-conflict 2>/dev/null)"
+    [[ "$n" =~ ^K-20260924-[0-9a-f]{6}$ ]] || false
+    [ -f "$KB/items/${n}.md" ]
+    [ "$(field "$KB/items/${n}.md" scope)" = "project" ]
+    [ "$(field "$KB/items/${n}.md" claim)" = "global:${g} names a retry rule that the release build ignores" ]
+    grep -qxF "> global:${g} was wrong; signing is required" "$KB/items/${n}.md"
+    grep -qxF "global:${g}" "$KB/items/${n}.md"
+    [ "$(ls "$GKB/items")" = "$before" ]
+    # a reason after the ID is text too
+    run "$UWS" kb retire "$n" "global:${g}"
+    [ "$status" -eq 0 ]
+    [ "$(field "$KB/retired/${n}.md" retired_reason)" = "global:${g}" ]
+    [ -f "$GKB/items/${g}.md" ]
+    # ID positions still select it: the first positional argument and --supersedes/--contradicts/--by
+    run "$UWS" kb show "global:${g}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"id: ${g}"* ]] || false
+    run "$UWS" kb add --type lesson --claim "Retries need jitter and a cap" --evidence reported \
+        --source url:https://example.org/doc --quote "q" --supersedes "global:${g}"
+    [ "$status" -eq 0 ]
+    [ -f "$GKB/retired/${g}.md" ]
+    # outside a project, a global ID in a value does not route the command to the global KB
+    local elsewhere="${TEST_TMP_DIR}-elsewhere"
+    mkdir -p "$elsewhere"
+    cd "$elsewhere"
+    before="$(ls "$GKB/items")"
+    run "$UWS" kb add --type fact --claim "Outside" --evidence reported --source url:https://example.org \
+        --quote "global:${g} said so"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No UWS project found"* ]] || false
+    [ "$(ls "$GKB/items")" = "$before" ]
+    cd "$TEST_TMP_DIR"
+    rm -rf "$elsewhere"
+}
+
 @test "search: project and global items are ranked together in one budget; global hits are marked" {
     init_global
     local i

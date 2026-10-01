@@ -22,7 +22,7 @@
 #   kb_agent_model, kb_current_phase, kb_cr_model, kb_record_gate_fail,
 #   kb_record_gate_pass
 #   Increment 2 (design section 18): kb_global_memory_dir, kb_global_dir, kb_global_ready,
-#   kb_guarded, kb_session_id, kb_usage_record
+#   kb_guarded, kb_session_id, kb_usage_record, kb_is_global_id, kb_scan_scope_args
 
 if [[ "${_UWS_KB_UTILS_LOADED:-}" == "true" ]]; then
     return 0 2>/dev/null || true
@@ -707,5 +707,61 @@ kb_usage_record() {
     if ! { mkdir -p "${d}/.cache" && printf '%s' "$rows" >> "${d}/.cache/usage.tsv"; } 2>/dev/null; then
         echo "uws kb: could not record item usage in ${d}/.cache/usage.tsv (continuing)" >&2
     fi
+    return 0
+}
+
+# Succeeds when the argument is a whole global item ID: global:K-<yyyymmdd>-<hex>
+kb_is_global_id() {
+    [[ "${1:-}" =~ ^global:K-[0-9]{8}-[0-9a-f]{6,12}$ ]]
+}
+
+# Options of `uws kb` verbs that take a value (the next argument), and those of
+# them whose value is an item ID. kb_scan_scope_args passes every value on as
+# it is, except that a global ID in an ID option selects the global KB.
+KB_VALUE_OPTS=" --type --claim --evidence --source --check --watch --author --tags --supersedes --contradicts --falsifier --body --quote --escaped-from --status --limit --min-terms --by --as --set --db --dir "
+KB_ID_OPTS=" --supersedes --contradicts --by "
+
+# kb_scan_scope_args <arguments after the verb>: the scope of a `uws kb`
+# command, for scripts/kb.sh and bin/uws. Sets KB_SCAN_SCOPE (empty, or the
+# value given: project, global, all or anything else for the caller to refuse)
+# and KB_SCAN_ARGS (the arguments without the scope flags). --global,
+# --scope <s> and --scope=<s> set it. A global ID (global:K-...) selects the
+# global KB, and is passed on without its prefix, only in an ID position: the
+# first positional argument, or the value of --supersedes, --contradicts or
+# --by. Every other value (a --quote, --claim or --body text, a reason) is
+# passed on unchanged, even when it starts with global:K- or reads --global.
+# Everything after -- is passed on unchanged. Returns 2 when --scope has no value.
+kb_scan_scope_args() {
+    local a v pos=0
+    KB_SCAN_SCOPE=""
+    KB_SCAN_ARGS=()
+    while [[ $# -gt 0 ]]; do
+        a="$1"
+        case "$a" in
+            --global) KB_SCAN_SCOPE="global"; shift; continue ;;
+            --scope) [[ $# -ge 2 ]] || return 2; KB_SCAN_SCOPE="$2"; shift 2; continue ;;
+            --scope=*) KB_SCAN_SCOPE="${a#--scope=}"; shift; continue ;;
+            --) KB_SCAN_ARGS+=("$@"); break ;;
+        esac
+        if [[ "$KB_VALUE_OPTS" == *" ${a} "* && $# -ge 2 ]]; then
+            v="$2"
+            if [[ "$KB_ID_OPTS" == *" ${a} "* ]] && kb_is_global_id "$v"; then
+                v="${v#global:}"
+                [[ -n "$KB_SCAN_SCOPE" ]] || KB_SCAN_SCOPE="global"
+            fi
+            KB_SCAN_ARGS+=("$a" "$v")
+            shift 2
+            continue
+        fi
+        if [[ "$a" != -* ]]; then
+            pos=$((pos + 1))
+            if (( pos == 1 )) && kb_is_global_id "$a"; then
+                a="${a#global:}"
+                [[ -n "$KB_SCAN_SCOPE" ]] || KB_SCAN_SCOPE="global"
+            fi
+        fi
+        KB_SCAN_ARGS+=("$a")
+        shift
+    done
     return 0
 }
