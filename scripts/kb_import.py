@@ -10,7 +10,9 @@ Python 3 standard library only. The sources are never written:
   temporary directory and the copy is opened. Only the `memory_metadata` table
   is read, so the `vec0` extension of the vector index is not needed.
 - Auto-memory topic files are only read. MEMORY.md, the index Claude Code
-  loads every session, is not opened at all: UWS never edits it.
+  loads every session, is not opened unless --include-index asks for its
+  entries (each top-level list item or paragraph, except lines that only link a
+  topic file); it is never written: UWS never edits it (decision D2).
 
 kb.sh (`cmd_import`) turns the output into candidate items; this script never
 touches the knowledge base. Output: one record per line, tab-separated, with
@@ -353,6 +355,75 @@ def front_matter(text):
     return None, text
 
 
+RE_INDEX_LINK = re.compile(r"^\s*[-*+]\s*\[[^\]]*\]\([^)\s]+\.md\)")
+
+
+def index_entries(text):
+    """(line number, heading, block) for each top-level list item or paragraph of MEMORY.md.
+
+    Nested (indented) lines belong to the item above them; headings name the section.
+    """
+    entries, block, state = [], [], {"heading": "", "start": 0}
+
+    def flush():
+        if block:
+            entries.append((state["start"], state["heading"], "\n".join(block)))
+            del block[:]
+
+    for no, line in enumerate(text.splitlines(), start=1):
+        s = line.rstrip()
+        if not s.strip():
+            flush()
+            continue
+        m = re.match(r"^#{1,6}\s+(.*)$", s)
+        if m:
+            flush()
+            state["heading"] = m.group(1).strip()
+            continue
+        if re.match(r"^[-*+]\s+", s):
+            flush()
+        if not block:
+            state["start"] = no
+        block.append(s)
+    flush()
+    return entries
+
+
+def plain(block):
+    """One line of text from a Markdown block: list, quote and bold markers removed."""
+    parts = []
+    for line in block.splitlines():
+        parts.append(re.sub(r"^\s*(?:>\s*)*(?:[-*+]\s+)?", "", line))
+    return re.sub(r"\*\*|__", "", " ".join(p for p in parts if p))
+
+
+def read_index(args, project, path):
+    """MEMORY.md entries as candidates (only with --include-index; the file is only read)."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError as exc:
+        emit("S", "MEMORY.md", "unreadable: %s" % exc)
+        return
+    for no, heading, block in index_entries(text):
+        ref = "MEMORY.md:L%d" % no
+        if RE_INDEX_LINK.match(block) and "\n" not in block:
+            emit("S", ref, "an index line pointing to a topic file (imported on its own)")
+            continue
+        claim = plain(block)
+        if len(claim) < 12:
+            emit("S", ref, "too short to be a fact")
+            continue
+        tags = []
+        for t in ["import", "automemory", "index", heading.lower()[:40]]:
+            c = clean_tag(t)
+            if c and c not in tags:
+                tags.append(c)
+        flags, detail = fixture_flags(project, block)
+        meta = "file=MEMORY.md; line=%d%s" % (no, ("; section=%s" % heading) if heading else "")
+        emit("R", ref, "fact", ",".join(tags), flags, detail, claim, meta, block)
+
+
 def read_automemory(args):
     if not os.path.isdir(args.dir):
         fail("no such directory: %s" % args.dir)
@@ -364,7 +435,11 @@ def read_automemory(args):
     for name in names:
         ref = re.sub(r"[^A-Za-z0-9._-]+", "-", name)
         if name == "MEMORY.md":
-            emit("S", ref, "the auto-memory index: not read and never edited by UWS")
+            if args.include_index:
+                read_index(args, project, os.path.join(args.dir, name))
+            else:
+                emit("S", ref, "the auto-memory index: not read (--include-index imports its entries; "
+                               "UWS never edits it)")
             continue
         path = os.path.join(args.dir, name)
         if not os.path.isfile(path):
@@ -415,6 +490,7 @@ def main():
     a = sub.add_parser("automemory")
     a.add_argument("--dir", required=True)
     a.add_argument("--project", default="")
+    a.add_argument("--include-index", action="store_true")
     args = ap.parse_args()
     if args.kind == "vector":
         read_vector(args)
