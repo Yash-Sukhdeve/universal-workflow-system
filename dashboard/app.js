@@ -4,6 +4,9 @@
  */
 
 const API_BASE = '/api';
+// Per-run token the dashboard server writes into index.html; POSTs must send it
+const UWS_TOKEN = (document.querySelector('meta[name="uws-token"]') || {}).content || '';
+const POST_HEADERS = { 'Content-Type': 'application/json', 'X-UWS-Token': UWS_TOKEN };
 const WS_RECONNECT_DELAY = 3000;
 const POLL_INTERVAL = 5000;
 
@@ -392,7 +395,7 @@ async function approveCR(id) {
     try {
         const res = await fetch(`${API_BASE}/approve`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: POST_HEADERS,
             body: JSON.stringify({ id })
         });
         const result = await res.json();
@@ -412,7 +415,7 @@ async function rejectCR(id) {
     try {
         await fetch(`${API_BASE}/reject`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: POST_HEADERS,
             body: JSON.stringify({ id })
         });
         showNotification('❌ Rejected');

@@ -17,6 +17,9 @@ if [[ -z "${RED:-}" ]]; then
     GREEN='\033[0;32m'
     NC='\033[0m' # No Color
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; NC=''; }
 
 # Validation result codes (only set if not already defined)
 if [[ -z "${VALID:-}" ]]; then
@@ -481,20 +484,21 @@ validate_checkpoint_restorable() {
 
     validate_checkpoint_id "$checkpoint_id" || return $INVALID
 
-    # Check if checkpoint exists in log
-    if [[ ! -f ".workflow/checkpoints.log" ]]; then
+    # Check if checkpoint exists in log ("TIMESTAMP | CP_ID | DESCRIPTION")
+    local wf="${WORKFLOW_DIR:-.workflow}"
+    if [[ ! -f "${wf}/checkpoints.log" ]]; then
         echo -e "${RED}Error: No checkpoints exist${NC}" >&2
         return $INVALID
     fi
 
-    if ! grep -q "^[^|]*|${checkpoint_id}|" ".workflow/checkpoints.log" 2>/dev/null; then
+    if ! grep -qE "^[^|]*\|[[:space:]]*${checkpoint_id}[[:space:]]*\|" "${wf}/checkpoints.log" 2>/dev/null; then
         echo -e "${RED}Error: Checkpoint ${checkpoint_id} not found${NC}" >&2
-        echo -e "${YELLOW}Run './scripts/checkpoint.sh list' to see available checkpoints${NC}" >&2
+        echo -e "${YELLOW}Run '$(declare -f uws_hint >/dev/null 2>&1 && uws_hint checkpoint list || echo "uws checkpoint list")' to see available checkpoints${NC}" >&2
         return $INVALID
     fi
 
     # Check if snapshot exists
-    local snapshot_dir=".workflow/checkpoints/snapshots/${checkpoint_id}"
+    local snapshot_dir="${wf}/checkpoints/snapshots/${checkpoint_id}"
     if [[ ! -d "$snapshot_dir" ]]; then
         echo -e "${YELLOW}Warning: Snapshot directory not found for ${checkpoint_id}${NC}" >&2
         echo -e "${YELLOW}Checkpoint may not be fully restorable${NC}" >&2

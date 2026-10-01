@@ -19,6 +19,9 @@ if [[ -z "${RED:-}" ]]; then
     CYAN='\033[0;36m'
     NC='\033[0m'
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; CYAN=''; NC=''; }
 
 # Source config resolution library
 _VMS_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -330,9 +333,9 @@ if changed:
     with open(mcp_json_path, 'w') as f:
         json.dump(data, f, indent=2)
         f.write('\n')
-    print("  \033[0;32m✓\033[0m .mcp.json updated with vector memory servers")
+    print("  ✓ .mcp.json updated with vector memory servers")
 else:
-    print("  \033[0;32m✓\033[0m .mcp.json already configured")
+    print("  ✓ .mcp.json already configured")
 
 PYEOF
 
@@ -392,6 +395,30 @@ uws_vm_verify() {
 }
 
 #######################################
+# Wire the installed server into a project: .mcp.json entries and memory/ in .gitignore.
+# A .mcp.json that UWS creates holds only this machine's absolute paths, so it is
+# gitignored too; an existing one (the project's own servers) is left to the project.
+# Arguments:
+#   $1 - project root directory
+#######################################
+uws_vm_wire_project() {
+    local project_root="${1:?project_root required}" had_mcp=false
+    [[ -f "${project_root}/.mcp.json" ]] && had_mcp=true
+    if ! uws_vm_configure_mcp_json "$project_root"; then
+        echo -e "  ${YELLOW}Warning: could not configure .mcp.json${NC}"
+    fi
+    uws_vm_update_gitignore "$project_root" || true
+    if [[ "$had_mcp" == "false" && -f "${project_root}/.mcp.json" ]]; then
+        if ! grep -qx '.mcp.json' "${project_root}/.gitignore" 2>/dev/null; then
+            printf '# Machine-specific MCP paths (UWS vector memory)\n.mcp.json\n' >> "${project_root}/.gitignore"
+            echo -e "  ${GREEN}✓${NC} Added .mcp.json to .gitignore (it holds this machine's paths)"
+        fi
+    elif [[ "$had_mcp" == "true" ]]; then
+        echo -e "  ${YELLOW}Note:${NC} .mcp.json now names this machine's vector-memory paths; review before committing it"
+    fi
+}
+
+#######################################
 # Orchestrator: install and configure vector memory
 # Exits early if UWS_SKIP_VECTOR_MEMORY=true.
 # Each step wrapped in `if ! step; then warn; return 0; fi` — never fatal.
@@ -426,33 +453,37 @@ setup_vector_memory() {
         return 1
     fi
 
-    # Check if already fully installed
-    if uws_vm_is_installed; then
-        echo -e "  ${GREEN}✓${NC} Vector memory server already installed"
-        # Still configure .mcp.json for this project (may be a new project)
-        if ! uws_vm_configure_mcp_json "$project_root"; then
-            echo -e "  ${YELLOW}Warning: could not configure .mcp.json${NC}"
-        fi
-        uws_vm_update_gitignore "$project_root" || true
-        return 0
-    fi
-
-    # Opt-in only: this is a ~1.5GB download. Interactive runs ask (default No);
-    # non-interactive runs (agents, CI, piped input) install only with UWS_VECTOR_MEMORY=true.
+    # Opt-in only, also when the server is already installed: wiring it into a project
+    # writes .mcp.json with this machine's absolute paths and edits .gitignore, and a
+    # fresh install is a ~1.5GB download. Interactive runs ask (default No);
+    # non-interactive runs (agents, CI, piped input) act only with UWS_VECTOR_MEMORY=true.
+    local installed=false
+    uws_vm_is_installed && installed=true
     if [[ "$skip_prompt" != "skip_prompt" ]] && [[ "${UWS_VECTOR_MEMORY:-}" != "true" ]]; then
         if [[ -t 0 ]]; then
             echo ""
-            echo "  Vector memory provides semantic search across sessions."
-            echo "  Requires ~1.5GB disk space for packages + model download."
-            read -r -p "  Install vector memory server? [y/N]: " vm_confirm || vm_confirm=""
+            if [[ "$installed" == "true" ]]; then
+                echo "  The vector memory server is installed (${UWS_VECTOR_INSTALL_DIR})."
+                read -r -p "  Configure it for this project (.mcp.json)? [y/N]: " vm_confirm || vm_confirm=""
+            else
+                echo "  Vector memory provides semantic search across sessions."
+                echo "  Requires ~1.5GB disk space for packages + model download."
+                read -r -p "  Install vector memory server? [y/N]: " vm_confirm || vm_confirm=""
+            fi
             if [[ ! "${vm_confirm:-}" =~ ^[Yy]$ ]]; then
-                echo -e "  ${YELLOW}Vector memory skipped. Install later: UWS_VECTOR_MEMORY=true uws init${NC}"
+                echo -e "  ${YELLOW}Vector memory skipped. Later: UWS_VECTOR_MEMORY=true uws init${NC}"
                 return 0
             fi
         else
-            echo -e "  ${YELLOW}Vector memory skipped (non-interactive; set UWS_VECTOR_MEMORY=true to install)${NC}"
+            echo -e "  ${YELLOW}Vector memory skipped (non-interactive; set UWS_VECTOR_MEMORY=true to set it up)${NC}"
             return 0
         fi
+    fi
+
+    if [[ "$installed" == "true" ]]; then
+        echo -e "  ${GREEN}✓${NC} Vector memory server already installed"
+        uws_vm_wire_project "$project_root"
+        return 0
     fi
 
     # Clone or update repo
@@ -472,13 +503,8 @@ setup_vector_memory() {
         echo -e "  ${YELLOW}Warning: could not create global knowledge directory${NC}"
     fi
 
-    # Configure .mcp.json for this project
-    if ! uws_vm_configure_mcp_json "$project_root"; then
-        echo -e "  ${YELLOW}Warning: could not configure .mcp.json${NC}"
-    fi
-
-    # Update .gitignore
-    uws_vm_update_gitignore "$project_root" || true
+    # Configure .mcp.json and .gitignore for this project
+    uws_vm_wire_project "$project_root"
 
     # Verify installation
     if uws_vm_verify; then

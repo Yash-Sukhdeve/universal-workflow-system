@@ -68,15 +68,19 @@ source_lib "checksum_utils.sh" || true
 source_lib "completeness_utils.sh" || true
 source_lib "decision_utils.sh" || true
 source_lib "handoff_utils.sh" || true
+source_lib "uws_ui.sh" || true    # uws_hint: how to spell the next command
 
 # Color codes
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly RED='\033[0;31m'
-readonly CYAN='\033[0;36m'
-readonly BOLD='\033[1m'
-readonly NC='\033[0m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; BOLD=''; NC=''; }
 
 # Function to show usage
 show_usage() {
@@ -107,7 +111,7 @@ show_usage() {
 if ! validate_workflow_initialized 2>/dev/null; then
     if [[ ! -d "${WORKFLOW_DIR}" ]]; then
         echo -e "${RED}Error: Workflow not initialized in $(dirname "${WORKFLOW_DIR}")${NC}"
-        echo -e "  Run: ${CYAN}~/Documents/universal-workflow-system/scripts/init_workflow.sh${NC}"
+        echo -e "  Run: ${CYAN}$(uws_hint init)${NC}"
         exit 1
     fi
 fi
@@ -444,9 +448,12 @@ list_checkpoints() {
         fi
     done
     
-    # Show statistics
-    local total=$(wc -l < ${WORKFLOW_DIR}/checkpoints.log)
-    local today=$(grep "$(date +%Y-%m-%d)" ${WORKFLOW_DIR}/checkpoints.log | wc -l)
+    # Show statistics: real checkpoints only. The log also holds comments and
+    # INIT/AUTO/RESTORED/PHASE_TRANSITION/AGENT_DISPATCHED events.
+    local cp_re='^[^#|][^|]*\|[[:space:]]*CP_[0-9]+_[0-9]+[[:space:]]*\|'
+    local total today
+    total=$({ grep -E "$cp_re" "${WORKFLOW_DIR}/checkpoints.log" || true; } | wc -l | tr -d '[:space:]')
+    today=$({ grep -E "$cp_re" "${WORKFLOW_DIR}/checkpoints.log" || true; } | { grep "^$(date +%Y-%m-%d)" || true; } | wc -l | tr -d '[:space:]')
     
     echo -e "${BLUE}─────────────────────────────────────────${NC}"
     echo -e "Total checkpoints: ${GREEN}${total}${NC}"
@@ -490,10 +497,10 @@ restore_checkpoint() {
 
     # Check both old and new snapshot locations for backwards compatibility
     local snapshot_dir=""
-    if [[ -d ".workflow/checkpoints/snapshots/${checkpoint_id}" ]]; then
-        snapshot_dir=".workflow/checkpoints/snapshots/${checkpoint_id}"
-    elif [[ -d ".workflow/snapshots/${checkpoint_id}" ]]; then
-        snapshot_dir=".workflow/snapshots/${checkpoint_id}"
+    if [[ -d "${WORKFLOW_DIR}/checkpoints/snapshots/${checkpoint_id}" ]]; then
+        snapshot_dir="${WORKFLOW_DIR}/checkpoints/snapshots/${checkpoint_id}"
+    elif [[ -d "${WORKFLOW_DIR}/snapshots/${checkpoint_id}" ]]; then
+        snapshot_dir="${WORKFLOW_DIR}/snapshots/${checkpoint_id}"
     else
         echo -e "${RED}Error: Checkpoint ${checkpoint_id} not found${NC}"
         echo -e "${YELLOW}Available checkpoints:${NC}"
@@ -567,7 +574,7 @@ restore_checkpoint() {
     fi
 
     # Backup current state before restoration
-    local backup_dir=".workflow/checkpoints/snapshots/backup_${timestamp//[:-]/}"
+    local backup_dir="${WORKFLOW_DIR}/checkpoints/snapshots/backup_${timestamp//[:-]/}"
     mkdir -p "$backup_dir" || {
         echo -e "${RED}Error: Failed to create backup directory${NC}"
         exit 1
@@ -962,16 +969,18 @@ toggle_auto_checkpoint() {
 setup_auto_checkpoint() {
     echo -e "${CYAN}Setting up auto-checkpoint...${NC}"
     
-    # Create auto-checkpoint script
-    cat > ${WORKFLOW_DIR}/scripts/auto_checkpoint.sh << 'EOF'
+    # Create auto-checkpoint script (calls this install's checkpoint.sh: a user's
+    # project has no scripts/ directory)
+    mkdir -p "${WORKFLOW_DIR}/scripts"
+    cat > ${WORKFLOW_DIR}/scripts/auto_checkpoint.sh << EOF
 #!/bin/bash
 # Auto checkpoint script
 
-cd "$(dirname "$(dirname "$(dirname "${BASH_SOURCE[0]}")")")"
+cd "\$(dirname "\$(dirname "\$(dirname "\${BASH_SOURCE[0]}")")")"
 
 # Check if auto-checkpoint is enabled
 if grep -q "auto_checkpoint: true" .workflow/config.yaml; then
-    ./scripts/checkpoint.sh create "Auto checkpoint"
+    "${SCRIPT_DIR}/checkpoint.sh" create "Auto checkpoint"
 fi
 EOF
     

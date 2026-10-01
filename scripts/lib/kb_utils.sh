@@ -396,6 +396,17 @@ EOF
     printf '%s %s %s %s %s\n' "$t" "$s" "$x" "$c" "$retired"
 }
 
+# _kb_hint <uws arguments...>: the command in the byte-capped session lines below: the
+# plugin's /uws:kb ... (its bin/ comes last on PATH, so a bare `uws` there may be an older
+# install; lib/uws_ui.sh), else `uws kb ...` (a path would not fit the 120-byte budget)
+_kb_hint() {
+    if ! declare -f uws_in_plugin > /dev/null 2>&1; then
+        # shellcheck source=uws_ui.sh
+        source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/uws_ui.sh" 2>/dev/null || { echo "uws $*"; return 0; }
+    fi
+    if uws_in_plugin; then uws_hint "$@"; else echo "uws $*"; fi
+}
+
 # Tier-0 session line (<= 120 bytes), or nothing when the project has no KB.
 # Read-only: safe for the SessionStart hook.
 # Arguments: $1 - project root
@@ -406,8 +417,8 @@ kb_summary_line() {
     read -r t s x c _ <<EOF
 $(kb_counts "$d")
 EOF
-    printf 'KB: %s trusted, %s stale, %s disputed, %s to review. Search: uws kb search <words> (skill uws-kb)\n' \
-        "$t" "$s" "$x" "$c"
+    printf 'KB: %s trusted, %s stale, %s disputed, %s to review. Search: %s (skill uws-kb)\n' \
+        "$t" "$s" "$x" "$c" "$(_kb_hint kb search '<words>')"
 }
 
 # Number of proposals (type proposal, status candidate) waiting for the PI.
@@ -436,9 +447,9 @@ kb_proposals_line() {
     [[ "$n" =~ ^[0-9]+$ ]] || return 0
     (( n > 0 )) || return 0
     if (( n == 1 )); then
-        printf 'KB: 1 meta-learning proposal awaits the PI (uws kb proposals).\n'
+        printf 'KB: 1 meta-learning proposal awaits the PI (%s).\n' "$(_kb_hint kb proposals)"
     else
-        printf 'KB: %s meta-learning proposals await the PI (uws kb proposals).\n' "$n"
+        printf 'KB: %s meta-learning proposals await the PI (%s).\n' "$n" "$(_kb_hint kb proposals)"
     fi
 }
 

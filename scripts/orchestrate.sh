@@ -39,9 +39,15 @@ YAML_UTILS_QUIET=true source "${SCRIPT_DIR}/lib/workflow_routing.sh" 2>/dev/null
 # Meta-learning outcomes (docs/kb/outcomes.tsv): best effort, no-op without a KB
 # shellcheck source=lib/kb_utils.sh
 source "${SCRIPT_DIR}/lib/kb_utils.sh" 2>/dev/null || true
+# uws_hint: how to spell the next command; uws_in_plugin: running as the plugin
+# shellcheck source=lib/uws_ui.sh
+source "${SCRIPT_DIR}/lib/uws_ui.sh"
 
 PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''; }
 
 M=""; PHASE=""; AGENT=""
 METHODOLOGY_OVERRIDE=""; AGENT_OVERRIDE=""
@@ -59,7 +65,7 @@ is_research_agent() {
 
 resolve_context() {
     if [[ ! -f "$STATE_FILE" ]]; then
-        echo -e "${RED}Error: state file not found. Run ./scripts/init_workflow.sh${NC}" >&2
+        echo -e "${RED}Error: state file not found. Run $(uws_hint init)${NC}" >&2
         exit 1
     fi
     local sdlc_phase research_phase
@@ -73,7 +79,7 @@ resolve_context() {
             M="$METHODOLOGY_OVERRIDE"
             if [[ "$M" == "sdlc" ]]; then PHASE="$sdlc_phase"; else PHASE="$research_phase"; fi
             if [[ "$PHASE" == "null" ]]; then
-                echo -e "${RED}Error: no active ${M} phase. Start it first: ${CYAN}./scripts/${M}.sh start${NC}" >&2
+                echo -e "${RED}Error: no active ${M} phase. Start it first: ${CYAN}$(uws_hint "${M}" start)${NC}" >&2
                 exit 1
             fi
             ;;
@@ -87,7 +93,7 @@ resolve_context() {
                 M="research"; PHASE="$research_phase"
             else
                 echo -e "${RED}Error: no active phase. Start one first:${NC}" >&2
-                echo -e "  ${CYAN}./scripts/sdlc.sh start${NC}   or   ${CYAN}./scripts/research.sh start${NC}" >&2
+                echo -e "  ${CYAN}$(uws_hint sdlc start)${NC}   or   ${CYAN}$(uws_hint research start)${NC}" >&2
                 exit 1
             fi
             ;;
@@ -138,6 +144,31 @@ kb_brief_section() {
     printf '```text\n%s\n```\n' "$lines"
 }
 
+# The subagent Claude Code runs: the project's .claude/agents/uws-<role>.md, or the
+# plugin's own agent (named uws:uws-<role>) when this copy is the plugin.
+subagent_available() {
+    [[ -f "${PROJECT_ROOT}/.claude/agents/uws-${1}.md" ]] && return 0
+    uws_in_plugin && [[ -f "${SCRIPT_DIR}/../agents/uws-${1}.md" ]]
+}
+
+subagent_name() {
+    if [[ ! -f "${PROJECT_ROOT}/.claude/agents/uws-${1}.md" ]] && uws_in_plugin; then
+        echo "uws:uws-${1}"
+    else
+        echo "uws-${1}"
+    fi
+}
+
+# Without the plugin nothing puts the subagent files in a project (uws init does not):
+# say so, and how to get them, instead of naming a subagent Claude Code cannot find.
+warn_missing_subagent() {
+    local src
+    src="$(cd "${SCRIPT_DIR}/.." && pwd)/.claude/agents"
+    echo -e "${YELLOW}warning: no subagent uws-${1}: .claude/agents/uws-${1}.md is not in this project.${NC}" >&2
+    echo -e "  Install the Claude Code plugin (/plugin install uws@uws), which ships the subagents, or copy them in:" >&2
+    echo -e "  ${CYAN}mkdir -p .claude/agents && cp '${src}'/uws-*.md .claude/agents/${NC}" >&2
+}
+
 cmd_status() {
     resolve_context
     local uws; uws=$(uws_phase_for_methodology "$M" "$PHASE" 2>/dev/null || echo "phase_1_planning")
@@ -145,13 +176,18 @@ cmd_status() {
     echo -e "  Methodology: ${GREEN}${M}${NC}"
     echo -e "  Phase:       ${GREEN}${PHASE}${NC}  ${CYAN}(UWS: ${uws})${NC}"
     echo -e "  Agent:       ${GREEN}${AGENT}${NC}  ->  .claude/agents/uws-${AGENT}.md"
+    if subagent_available "$AGENT"; then
+        echo -e "  Subagent:    ${GREEN}$(subagent_name "$AGENT")${NC}"
+    else
+        warn_missing_subagent "$AGENT"
+    fi
 }
 
 cmd_dispatch() {
     local task="${1:-}"
     local target="${2:-}"
     if [[ -z "$task" ]]; then
-        echo -e "${RED}Usage: $0 dispatch \"<task>\" [target-rel-path]${NC}" >&2
+        echo -e "${RED}Usage: $(uws_hint orchestrate dispatch '"<task>"') [target-rel-path]${NC}" >&2
         exit 1
     fi
     resolve_context
@@ -169,17 +205,19 @@ cmd_dispatch() {
             echo -e "${YELLOW}warn: could not record active agent; continuing${NC}" >&2
     fi
 
-    local goal deliv contract
+    local goal deliv contract cli
     goal=$(yaml_get "$STATE_FILE" "goal" 2>/dev/null || echo ""); [[ "$goal" == "null" ]] && goal=""
+    # Subagents run commands through Bash, where a bare `uws` may be another install
+    cli="$(uws_cli_path)"
     deliv=$(bash "${SCRIPT_DIR}/${M}.sh" deliverables "$PHASE" 2>/dev/null || true)
     if [[ "$M" == "research" ]] && research_ledger_active; then
         deliv="${deliv}
-- Evidence gate passes: \`uws research check gate ${PHASE}\` (research.sh next runs it)"
+- Evidence gate passes: \`${cli} research check gate ${PHASE}\` (research next runs it)"
     fi
     if is_research_agent "$AGENT"; then
         contract="Follow \`.claude/agents/uws-${AGENT}.md\` (research output contract). Every claim you author is a
 C-ID row appended to \`research/ledger/claims.jsonl\` with status \`unverified\`; never verify a claim you authored.
-BibTeX only through \`uws research bib fetch\`. Proposed manuscript edits go under \`workspace/${AGENT}/\`.
+BibTeX only through \`${cli} research bib fetch\`. Proposed manuscript edits go under \`workspace/${AGENT}/\`.
 End your report with \"Open questions for the orchestrator\". STOP at your Quality Gate —
 do NOT advance the workflow or mark deliverables; the lead + the PI own that."
     else
@@ -219,8 +257,13 @@ EOF
     # Machine-readable line for the main session / uws-orchestrate skill.
     echo "DISPATCH: agent=${AGENT} subagent=.claude/agents/uws-${AGENT}.md phase=${M}:${PHASE} brief=workspace/${AGENT}/TASK.md out=workspace/${AGENT}/${target}"
     echo ""
-    echo -e "${YELLOW}Next:${NC} run the ${CYAN}uws-${AGENT}${NC} subagent on the brief, then:"
-    echo -e "  ${CYAN}$0 collect \"${AGENT}: ${PHASE} artifact\"${NC}   (stages it for review)"
+    if subagent_available "$AGENT"; then
+        echo -e "${YELLOW}Next:${NC} run the ${CYAN}$(subagent_name "$AGENT")${NC} subagent on the brief, then:"
+    else
+        warn_missing_subagent "$AGENT"
+        echo -e "${YELLOW}Next:${NC} once the subagent exists, run it on the brief, then:"
+    fi
+    echo -e "  ${CYAN}$(uws_hint orchestrate collect "\"${AGENT}: ${PHASE} artifact\"")${NC}   (stages it for review)"
 }
 
 cmd_collect() {
@@ -256,13 +299,13 @@ cmd_collect() {
     fi
     echo ""
     echo -e "${YELLOW}Human gate:${NC} review the change request, then approve with"
-    echo -e "  ${CYAN}./scripts/review.sh approve <CR-ID>${NC}"
+    echo -e "  ${CYAN}$(uws_hint review approve '<CR-ID>')${NC}"
     echo -e "After approval, mark deliverables and advance:"
-    echo -e "  ${CYAN}./scripts/${M:-sdlc}.sh check <n>${NC}  then  ${CYAN}./scripts/${M:-sdlc}.sh next${NC}"
+    echo -e "  ${CYAN}$(uws_hint "${M:-sdlc}" check '<n>')${NC}  then  ${CYAN}$(uws_hint "${M:-sdlc}" next)${NC}"
 }
 
 usage() {
-    echo "Usage: $0 {dispatch \"<task>\" [target] | collect \"<summary>\" [ticket] | status}"
+    echo "Usage: $(uws_hint orchestrate) {dispatch \"<task>\" [target] | collect \"<summary>\" [ticket] | status}"
     echo "       [--methodology sdlc|research] [--agent <role>]"
 }
 
@@ -305,7 +348,7 @@ case "$COMMAND" in
         ;;
     *)
         echo -e "${RED}Unknown command: ${COMMAND}${NC}" >&2
-        echo "Run: $0 help"
+        echo "Run: $(uws_hint orchestrate help)"
         exit 1
         ;;
 esac

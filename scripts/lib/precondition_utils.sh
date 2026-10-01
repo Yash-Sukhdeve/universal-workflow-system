@@ -27,6 +27,9 @@ if [[ -z "${RED:-}" ]]; then
     GREEN='\033[0;32m'
     NC='\033[0m'
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; NC=''; }
 
 # Precondition tracking
 declare -a PRECONDITION_FAILURES=()
@@ -87,7 +90,7 @@ require_workflow_initialized() {
     if [[ ! -d ".workflow" ]]; then
         precondition_add_failure "Workflow not initialized: .workflow directory missing"
         echo -e "${RED}Error: Workflow not initialized${NC}" >&2
-        echo -e "${YELLOW}Run './scripts/init_workflow.sh' to initialize${NC}" >&2
+        echo -e "${YELLOW}Run '$(declare -f uws_hint >/dev/null 2>&1 && uws_hint init || echo "uws init")' to initialize${NC}" >&2
         return 1
     fi
 
@@ -123,21 +126,22 @@ require_checkpoint_exists() {
         return 1
     fi
 
-    # Check log entry
-    if [[ ! -f ".workflow/checkpoints.log" ]]; then
+    # Check log entry. Lines are "TIMESTAMP | CP_ID | DESCRIPTION" (spaces around the bars)
+    local wf="${WORKFLOW_DIR:-.workflow}"
+    if [[ ! -f "${wf}/checkpoints.log" ]]; then
         precondition_add_failure "Checkpoint log missing"
         echo -e "${RED}Error: No checkpoints exist${NC}" >&2
         return 1
     fi
 
-    if ! grep -q "|${checkpoint_id}|" ".workflow/checkpoints.log" 2>/dev/null; then
+    if ! grep -qE "^[^|]*\|[[:space:]]*${checkpoint_id}[[:space:]]*\|" "${wf}/checkpoints.log" 2>/dev/null; then
         precondition_add_failure "Checkpoint not found in log: ${checkpoint_id}"
         echo -e "${RED}Error: Checkpoint ${checkpoint_id} not found${NC}" >&2
         return 1
     fi
 
     # Check snapshot directory
-    local snapshot_dir=".workflow/checkpoints/snapshots/${checkpoint_id}"
+    local snapshot_dir="${wf}/checkpoints/snapshots/${checkpoint_id}"
     if [[ ! -d "$snapshot_dir" ]]; then
         precondition_add_failure "Checkpoint snapshot missing: ${checkpoint_id}"
         echo -e "${YELLOW}Warning: Snapshot directory missing for ${checkpoint_id}${NC}" >&2

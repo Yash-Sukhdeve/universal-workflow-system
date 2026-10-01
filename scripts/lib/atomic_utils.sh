@@ -16,6 +16,9 @@ if [[ -z "${RED:-}" ]]; then
     BLUE='\033[0;34m'
     NC='\033[0m' # No Color
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''; }
 
 # Atomic operation tracking
 declare -a ATOMIC_BACKUPS=()

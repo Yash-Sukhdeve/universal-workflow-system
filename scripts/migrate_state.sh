@@ -30,6 +30,9 @@ YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/yaml_utils.sh" 2>/dev/null || tr
 YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/workflow_routing.sh" 2>/dev/null || true
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; CYAN=''; NC=''; }
 
 CLEAN=false
 STATE=""

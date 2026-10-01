@@ -2,15 +2,18 @@
 #
 # Universal Workflow System - SDLC Core Script (Production-Hardened)
 #
-# Usage: ./scripts/sdlc.sh [action] [details]
+# Usage: uws sdlc [action] [details]   (or scripts/sdlc.sh)
 #
 # Actions:
-#   status  - Show current SDLC phase
-#   start   - Begin SDLC cycle at requirements phase
-#   next    - Advance to next phase
-#   goto    - Jump to a specific phase (e.g., goto requirements)
-#   fail    - Report failure in current phase (triggers regression)
-#   reset   - Reset SDLC state
+#   status        - Show current SDLC phase
+#   start         - Begin SDLC cycle at requirements phase
+#   next          - Advance to next phase
+#   goto          - Jump to a specific phase (e.g., goto requirements)
+#   fail          - Report failure in current phase (triggers regression)
+#   reset         - Reset SDLC state
+#   goal          - Declare the project goal (turns on deliverable gating)
+#   check <n>     - Tick deliverable <n> of the current phase
+#   deliverables  - List a phase's deliverables
 #
 # RWF Compliance: R3 (State Safety), R4 (Error-Free)
 
@@ -27,12 +30,15 @@ source "${SCRIPT_LIB_DIR}/resolve_project.sh"
 readonly SDLC_PHASES=("requirements" "design" "implementation" "verification" "deployment" "maintenance")
 
 # Color codes
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly RED='\033[0;31m'
-readonly CYAN='\033[0;36m'
-readonly BOLD='\033[1m'
-readonly NC='\033[0m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''; }
 
 # Source utility libraries
 source_lib() {
@@ -53,6 +59,12 @@ source_lib "validation_utils.sh" || true
 source_lib "logging_utils.sh" || true
 source_lib "workflow_routing.sh" || true
 source_lib "kb_utils.sh" || true   # meta-learning outcomes (docs/kb/outcomes.tsv)
+source_lib "uws_ui.sh" || true     # uws_hint: how to spell the next command
+
+# hint <uws arguments...>: the command to type, e.g. `uws sdlc next` or `/uws:sdlc next`
+hint() {
+    if declare -f uws_hint > /dev/null 2>&1; then uws_hint "$@"; else echo "uws $*"; fi
+}
 
 #######################################
 # Validate workflow is initialized
@@ -60,7 +72,7 @@ source_lib "kb_utils.sh" || true   # meta-learning outcomes (docs/kb/outcomes.ts
 validate_workflow() {
     if [[ ! -d "$WORKFLOW_DIR" ]]; then
         echo -e "${RED}Error: Workflow not initialized.${NC}"
-        echo -e "Run: ${CYAN}./scripts/init_workflow.sh${NC}"
+        echo -e "Run: ${CYAN}$(hint init)${NC}"
         exit 1
     fi
 
@@ -284,13 +296,13 @@ _deliverable_gate() {
 
     if (( remaining > 0 )); then
         echo -e "${RED}✗ Blocked: ${remaining} unmet deliverable(s) in '${phase}'.${NC}" >&2
-        echo -e "${CYAN}Deliverables (mark done with: $0 check <n>):${NC}"
+        echo -e "${CYAN}Deliverables (mark done with: $(hint sdlc check '<n>')):${NC}"
         local i=1 line
         while IFS= read -r line; do
             echo -e "   [${i}] ${line#- }"
             i=$(( i + 1 ))
         done < <(get_phase_deliverables "$phase")
-        echo -e "${YELLOW}Override with:${NC} $0 next --force"
+        echo -e "${YELLOW}Override with:${NC} $(hint sdlc next --force)"
         return 1
     fi
     return 0
@@ -339,7 +351,7 @@ show_status() {
     if [[ "$current_phase" == "none" ]]; then
         echo -e "  Phase: ${YELLOW}Not started${NC}"
         echo -e ""
-        echo -e "  Run ${CYAN}./scripts/sdlc.sh start${NC} to begin SDLC cycle."
+        echo -e "  Run ${CYAN}$(hint sdlc start)${NC} to begin SDLC cycle."
     else
         echo -e "  Phase: ${GREEN}${current_phase}${NC}"
         echo -e ""
@@ -362,7 +374,7 @@ show_status() {
         echo -e ""
         local next_phase
         if next_phase=$(get_next_phase "$current_phase"); then
-            echo -e "  Next: ${CYAN}./scripts/sdlc.sh next${NC} → ${next_phase}"
+            echo -e "  Next: ${CYAN}$(hint sdlc next)${NC} → ${next_phase}"
         else
             echo -e "  ${GREEN}SDLC cycle complete!${NC}"
         fi
@@ -385,8 +397,8 @@ main() {
     if declare -f is_methodology_active > /dev/null 2>&1; then
         if ! is_methodology_active "sdlc"; then
             echo -e "${YELLOW}⚠  SDLC methodology is not the active workflow for this project type.${NC}"
-            echo -e "  Use ${CYAN}./scripts/research.sh${NC} for research workflow,"
-            echo -e "  or run ${CYAN}./scripts/detect_and_configure.sh${NC} to reconfigure."
+            echo -e "  Use ${CYAN}$(hint research status)${NC} for the research workflow,"
+            echo -e "  or run ${CYAN}$(hint detect)${NC} to reconfigure."
             echo ""
         fi
     fi
@@ -402,7 +414,7 @@ main() {
 
             if [[ "$current_phase" != "none" ]]; then
                 echo -e "${YELLOW}SDLC already in progress at phase: ${current_phase}${NC}"
-                echo -e "Use ${CYAN}./scripts/sdlc.sh reset${NC} to restart."
+                echo -e "Use ${CYAN}$(hint sdlc reset)${NC} to restart."
                 exit 1
             fi
 
@@ -412,7 +424,7 @@ main() {
             echo -e "Next steps:"
             echo -e "  1. Define user stories and acceptance criteria"
             echo -e "  2. Document project scope and constraints"
-            echo -e "  3. Run ${CYAN}./scripts/sdlc.sh next${NC} when complete"
+            echo -e "  3. Run ${CYAN}$(hint sdlc next)${NC} when complete"
             ;;
 
         next)
@@ -421,7 +433,7 @@ main() {
 
             if [[ "$current_phase" == "none" ]]; then
                 echo -e "${RED}Error: SDLC not started.${NC}"
-                echo -e "Run ${CYAN}./scripts/sdlc.sh start${NC} first."
+                echo -e "Run ${CYAN}$(hint sdlc start)${NC} first."
                 exit 1
             fi
 
@@ -454,7 +466,7 @@ main() {
                     local phase_agent
                     phase_agent=$(get_agent_for_phase "sdlc" "$next_phase")
                     if [[ -n "$phase_agent" ]]; then
-                        echo -e "  ${CYAN}🤖 Phase agent: uws-${phase_agent} (dispatch: uws orchestrate dispatch \"<task>\")${NC}"
+                        echo -e "  ${CYAN}🤖 Phase agent: uws-${phase_agent} (dispatch: $(hint orchestrate dispatch '"<task>"'))${NC}"
                     fi
                 fi
 
@@ -481,13 +493,13 @@ main() {
                         echo -e ""
                         echo -e "  • Run full test suite"
                         echo -e "  • Perform code review"
-                        echo -e "  • If tests fail: ${CYAN}./scripts/sdlc.sh fail \"reason\"${NC}"
+                        echo -e "  • If tests fail: ${CYAN}$(hint sdlc fail '"<reason>"')${NC}"
                         ;;
                     deployment)
                         echo -e ""
                         echo -e "  • Deploy to staging environment"
                         echo -e "  • Run integration tests"
-                        echo -e "  • If deployment fails: ${CYAN}./scripts/sdlc.sh fail \"reason\"${NC}"
+                        echo -e "  • If deployment fails: ${CYAN}$(hint sdlc fail '"<reason>"')${NC}"
                         ;;
                     maintenance)
                         echo -e ""
@@ -508,7 +520,7 @@ main() {
 
             if [[ -z "$target_phase" ]]; then
                 echo -e "${RED}Error: Specify target phase.${NC}"
-                echo -e "Usage: ${CYAN}./scripts/sdlc.sh goto <phase>${NC}"
+                echo -e "Usage: ${CYAN}$(hint sdlc goto '<phase>')${NC}"
                 echo -e "Phases: ${CYAN}${SDLC_PHASES[*]}${NC}"
                 exit 1
             fi
@@ -518,7 +530,7 @@ main() {
 
             if [[ "$current_phase" == "none" ]]; then
                 echo -e "${RED}Error: SDLC not started.${NC}"
-                echo -e "Run ${CYAN}./scripts/sdlc.sh start${NC} first."
+                echo -e "Run ${CYAN}$(hint sdlc start)${NC} first."
                 exit 1
             fi
 
@@ -567,7 +579,7 @@ main() {
                 set_phase "$regression_phase"
                 echo -e "${CYAN}🔄 Reverting to ${regression_phase} phase${NC}"
                 echo -e ""
-                echo -e "Address the failure and run ${CYAN}./scripts/sdlc.sh next${NC} when resolved."
+                echo -e "Address the failure and run ${CYAN}$(hint sdlc next)${NC} when resolved."
             else
                 echo -e "${YELLOW}No regression available for ${current_phase} phase.${NC}"
                 echo -e "Resolve the blocking issue before proceeding."
@@ -591,7 +603,7 @@ main() {
             fi
 
             echo -e "${GREEN}SDLC state reset.${NC}"
-            echo -e "Run ${CYAN}./scripts/sdlc.sh start${NC} to begin a new cycle."
+            echo -e "Run ${CYAN}$(hint sdlc start)${NC} to begin a new cycle."
             ;;
 
         goal)
@@ -600,18 +612,20 @@ main() {
                 _g=$(yaml_get "$STATE_FILE" "goal" 2>/dev/null || echo "")
                 [[ "$_g" == "null" ]] && _g=""
                 if [[ -z "$_g" ]]; then
-                    echo -e "${YELLOW}No goal declared.${NC} Set one with: ${CYAN}$0 goal \"<objective>\"${NC}"
+                    echo -e "${YELLOW}No goal declared.${NC} Set one with: ${CYAN}$(hint sdlc goal '"<objective>"')${NC}"
                 else
                     echo -e "${CYAN}Goal:${NC} ${_g}"
                 fi
             else
                 yaml_set "$STATE_FILE" "goal" "$details" >/dev/null 2>&1 || true
+                declare -f touch_last_updated > /dev/null 2>&1 && touch_last_updated "$STATE_FILE"
                 # Keep the handoff's managed summary (which shows the goal) current
                 if declare -f refresh_handoff_header > /dev/null 2>&1; then
                     refresh_handoff_header "" "" "" "${WORKFLOW_DIR}/handoff.md"
                 fi
                 echo -e "${GREEN}✓ Goal declared:${NC} ${details}"
-                echo -e "  Deliverable gating is now ${GREEN}active${NC} — use ${CYAN}$0 check <n>${NC} then ${CYAN}$0 next${NC}."
+                echo -e "  Deliverable gating is now ${GREEN}active${NC}: ${CYAN}$(hint sdlc next)${NC} is blocked until each deliverable of the phase"
+                echo -e "  is ticked with ${CYAN}$(hint sdlc check '<n>')${NC} (list: ${CYAN}$(hint sdlc deliverables)${NC}; ${CYAN}--force${NC} overrides)."
             fi
             ;;
 
@@ -625,7 +639,7 @@ main() {
             local _total
             _total=$(get_phase_deliverables "$current_phase" | wc -l | tr -d '[:space:]')
             if [[ ! "$details" =~ ^[0-9]+$ ]]; then
-                echo -e "${RED}Usage: $0 check <deliverable-number>${NC}"
+                echo -e "${RED}Usage: $(hint sdlc check '<deliverable-number>')${NC}"
                 echo -e "${CYAN}Deliverables for ${current_phase}:${NC}"
                 local _i=1 _l
                 while IFS= read -r _l; do echo -e "   [${_i}] ${_l#- }"; _i=$(( _i + 1 )); done < <(get_phase_deliverables "$current_phase")
@@ -643,7 +657,7 @@ main() {
             local _rem=0
             declare -f deliverables_remaining > /dev/null 2>&1 && _rem=$(deliverables_remaining "sdlc" "$current_phase" 2>/dev/null || echo 0)
             if (( _rem == 0 )); then
-                echo -e "  ${GREEN}All deliverables met for ${current_phase}.${NC} Advance with ${CYAN}$0 next${NC}."
+                echo -e "  ${GREEN}All deliverables met for ${current_phase}.${NC} Advance with ${CYAN}$(hint sdlc next)${NC}."
             else
                 echo -e "  ${YELLOW}${_rem} remaining.${NC}"
             fi
@@ -657,29 +671,34 @@ main() {
             ;;
 
         help|--help|-h)
-            echo "Usage: ./scripts/sdlc.sh [action] [details]"
+            echo "Usage: $(hint sdlc '<action>') [details]"
             echo ""
             echo "Actions:"
-            echo "  status        Show current SDLC phase (default)"
-            echo "  start         Begin SDLC at requirements phase"
-            echo "  next          Advance to next phase (shows exit criteria)"
-            echo "  goto <phase>  Jump to a specific phase"
-            echo "  fail          Report failure (optional: details message)"
-            echo "  reset         Reset SDLC state to start over"
+            echo "  status              Show current SDLC phase (default)"
+            echo "  start               Begin SDLC at requirements phase"
+            echo "  next [--force]      Advance to next phase (shows exit criteria)"
+            echo "  goto <phase> [--force]  Jump to a specific phase"
+            echo "  fail \"<reason>\"     Report failure (regresses verification and later phases)"
+            echo "  reset               Reset SDLC state to start over"
+            echo "  goal \"<objective>\"  Declare the project goal; turns on deliverable gating"
+            echo "  deliverables [phase]  List a phase's deliverables (numbered as check uses them)"
+            echo "  check <n>           Tick deliverable <n> of the current phase"
             echo ""
             echo "SDLC Phases:"
             echo "  requirements → design → implementation → verification → deployment → maintenance"
             echo ""
+            echo "Deliverable gating: once a goal is declared, next and goto are refused until every"
+            echo "deliverable of the current phase is ticked with check <n>; --force overrides."
+            echo ""
             echo "Failure Handling:"
             echo "  verification fails → regresses to implementation"
             echo "  deployment fails   → regresses to verification"
-            echo ""
-            echo "Each phase has defined exit criteria (deliverables) shown on transition."
+            echo "  maintenance fails  → regresses to deployment"
             ;;
 
         *)
             echo -e "${RED}Error: Unknown action: ${action}${NC}"
-            echo "Run ${CYAN}./scripts/sdlc.sh help${NC} for usage."
+            echo -e "Run ${CYAN}$(hint sdlc help)${NC} for usage."
             exit 1
             ;;
     esac

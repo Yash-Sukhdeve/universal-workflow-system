@@ -4,7 +4,10 @@ UWS Dashboard Server with Real-Time WebSocket Support
 Provides REST API and WebSocket connections for live agent monitoring
 """
 
+import hmac
 import http.server
+import inspect
+import secrets
 import socketserver
 import json
 import subprocess
@@ -12,9 +15,7 @@ import os
 import glob
 import threading
 import time
-import asyncio
 from datetime import datetime
-from pathlib import Path
 
 # Try to import websockets, fall back to polling-only mode if not available
 try:
@@ -36,6 +37,18 @@ WS_PORT = int(os.environ.get("UWS_DASHBOARD_WS_PORT", str(PORT + 1)))
 DIRECTORY = os.path.join(UWS_HOME, "dashboard")
 SCRIPTS_DIR = os.path.join(UWS_HOME, "scripts")
 PROJECT_ROOT = os.path.abspath(os.environ.get("UWS_PROJECT_ROOT") or UWS_HOME)
+
+# Request checks. The server listens on loopback only, but any web page open in the
+# user's browser can still send requests to it, so:
+#   - no CORS headers: other origins cannot read the API's responses;
+#   - the Host header must name this server (a DNS-rebinding page names its own host);
+#   - a POST must come from this origin, carry the per-run token that only the page
+#     served from here can read (a <meta> tag in index.html), and be
+#     application/json (which a cross-site form or a no-cors fetch cannot send).
+TOKEN = secrets.token_urlsafe(32)
+ALLOWED_HOSTS = {"localhost:%d" % PORT, "127.0.0.1:%d" % PORT}
+ALLOWED_ORIGINS = {"http://" + h for h in ALLOWED_HOSTS}
+TOKEN_META = '<meta name="uws-token" content="">'
 
 # WebSocket clients
 ws_clients = set()
@@ -171,8 +184,34 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         # Suppress default logging for cleaner output
         pass
 
+    def host_ok(self):
+        if self.headers.get('Host', '') in ALLOWED_HOSTS:
+            return True
+        self.send_json_response({"error": "unknown Host"}, 403)
+        return False
+
+    def serve_index(self):
+        """index.html with this run's token in its uws-token <meta> tag."""
+        try:
+            with open(os.path.join(DIRECTORY, "index.html"), encoding="utf-8") as f:
+                html = f.read()
+        except OSError:
+            self.send_error(404)
+            return
+        body = html.replace(TOKEN_META, '<meta name="uws-token" content="%s">' % TOKEN).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
-        if self.path == '/api/data':
+        if not self.host_ok():
+            return
+        if self.path in ('/', '/index.html'):
+            self.serve_index()
+        elif self.path == '/api/data':
             self.send_json_response(self.get_dashboard_data())
         elif self.path == '/api/sessions':
             self.send_json_response({"sessions": get_sessions()})
@@ -190,7 +229,23 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
-        content_length = int(self.headers.get('Content-Length', 0))
+        if not self.host_ok():
+            return
+        origin = self.headers.get('Origin')
+        if origin is not None and origin not in ALLOWED_ORIGINS:
+            self.send_json_response({"error": "cross-origin request refused"}, 403)
+            return
+        if not hmac.compare_digest(self.headers.get('X-UWS-Token', ''), TOKEN):
+            self.send_json_response({"error": "missing or wrong X-UWS-Token"}, 403)
+            return
+        ctype = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
+        if ctype != 'application/json':
+            self.send_json_response({"error": "Content-Type must be application/json"}, 415)
+            return
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except ValueError:
+            content_length = 0
         post_data = self.rfile.read(content_length)
 
         try:
@@ -237,17 +292,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_json_response(response)
 
     def send_json_response(self, data, status=200):
+        # No Access-Control-Allow-Origin: only the page served from here reads the API
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        # CORS preflight: never granted (no Access-Control-Allow-* headers)
+        self.send_response(204)
         self.end_headers()
 
     def run_script(self, script, *args):
@@ -421,7 +474,11 @@ def run_websocket_server():
         return
 
     try:
-        with websockets.sync.server.serve(handle_websocket, "localhost", WS_PORT) as server:
+        kwargs = {}
+        # Only the dashboard page may connect (browsers send its Origin)
+        if "origins" in inspect.signature(websockets.sync.server.serve).parameters:
+            kwargs["origins"] = sorted(ALLOWED_ORIGINS)
+        with websockets.sync.server.serve(handle_websocket, "localhost", WS_PORT, **kwargs) as server:
             print(f"WebSocket server running on ws://localhost:{WS_PORT}")
             server.serve_forever()
     except Exception as e:
@@ -449,7 +506,7 @@ def main():
         print("  WebSocket:       Not available (install websockets)")
 
     print("=" * 60)
-    print("  Press Ctrl+C to stop")
+    print("  Runs in the foreground: press Ctrl+C to stop")
     print("=" * 60)
 
     # Start HTTP server

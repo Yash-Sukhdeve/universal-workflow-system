@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # UWS (Universal Workflow System) - Claude Code Integration Installer
-# Version 1.3.0
+# Version 1.2.0 (the UWS release; VERSION at the repository root holds it)
 #
 # One-liner installation:
 #   curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
@@ -10,7 +10,7 @@
 # Or clone and run:
 #   ./install.sh [--yes]
 #
-# Fixes in 1.3.0:
+# Fixes since the installers of February 2026:
 #   - Slash commands written as .md files (Claude Code ignores files without .md)
 #   - Hooks written in the nested settings.json format Claude Code loads
 #   - Prompts read from /dev/tty so `curl | bash` works; --yes for unattended installs
@@ -53,7 +53,7 @@ ask() {
 # Portable ISO-8601 timestamp (BSD date has no -I on older macOS)
 iso_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# Colors
+# Colors (none unless stdout is a terminal and NO_COLOR / TERM=dumb are unset)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -61,9 +61,10 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; BOLD=''; NC=''; }
 
 # Configuration
-UWS_VERSION="1.3.0"
+UWS_VERSION="1.2.0"   # the UWS release (VERSION); tests check that they agree
 PROJECT_DIR="${PWD}"
 UWS_DIR="${PROJECT_DIR}/.uws"
 WORKFLOW_DIR="${PROJECT_DIR}/.workflow"
@@ -157,8 +158,17 @@ if [[ -f "$WORKFLOW_DIR/state.yaml" ]]; then
     [[ -z "$PROJECT_TYPE" ]] && PROJECT_TYPE=$(grep -E "^  type:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || true)
     PROJECT_TYPE="${PROJECT_TYPE:-unknown}"
 
+    # The methodology phase is what /uws-sdlc and /uws-research move; current_phase is
+    # the coarse UWS phase (this installer's scripts do not advance it)
+    SDLC_PHASE=$(grep -E "^sdlc_phase:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || true)
+    RESEARCH_PHASE=$(grep -E "^research_phase:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || true)
+    GOAL=$(grep -E "^goal:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | sed -e 's/^goal:[[:space:]]*//' -e 's/^"//' -e 's/"$//' | tr -d '\\' || true)
+
     CONTEXT+="## Workflow State\n"
-    CONTEXT+="- Phase: ${PHASE}\n"
+    [[ -n "$GOAL" ]] && CONTEXT+="- Goal: ${GOAL}\n"
+    [[ -n "$SDLC_PHASE" ]] && CONTEXT+="- SDLC phase: ${SDLC_PHASE}\n"
+    [[ -n "$RESEARCH_PHASE" ]] && CONTEXT+="- Research phase: ${RESEARCH_PHASE}\n"
+    CONTEXT+="- UWS phase: ${PHASE}\n"
     CONTEXT+="- Checkpoint: ${CHECKPOINT}\n"
     CONTEXT+="- Project Type: ${PROJECT_TYPE}\n\n"
 fi
@@ -242,8 +252,8 @@ chmod +x "${UWS_DIR}/hooks/pre_compact.sh"
 
 echo -e "  ${GREEN}✓${NC} Hooks created (git-guarded)"
 
-# Clean up stale files from earlier versions: v1.1.0 commands that no longer exist,
-# and the extensionless command files v1.2.0 wrote (Claude Code never loaded them).
+# Clean up stale files from earlier installers: commands that no longer exist, and the
+# extensionless command files the February 2026 installer wrote (Claude Code never loaded them).
 STALE_COMMANDS=("uws-pm" "uws-spiral" "uws-submit" "uws-review"
                 "uws" "uws-status" "uws-checkpoint" "uws-recover" "uws-handoff" "uws-sdlc" "uws-research")
 for cmd in "${STALE_COMMANDS[@]}"; do
@@ -262,14 +272,14 @@ cat > "${UWS_DIR}/scripts/common.sh" << 'SCRIPT_EOF'
 #!/bin/bash
 # UWS Common Utilities - Shared by all workflow scripts
 
-# Colors
-readonly UWS_GREEN='\033[0;32m'
-readonly UWS_YELLOW='\033[1;33m'
-readonly UWS_RED='\033[0;31m'
-readonly UWS_CYAN='\033[0;36m'
-readonly UWS_BLUE='\033[0;34m'
-readonly UWS_BOLD='\033[1m'
-readonly UWS_NC='\033[0m'
+# Colors: none unless stdout is a terminal (slash commands capture the output for
+# Claude, which must not get raw ANSI escapes)
+if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
+    readonly UWS_GREEN='\033[0;32m' UWS_YELLOW='\033[1;33m' UWS_RED='\033[0;31m' \
+        UWS_CYAN='\033[0;36m' UWS_BLUE='\033[0;34m' UWS_BOLD='\033[1m' UWS_NC='\033[0m'
+else
+    readonly UWS_GREEN='' UWS_YELLOW='' UWS_RED='' UWS_CYAN='' UWS_BLUE='' UWS_BOLD='' UWS_NC=''
+fi
 
 # Resolve workflow directory
 _uws_resolve_workflow_dir() {
@@ -531,6 +541,11 @@ case "$ACTION" in
     goto)   cmd_goto "$@" ;;
     fail)   cmd_fail "$*" ;;
     reset)  cmd_reset ;;
+    goal|check|deliverables)
+        echo -e "${UWS_YELLOW}'${ACTION}' (goal-driven deliverable gating) is not part of the per-project install.${UWS_NC}"
+        echo "It comes with the Claude Code plugin (/uws:sdlc ${ACTION}) and the uws CLI (uws sdlc ${ACTION})."
+        exit 2
+        ;;
     *)
         echo -e "${UWS_RED}Unknown action: ${ACTION}${UWS_NC}"
         echo "Usage: sdlc.sh {status|start|next|goto|fail|reset}"
@@ -730,6 +745,11 @@ case "$ACTION" in
     goto)   cmd_goto "$@" ;;
     reject) cmd_reject "$*" ;;
     reset)  cmd_reset ;;
+    goal|check|deliverables)
+        echo -e "${UWS_YELLOW}'${ACTION}' (goal-driven deliverable gating and the research checks) is not part of the per-project install.${UWS_NC}"
+        echo "It comes with the Claude Code plugin (/uws:research ${ACTION}) and the uws CLI (uws research ${ACTION})."
+        exit 2
+        ;;
     *)
         echo -e "${UWS_RED}Unknown action: ${ACTION}${UWS_NC}"
         echo "Usage: research.sh {status|start|next|goto|reject|reset}"
@@ -1024,7 +1044,7 @@ if [[ ! -f "${WORKFLOW_DIR}/state.yaml" ]]; then
 
 # Current workflow position
 current_phase: "phase_1_planning"
-current_checkpoint: "CP_INIT"
+current_checkpoint: "CP_1_001"
 
 # Project metadata
 project:
@@ -1174,9 +1194,9 @@ if [[ -f "$SETTINGS_FILE" ]]; then
         TEMP_SETTINGS=$(mktemp)
 
         # Merge: add UWS permissions (deduplicated), drop stale UWS permissions, refresh hooks.
-        # v1.2.0 wrote .hooks as a flat array, which Claude Code ignores; an array is
-        # replaced by an object. Other tools' hook groups in the object form are preserved.
-        # Broad permissions that v1.2.0 itself added; only dropped when upgrading a UWS install.
+        # The February 2026 installer wrote .hooks as a flat array, which Claude Code ignores; an
+        # array is replaced by an object. Other tools' hook groups in the object form are preserved.
+        # Broad permissions that installer itself added; only dropped when upgrading a UWS install.
         LEGACY_PERMS='[]'
         if [[ -n "${EXISTING_VERSION:-}" ]]; then
             LEGACY_PERMS='["Bash(git:*)","Bash(sed:*)","Bash(date:*)"]'
@@ -1202,7 +1222,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
         fi
     else
         # No jq available - check if file has UWS hooks already
-        # A v1.2.0 flat-array hook entry ("event": ...) does not load, so it needs the merge too
+        # An earlier installer's flat-array hook entry ("event": ...) does not load, so it needs the merge too
         if grep -q ".uws/hooks" "$SETTINGS_FILE" 2>/dev/null && ! grep -q '"event"' "$SETTINGS_FILE" 2>/dev/null; then
             echo -e "  ${YELLOW}→${NC} UWS hooks already present in settings.json, keeping"
         else

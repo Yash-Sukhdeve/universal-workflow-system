@@ -377,7 +377,8 @@ EOF
     git -C "$P" commit -q -am "drop C-0003"
     run check ledger
     [ "$status" -eq 1 ]
-    [[ "$output" == *"compared with HEAD~1"* ]] || false
+    # every commit that touched the ledger is compared: the last one that still had the line
+    [[ "$output" == *"compared with $(git -C "$P" rev-parse HEAD~1 | cut -c1-12)"* ]] || false
 }
 
 @test "AT9: editing a committed ledger line in place fails" {

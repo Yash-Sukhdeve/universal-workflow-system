@@ -38,8 +38,9 @@ jobs:
 
       - name: Check for critical errors
         run: |
-          # Fail on critical errors only
-          find scripts -name "*.sh" -type f -exec shellcheck -x -e SC1091 -S error {} \;
+          # Fail on critical errors only. `-exec ... +` makes find exit non-zero
+          # when shellcheck does; `-exec ... \;` never would.
+          find scripts -name "*.sh" -type f -exec shellcheck -x -e SC1091 -S error {} +
 
       - name: Reject GNU-only constructs (macOS/BSD portability)
         run: |
@@ -143,6 +144,8 @@ jobs:
           cp -RL plugins/uws "$materialized"
           claude plugin validate "$materialized"
           test -x "$materialized/bin/uws"
+          # one release number: VERSION ships with the plugin and matches its manifest
+          test "$(tr -d '[:space:]' < "$materialized/VERSION")" = "$(jq -r .version "$materialized/.claude-plugin/plugin.json")"
           test -x "$materialized/scripts/init_workflow.sh"
           ls "$materialized"/agents/uws-*.md
           test -f "$materialized/skills/uws-kb/SKILL.md"

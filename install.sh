@@ -18,12 +18,10 @@ BIN_DIR="$PREFIX/bin"
 check_prereqs() {
     local ok=true
 
-    # Bash >= 4.0
-    local bash_major="${BASH_VERSINFO[0]}"
-    if (( bash_major < 4 )); then
-        echo "Error: Bash 4.0+ required (found $BASH_VERSION)" >&2
-        echo "  macOS ships Bash 3.2: run 'brew install bash', then re-run with that bash:" >&2
-        echo "  \"\$(brew --prefix)/bin/bash\" ./install.sh" >&2
+    # Bash >= 3.2: the scripts run on macOS's /bin/bash 3.2 (CI rejects bash-4-only code)
+    local bash_major="${BASH_VERSINFO[0]}" bash_minor="${BASH_VERSINFO[1]}"
+    if (( bash_major < 3 || (bash_major == 3 && bash_minor < 2) )); then
+        echo "Error: Bash 3.2+ required (found $BASH_VERSION)" >&2
         ok=false
     fi
 
@@ -94,18 +92,23 @@ main() {
         if uws_vm_check_python 2>/dev/null; then
             if ! uws_vm_is_installed; then
                 echo ""
-                echo "Optional: Vector memory server provides semantic search."
-                if [[ -t 0 ]]; then
-                    read -r -p "Install now? (~1.5GB disk, requires Python) [y/N]: " vm_confirm || vm_confirm=""
-                    if [[ ! "${vm_confirm:-}" =~ ^[Yy]$ ]]; then
-                        echo "Skipped. Run 'uws init' in a project later to set up."
-                    else
-                        # System-level only (no project-specific .mcp.json)
-                        uws_vm_clone_or_update && uws_vm_setup_venv && uws_vm_create_global_dir \
-                            && echo "Vector memory server installed." \
-                            || echo "Vector memory setup failed (optional, skipping)."
-                        echo "Note: Run 'uws init' in each project to configure .mcp.json"
-                    fi
+                echo "Optional: Vector memory server provides semantic search (~1.5GB disk, Python 3.9+)."
+                local vm_confirm=""
+                if [[ "${UWS_VECTOR_MEMORY:-}" == "true" ]]; then
+                    vm_confirm="y"
+                elif [[ -t 0 ]]; then
+                    read -r -p "Install now? [y/N]: " vm_confirm || vm_confirm=""
+                else
+                    echo "Vector memory: skipped (no terminal to ask); to install it: UWS_VECTOR_MEMORY=true ./install.sh"
+                fi
+                if [[ "${vm_confirm:-}" =~ ^[Yy]$ ]]; then
+                    # System-level only (no project-specific .mcp.json)
+                    uws_vm_clone_or_update && uws_vm_setup_venv && uws_vm_create_global_dir \
+                        && echo "Vector memory server installed." \
+                        || echo "Vector memory setup failed (optional, skipping)."
+                    echo "Note: run 'UWS_VECTOR_MEMORY=true uws init' (or answer y) in a project to configure its .mcp.json"
+                elif [[ -t 0 && "${UWS_VECTOR_MEMORY:-}" != "true" ]]; then
+                    echo "Skipped. To install later: UWS_VECTOR_MEMORY=true ./install.sh"
                 fi
             else
                 echo "Vector memory server: already installed."

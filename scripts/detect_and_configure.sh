@@ -23,14 +23,19 @@ fi
 if [[ -f "${SCRIPT_DIR}/lib/workflow_routing.sh" ]]; then
     source "${SCRIPT_DIR}/lib/workflow_routing.sh"
 fi
+# uws_hint: how to spell the next command
+source "${SCRIPT_DIR}/lib/uws_ui.sh"
 
 # Color codes for output
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly BOLD='\033[1m'
-readonly NC='\033[0m' # No Color
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; BOLD=''; NC=''; }
 
 # Configuration
 DETECTED_TYPE=""
@@ -589,28 +594,28 @@ recommend_setup() {
         research)
             echo "  📚 Suggested first agent: ${BOLD}researcher${NC}"
             echo "  📖 Next steps:"
-            echo "     1. uws research start"
-            echo "     2. uws orchestrate dispatch \"Define research questions and methodology\""
+            echo "     1. $(uws_hint research start)"
+            echo "     2. $(uws_hint orchestrate dispatch '"Define research questions and methodology"')"
             ;;
         ml|llm)
             echo "  🤖 Suggested first agent: ${BOLD}researcher${NC} → ${BOLD}implementer${NC}"
             echo "  📖 Next steps:"
-            echo "     1. uws research start"
-            echo "     2. uws orchestrate dispatch \"Define the ML problem and success metrics\""
-            echo "     3. Advance phases (uws research next); each phase dispatches its own subagent"
+            echo "     1. $(uws_hint research start)"
+            echo "     2. $(uws_hint orchestrate dispatch '"Define the ML problem and success metrics"')"
+            echo "     3. Advance phases ($(uws_hint research next)); each phase dispatches its own subagent"
             ;;
         software)
             echo "  🏗️  Suggested first agent: ${BOLD}architect${NC}"
             echo "  📖 Next steps:"
-            echo "     1. uws sdlc start"
-            echo "     2. uws orchestrate dispatch \"Write the requirements\""
-            echo "     3. Advance phases (uws sdlc next); design and implementation go to their subagents"
+            echo "     1. $(uws_hint sdlc start)"
+            echo "     2. $(uws_hint orchestrate dispatch '"Write the requirements"')"
+            echo "     3. Advance phases ($(uws_hint sdlc next)); design and implementation go to their subagents"
             ;;
         deployment)
             echo "  🚀 Suggested first agent: ${BOLD}deployer${NC}"
             echo "  📖 Next steps:"
-            echo "     1. uws sdlc start, then uws sdlc goto deployment"
-            echo "     2. uws orchestrate dispatch \"Set up the deployment pipeline\""
+            echo "     1. $(uws_hint sdlc start), then $(uws_hint sdlc goto deployment)"
+            echo "     2. $(uws_hint orchestrate dispatch '"Set up the deployment pipeline"')"
             ;;
         optimization)
             echo "  ⚡ Suggested first agent: ${BOLD}optimizer${NC}"
@@ -622,8 +627,8 @@ recommend_setup() {
             echo "  🔄 Suggested first agent: ${BOLD}architect${NC}"
             echo "  📖 Next steps:"
             echo "     1. Review project requirements"
-            echo "     2. uws sdlc start (or uws research start)"
-            echo "     3. uws orchestrate dispatch \"<task>\""
+            echo "     2. $(uws_hint sdlc start) (or $(uws_hint research start))"
+            echo "     3. $(uws_hint orchestrate dispatch '"<task>"')"
             ;;
     esac
 

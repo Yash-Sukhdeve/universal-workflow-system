@@ -76,6 +76,7 @@ source_lib "completeness_utils.sh" || true
 source_lib "checksum_utils.sh" || true
 source_lib "workflow_routing.sh" || true
 source_lib "hook_context.sh"
+source_lib "uws_ui.sh"    # uws_hint: how to spell the next command
 
 # Colour only for a terminal, and never when NO_COLOR is set (no-color.org).
 # Library functions read these globals too, so this also silences their colour.
@@ -112,13 +113,13 @@ fi
 if declare -f require_workflow_initialized > /dev/null 2>&1; then
     if ! require_workflow_initialized; then
         echo -e "${RED}❌ Error: Workflow not initialized${NC}"
-        echo -e "   Run: ${CYAN}uws init${NC} first"
+        echo -e "   Run: ${CYAN}$(uws_hint init)${NC} first"
         exit 1
     fi
 elif ! validate_workflow_initialized 2>/dev/null; then
     if [[ ! -f .workflow/state.yaml ]]; then
         echo -e "${RED}❌ Error: Workflow not initialized${NC}"
-        echo -e "   Run: ${CYAN}uws init${NC} first"
+        echo -e "   Run: ${CYAN}$(uws_hint init)${NC} first"
         exit 1
     fi
 fi
@@ -306,25 +307,25 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 if declare -f get_active_methodology > /dev/null 2>&1; then
     case "${ACTIVE_METHODOLOGY:-both}" in
         "research")
-            echo -e "  1. Check research phase:   ${CYAN}uws research status${NC}"
-            echo -e "  2. Advance research:       ${CYAN}uws research next${NC}"
+            echo -e "  1. Check research phase:   ${CYAN}$(uws_hint research status)${NC}"
+            echo -e "  2. Advance research:       ${CYAN}$(uws_hint research next)${NC}"
             echo -e "  3. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
             ;;
         "sdlc")
-            echo -e "  1. Check SDLC phase:       ${CYAN}uws sdlc status${NC}"
-            echo -e "  2. Advance SDLC:           ${CYAN}uws sdlc next${NC}"
+            echo -e "  1. Check SDLC phase:       ${CYAN}$(uws_hint sdlc status)${NC}"
+            echo -e "  2. Advance SDLC:           ${CYAN}$(uws_hint sdlc next)${NC}"
             echo -e "  3. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
             ;;
         "both")
-            echo -e "  1. Research workflow:       ${CYAN}uws research status${NC}"
-            echo -e "  2. SDLC workflow:           ${CYAN}uws sdlc status${NC}"
+            echo -e "  1. Research workflow:       ${CYAN}$(uws_hint research status)${NC}"
+            echo -e "  2. SDLC workflow:           ${CYAN}$(uws_hint sdlc status)${NC}"
             echo -e "  3. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
             ;;
     esac
 else
     echo -e "  1. View detailed state:    ${CYAN}cat .workflow/state.yaml${NC}"
     echo -e "  2. Check handoff notes:    ${CYAN}cat .workflow/handoff.md${NC}"
-    echo -e "  3. Show status:            ${CYAN}uws status${NC}"
+    echo -e "  3. Show status:            ${CYAN}$(uws_hint status)${NC}"
 fi
 
 echo ""
@@ -384,6 +385,6 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "  Run ${CYAN}uws status --verbose${NC} for detailed information"
-echo -e "  Run ${CYAN}uws checkpoint completeness${NC} for the full report"
+echo -e "  Run ${CYAN}$(uws_hint status --verbose)${NC} for detailed information"
+echo -e "  Run ${CYAN}$(uws_hint checkpoint completeness)${NC} for the full report"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"

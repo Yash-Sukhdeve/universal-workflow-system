@@ -158,9 +158,11 @@ EOF
     run "$UWS" kb verify --changed
     [ "$status" -eq 5 ]
     [ "$(field "$f" status)" = "disputed" ]
+    # a disputed item is not listed; stderr only says that one exists
     run "$UWS" kb search budget
     [ "$status" -eq 1 ]
-    [ -z "$output" ]
+    [[ "$output" != *"$id"* ]] || false
+    [[ "$output" == "uws kb: no trusted item matches; 1 candidate, stale or disputed item does"* ]] || false
 }
 
 @test "6: approve by a non-PI actor is refused (exit 6); by the PI -> trusted; watched edit -> stale" {
@@ -459,6 +461,22 @@ EOF
 }
 
 # ── Other rules ─────────────────────────────────────────────────────────────
+
+@test "search: with no trusted match it says how many other items match and how to see them" {
+    kb_id add --type fact --claim "The demo file has two lines" --evidence verified \
+        --source file:f:1 --check "test -f f"
+    [ -n "$KB_OUT" ]
+    run "$UWS" kb search demo
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"no trusted item matches; 1 candidate, stale or disputed item does (search --all, or --status candidate)"* ]] || false
+    run "$UWS" kb search --all demo
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${KB_OUT} [fact|candidate|"* ]] || false
+    # nothing matches at all: no hint, still exit 1
+    run "$UWS" kb search zebra
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+}
 
 @test "add: undeclared overlap with a trusted item exits 4; --no-conflict accepts" {
     set_pi

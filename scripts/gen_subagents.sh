@@ -44,6 +44,9 @@ PERSONA_DIR="${REPO_ROOT}/docs/personas"
 AGENT_DIR="${REPO_ROOT}/.claude/agents"
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; CYAN=''; NC=''; }
 
 ROLES=(researcher architect implementer experimenter optimizer deployer documenter)
 RESEARCH_ROLES=(rt-scout rt-verifier rt-redteam rt-methodologist rt-engineer rt-writer)

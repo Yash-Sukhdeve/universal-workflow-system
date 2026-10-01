@@ -23,6 +23,9 @@ if [[ -z "${RED:-}" ]]; then
     CYAN='\033[0;36m'
     NC='\033[0m'
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; NC=''; }
 
 # Decision log configuration
 DECISION_LOG_DIR="${DECISION_LOG_DIR:-.workflow/logs}"

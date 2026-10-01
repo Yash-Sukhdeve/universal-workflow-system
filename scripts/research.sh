@@ -2,14 +2,18 @@
 #
 # Universal Workflow System - Research Workflow Script (Production-Hardened)
 #
-# Usage: ./scripts/research.sh [action] [details]
+# Usage: uws research [action] [details]   (or scripts/research.sh)
 #
 # Actions:
-#   status  - Show current research phase
-#   start   - Begin research cycle at hypothesis phase
-#   next    - Advance to next phase
-#   reject  - Hypothesis rejected or analysis failed (triggers refinement)
-#   reset   - Reset research state
+#   status        - Show current research phase
+#   start         - Begin research cycle at hypothesis phase
+#   next          - Advance to next phase
+#   reject        - Hypothesis rejected or analysis failed (triggers refinement)
+#   reset         - Reset research state
+#   goal          - Declare the project goal (turns on deliverable gating)
+#   check <n>     - Tick deliverable <n>; check <name> runs an evidence check
+#   deliverables  - List a phase's deliverables
+#   bib           - Fetch BibTeX / build references.bib
 #
 # RWF Compliance: R3 (State Safety), R4 (Error-Free)
 
@@ -26,13 +30,20 @@ source "${SCRIPT_LIB_DIR}/resolve_project.sh"
 readonly RESEARCH_PHASES=("hypothesis" "literature_review" "experiment_design" "data_collection" "analysis" "peer_review" "publication")
 
 # Color codes
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly RED='\033[0;31m'
-readonly CYAN='\033[0;36m'
-readonly MAGENTA='\033[0;35m'
-readonly BOLD='\033[1m'
-readonly NC='\033[0m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
+NC='\033[0m'
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; MAGENTA=''; CYAN=''; BOLD=''; NC=''; }
+
+# uws_hint: how to spell the next command (`uws research next`, `/uws:research next`)
+source "${SCRIPT_LIB_DIR}/uws_ui.sh"
+hint() { uws_hint "$@"; }
 
 PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
@@ -50,9 +61,13 @@ validate_workflow() {
     # A .workflow that resolve_project.sh fell back to belongs to UWS itself, not to this
     # project: using it would change UWS's own research phase.
     if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" || ! -d "$WORKFLOW_DIR" || ! -f "$STATE_FILE" ]]; then
-        echo -e "${RED}Error: research.sh ${action} needs .workflow/state.yaml, and this project has none.${NC}"
-        echo -e "Run: ${CYAN}uws init research${NC} (or ./scripts/init_workflow.sh) in the project root."
-        echo -e "The evidence checks need no workflow state: ${CYAN}research.sh check init|ledger|gate <phase>|...${NC}"
+        if [[ "$action" == "check" ]]; then
+            echo -e "${RED}Error: research check <n> ticks a deliverable of the current research phase, which needs .workflow/state.yaml; this project has none.${NC}"
+        else
+            echo -e "${RED}Error: research ${action} needs .workflow/state.yaml, and this project has none.${NC}"
+        fi
+        echo -e "Run: ${CYAN}$(hint init research)${NC} in the project root."
+        echo -e "The evidence checks need no workflow state: ${CYAN}$(hint research check init)${NC}, ${CYAN}$(hint research check gate '<phase>')${NC}, ... (list: ${CYAN}$(hint research check help)${NC})"
         exit 1
     fi
 }
@@ -92,7 +107,7 @@ run_bib() {
 # Usage text (needs no workflow state and no library)
 #######################################
 show_usage() {
-    echo "Usage: ./scripts/research.sh [action] [details]"
+    echo "Usage: $(hint research '<action>') [details]"
     echo ""
     echo "Actions:"
     echo "  status  Show current research phase (default)"
@@ -100,7 +115,12 @@ show_usage() {
     echo "  next    Advance to next phase"
     echo "  reject  Report rejected hypothesis or failed analysis"
     echo "  reset   Reset research state to start over"
+    echo "  goal \"<objective>\"         Declare the project goal; turns on deliverable gating"
+    echo "  deliverables [phase]       List a phase's deliverables (numbered as check uses them)"
     echo "  check <n>                  Mark deliverable <n> of the current phase done"
+    echo ""
+    echo "Deliverable gating: once a goal is declared, next is refused until every deliverable"
+    echo "of the current phase is ticked with check <n>; --force overrides."
     echo ""
     echo "Research team (active when research/ledger exists; docs/design/research-team.md)."
     echo "The checks and bib need no .workflow/state.yaml:"
@@ -115,6 +135,7 @@ show_usage() {
     echo "  check retraction [--online]        Retraction notices (Crossref) for bib_sources/"
     echo "  check manuscript-hash      The hash a red-team review must name"
     echo "  check macros               Write the number macros from the number ledger"
+    echo "  check help                 The checker's own help (each command: check <name> --help)"
     echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
     echo "  bib build                  Write references.bib from bib_sources/ only"
     echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"
@@ -142,6 +163,18 @@ show_usage() {
 # installation that resolve_project.sh falls back to.
 case "${1:-status}" in
     check)
+        case "${2:-}" in
+            help|-h|--help)
+                run_checker --help
+                ;;
+            "")
+                # A bare `check` lists the deliverables to tick when there is workflow
+                # state; without it, it can only mean the evidence checks.
+                if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" || ! -f "$STATE_FILE" ]]; then
+                    run_checker --help
+                fi
+                ;;
+        esac
         if [[ -n "${2:-}" && "$RESEARCH_CHECK_COMMANDS" == *" ${2} "* ]]; then
             shift
             run_checker "$@"
@@ -413,13 +446,13 @@ _deliverable_gate() {
 
     if (( remaining > 0 )); then
         echo -e "${RED}✗ Blocked: ${remaining} unmet deliverable(s) in '${phase}'.${NC}" >&2
-        echo -e "${CYAN}Deliverables (mark done with: $0 check <n>):${NC}"
+        echo -e "${CYAN}Deliverables (mark done with: $(hint research check '<n>')):${NC}"
         local i=1 line
         while IFS= read -r line; do
             echo -e "   [${i}] ${line#- }"
             i=$(( i + 1 ))
         done < <(get_phase_deliverables "$phase")
-        echo -e "${YELLOW}Override with:${NC} $0 next --force"
+        echo -e "${YELLOW}Override with:${NC} $(hint research next --force)"
         return 1
     fi
     return 0
@@ -462,11 +495,11 @@ _evidence_gate() {
     if [[ "$force" == "--force" ]]; then
         if [[ "$phase" == "publication" ]]; then
             echo -e "${RED}✗ Refused: --force is never accepted at the publication gate (PI decision).${NC}" >&2
-            echo -e "  Fix the findings of: ${CYAN}$0 check gate publication${NC}" >&2
+            echo -e "  Fix the findings of: ${CYAN}$(hint research check gate publication)${NC}" >&2
             return 1
         fi
         if [[ -z "${reason// /}" ]]; then
-            echo -e "${RED}✗ --force needs a reason:${NC} $0 next --force \"<reason>\"" >&2
+            echo -e "${RED}✗ --force needs a reason:${NC} $(hint research next --force '"<reason>"')" >&2
             return 1
         fi
         if ! _log_gate_force "$phase" "$reason"; then
@@ -486,7 +519,7 @@ _evidence_gate() {
         0) return 0 ;;
         1)
             echo -e "${RED}✗ Blocked: the evidence gate for '${phase}' found problems (listed above).${NC}" >&2
-            echo -e "${YELLOW}Override (logged, shown to the PI):${NC} $0 next --force \"<reason>\"" >&2
+            echo -e "${YELLOW}Override (logged, shown to the PI):${NC} $(hint research next --force '"<reason>"')" >&2
             ;;
         *)
             echo -e "${RED}✗ Blocked: the evidence gate could not run (exit ${rc}); it fails closed.${NC}" >&2
@@ -508,7 +541,7 @@ show_status() {
     if [[ "$current_phase" == "none" ]]; then
         echo -e "  Phase: ${YELLOW}Not started${NC}"
         echo -e ""
-        echo -e "  Run ${CYAN}./scripts/research.sh start${NC} to begin research cycle."
+        echo -e "  Run ${CYAN}$(hint research start)${NC} to begin research cycle."
     else
         echo -e "  Phase: ${GREEN}${current_phase}${NC}"
         echo -e ""
@@ -543,7 +576,7 @@ show_status() {
         echo -e ""
         local next_phase
         if next_phase=$(get_next_phase "$current_phase"); then
-            echo -e "  Next: ${CYAN}./scripts/research.sh next${NC} → ${next_phase}"
+            echo -e "  Next: ${CYAN}$(hint research next)${NC} → ${next_phase}"
         else
             echo -e "  ${GREEN}Research cycle complete!${NC}"
         fi
@@ -567,8 +600,8 @@ main() {
     if declare -f is_methodology_active > /dev/null 2>&1; then
         if ! is_methodology_active "research"; then
             echo -e "${YELLOW}⚠  Research methodology is not the active workflow for this project type.${NC}"
-            echo -e "  Use ${CYAN}./scripts/sdlc.sh${NC} for software development workflow,"
-            echo -e "  or run ${CYAN}./scripts/detect_and_configure.sh${NC} to reconfigure."
+            echo -e "  Use ${CYAN}$(hint sdlc status)${NC} for the software development workflow,"
+            echo -e "  or run ${CYAN}$(hint detect)${NC} to reconfigure."
             echo ""
         fi
     fi
@@ -584,7 +617,7 @@ main() {
 
             if [[ "$current_phase" != "none" ]]; then
                 echo -e "${YELLOW}Research already in progress at phase: ${current_phase}${NC}"
-                echo -e "Use ${CYAN}./scripts/research.sh reset${NC} to restart."
+                echo -e "Use ${CYAN}$(hint research reset)${NC} to restart."
                 exit 1
             fi
 
@@ -595,7 +628,7 @@ main() {
             echo -e "  1. Formulate your research question (RQ)"
             echo -e "  2. State your hypothesis clearly"
             echo -e "  3. Identify variables and expected outcomes"
-            echo -e "  4. Run ${CYAN}./scripts/research.sh next${NC} when complete"
+            echo -e "  4. Run ${CYAN}$(hint research next)${NC} when complete"
             ;;
 
         next)
@@ -604,7 +637,7 @@ main() {
 
             if [[ "$current_phase" == "none" ]]; then
                 echo -e "${RED}Error: Research not started.${NC}"
-                echo -e "Run ${CYAN}./scripts/research.sh start${NC} first."
+                echo -e "Run ${CYAN}$(hint research start)${NC} first."
                 exit 1
             fi
 
@@ -629,7 +662,7 @@ main() {
                     local phase_agent
                     phase_agent=$(get_agent_for_phase "research" "$next_phase")
                     if [[ -n "$phase_agent" ]]; then
-                        echo -e "  ${CYAN}🤖 Phase agent: uws-${phase_agent} (dispatch: uws orchestrate dispatch \"<task>\")${NC}"
+                        echo -e "  ${CYAN}🤖 Phase agent: uws-${phase_agent} (dispatch: $(hint orchestrate dispatch '"<task>"'))${NC}"
                     fi
                 fi
 
@@ -657,14 +690,14 @@ main() {
                         echo -e "  • Test hypothesis against results"
                         echo -e "  • Generate visualizations"
                         echo -e "  • If results don't support hypothesis:"
-                        echo -e "    ${CYAN}./scripts/research.sh reject \"reason\"${NC}"
+                        echo -e "    ${CYAN}$(hint research reject '"<reason>"')${NC}"
                         ;;
                     peer_review)
                         echo -e "  • Prepare manuscript for review"
                         echo -e "  • Address reviewer feedback"
                         echo -e "  • Revise analysis if needed"
                         echo -e "  • If major revisions required:"
-                        echo -e "    ${CYAN}./scripts/research.sh reject \"reviewer feedback\"${NC}"
+                        echo -e "    ${CYAN}$(hint research reject '"<reviewer feedback>"')${NC}"
                         ;;
                     publication)
                         echo -e "  • Write up findings (paper/report)"
@@ -678,8 +711,8 @@ main() {
                 echo -e "Congratulations on completing your research!"
                 echo -e ""
                 echo -e "You can start a new research project with:"
-                echo -e "  ${CYAN}./scripts/research.sh reset${NC}"
-                echo -e "  ${CYAN}./scripts/research.sh start${NC}"
+                echo -e "  ${CYAN}$(hint research reset)${NC}"
+                echo -e "  ${CYAN}$(hint research start)${NC}"
             fi
             ;;
 
@@ -715,10 +748,10 @@ main() {
                 echo -e "  1. Refine your hypothesis and experimental design"
                 echo -e "  2. Consider publishing negative results"
                 echo -e ""
-                echo -e "When ready: ${CYAN}./scripts/research.sh next${NC}"
+                echo -e "When ready: ${CYAN}$(hint research next)${NC}"
             else
                 echo -e "${YELLOW}At hypothesis phase - refine your research question.${NC}"
-                echo -e "When ready: ${CYAN}./scripts/research.sh next${NC}"
+                echo -e "When ready: ${CYAN}$(hint research next)${NC}"
             fi
             ;;
 
@@ -731,7 +764,7 @@ main() {
             fi
 
             echo -e "${GREEN}Research state reset.${NC}"
-            echo -e "Run ${CYAN}./scripts/research.sh start${NC} to begin a new research project."
+            echo -e "Run ${CYAN}$(hint research start)${NC} to begin a new research project."
             ;;
 
         goal)
@@ -740,18 +773,20 @@ main() {
                 _g=$(yaml_get "$STATE_FILE" "goal" 2>/dev/null || echo "")
                 [[ "$_g" == "null" ]] && _g=""
                 if [[ -z "$_g" ]]; then
-                    echo -e "${YELLOW}No goal declared.${NC} Set one with: ${CYAN}$0 goal \"<objective>\"${NC}"
+                    echo -e "${YELLOW}No goal declared.${NC} Set one with: ${CYAN}$(hint research goal '"<objective>"')${NC}"
                 else
                     echo -e "${CYAN}Goal:${NC} ${_g}"
                 fi
             else
                 yaml_set "$STATE_FILE" "goal" "$details" >/dev/null 2>&1 || true
+                declare -f touch_last_updated > /dev/null 2>&1 && touch_last_updated "$STATE_FILE"
                 # Keep the handoff's managed summary (which shows the goal) current
                 if declare -f refresh_handoff_header > /dev/null 2>&1; then
                     refresh_handoff_header "" "" "" "${WORKFLOW_DIR}/handoff.md"
                 fi
                 echo -e "${GREEN}✓ Goal declared:${NC} ${details}"
-                echo -e "  Deliverable gating is now ${GREEN}active${NC} — use ${CYAN}$0 check <n>${NC} then ${CYAN}$0 next${NC}."
+                echo -e "  Deliverable gating is now ${GREEN}active${NC}: ${CYAN}$(hint research next)${NC} is blocked until each deliverable of the phase"
+                echo -e "  is ticked with ${CYAN}$(hint research check '<n>')${NC} (list: ${CYAN}$(hint research deliverables)${NC}; ${CYAN}--force${NC} overrides)."
             fi
             ;;
 
@@ -766,7 +801,7 @@ main() {
             local _total
             _total=$(get_phase_deliverables "$current_phase" | wc -l | tr -d '[:space:]')
             if [[ ! "$details" =~ ^[0-9]+$ ]]; then
-                echo -e "${RED}Usage: $0 check <deliverable-number>${NC}"
+                echo -e "${RED}Usage: $(hint research check '<deliverable-number>')${NC}"
                 local _i=1 _l
                 while IFS= read -r _l; do echo -e "   [${_i}] ${_l#- }"; _i=$(( _i + 1 )); done < <(get_phase_deliverables "$current_phase")
                 exit 1
@@ -783,7 +818,7 @@ main() {
             local _rem=0
             declare -f deliverables_remaining > /dev/null 2>&1 && _rem=$(deliverables_remaining "research" "$current_phase" 2>/dev/null || echo 0)
             if (( _rem == 0 )); then
-                echo -e "  ${GREEN}All deliverables met for ${current_phase}.${NC} Advance with ${CYAN}$0 next${NC}."
+                echo -e "  ${GREEN}All deliverables met for ${current_phase}.${NC} Advance with ${CYAN}$(hint research next)${NC}."
             else
                 echo -e "  ${YELLOW}${_rem} remaining.${NC}"
             fi
@@ -802,7 +837,7 @@ main() {
 
         *)
             echo -e "${RED}Error: Unknown action: ${action}${NC}"
-            echo "Run ${CYAN}./scripts/research.sh help${NC} for usage."
+            echo -e "Run ${CYAN}$(hint research help)${NC} for usage."
             exit 1
             ;;
     esac

@@ -11,6 +11,10 @@ PROJECT_ROOT="$(pwd)"
 # Accept project type as argument
 PROJECT_TYPE_ARG="${1:-}"
 
+# The UWS release (VERSION at the install's root), recorded in state.yaml metadata
+UWS_RELEASE="$(tr -d '[:space:]' 2>/dev/null < "${SCRIPT_DIR}/../VERSION" || true)"
+UWS_RELEASE="${UWS_RELEASE:-unknown}"
+
 # Source utility libraries
 if [[ -f "${SCRIPT_DIR}/lib/uws_config.sh" ]]; then
     source "${SCRIPT_DIR}/lib/uws_config.sh"
@@ -21,6 +25,8 @@ fi
 if [[ -f "${SCRIPT_DIR}/lib/vector_memory_setup.sh" ]]; then
     source "${SCRIPT_DIR}/lib/vector_memory_setup.sh"
 fi
+# uws_hint: how to spell the next command (`uws ...`, `./uws ...`, `/uws:...`)
+source "${SCRIPT_DIR}/lib/uws_ui.sh"
 
 # Color codes for output (guard matching validation_utils.sh:14-19)
 if [[ -z "${RED:-}" ]]; then
@@ -29,6 +35,9 @@ if [[ -z "${RED:-}" ]]; then
     YELLOW='\033[1;33m'
     NC='\033[0m' # No Color
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; NC=''; }
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "   Universal Workflow System - Project Initialization"
@@ -45,6 +54,7 @@ check_existing_workflow() {
         # so re-running init from an agent, CI or a hook is a safe no-op.
         if [[ ! -t 0 ]]; then
             if [[ "${UWS_FORCE_REINIT:-false}" != "true" ]]; then
+                upgrade_uws_hook
                 echo "UWS is already initialized here; leaving .workflow/ unchanged."
                 echo "To back it up and start over: UWS_FORCE_REINIT=true $0"
                 exit 0
@@ -58,6 +68,7 @@ check_existing_workflow() {
 
         read -p "Reinitialize (this will backup existing configuration)? [y/N]: " confirm
         if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            upgrade_uws_hook
             echo "Initialization cancelled."
             exit 0
         fi
@@ -145,11 +156,10 @@ create_workflow_structure() {
     echo ""
     echo "🏗️  Creating workflow structure..."
     
-    # Create directories
-    # The knowledge base is docs/kb/, created by the first `uws kb add`
+    # Create directories. Only .workflow/: nothing else goes into the project's top level
+    # (workspace/<role>/ is made by `uws orchestrate dispatch`; the knowledge base,
+    # docs/kb/, by the first `uws kb add`)
     mkdir -p .workflow/{agents,scripts,templates}
-    mkdir -p phases/{phase_1_planning,phase_2_implementation,phase_3_validation,phase_4_delivery,phase_5_maintenance}
-    mkdir -p {artifacts,workspace,archive}
     
     echo "  ✓ Directory structure created"
 }
@@ -190,8 +200,8 @@ phases:
 methodology_progress:
 
 metadata:
-  version: "1.1.0"
-  workflow_version: "1.1.0"
+  version: "${UWS_RELEASE}"
+  workflow_version: "${UWS_RELEASE}"
   created: "$(date -Iseconds)"
 EOF
     
@@ -230,8 +240,14 @@ create_handoff_template() {
 - **Checkpoint**: CP_1_001
 <!-- uws:managed:end -->"
     fi
-    local init_date
+    local init_date resume
     init_date="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)"
+    # The command that resumes a session, as this user reaches UWS (lib/uws_ui.sh)
+    if uws_in_plugin; then
+        resume="/uws:recover"
+    else
+        resume="$(uws_hint recover)          # with the Claude Code plugin: /uws:recover"
+    fi
 
     cat > .workflow/handoff.md << EOF
 # Context Handoff Document
@@ -244,16 +260,16 @@ ${summary_block}
 2. UWS initialized: ${init_date}
 
 ## Next Actions
-<!-- Keep this list current; open items are shown to Claude at session start. -->
-- [ ] Declare the project goal: \`uws sdlc goal "..."\` or \`uws research goal "..."\`
-- [ ] Start a methodology: \`uws sdlc start\` or \`uws research start\`
+<!-- Keep this list current; open items are shown to Claude at session start.
+     Declaring the goal and starting a methodology are listed in the summary above
+     until state.yaml shows they are done. -->
 
 ## Blockers
 - None
 
 ## Commands to Resume
 \`\`\`bash
-uws recover          # or ./uws recover; in Claude Code: /uws:recover
+${resume}
 \`\`\`
 
 ## Notes
@@ -282,6 +298,7 @@ setup_git_integration() {
 # Workflow system
 .workflow/agents/memory/*
 .workflow/*.tmp
+.workflow/checkpoints/snapshots/
 workspace/*
 !workspace/.gitkeep
 EOF
@@ -293,6 +310,7 @@ EOF
 .workflow/agents/memory/*
 .workflow/*.tmp
 .workflow/*.backup
+.workflow/checkpoints/snapshots/
 workspace/*
 !workspace/.gitkeep
 EOF
@@ -308,28 +326,47 @@ EOF
     fi
     mkdir -p "${hooks_dir}"
 
-    cat > "${hooks_dir}/pre-commit" << 'EOF'
-#!/bin/bash
-# Update workflow state before commit
+    write_uws_hook "${hooks_dir}"
+    echo "  ✓ Git hooks configured"
+}
 
-# Update timestamp in state.yaml
-if [ -f .workflow/state.yaml ]; then
-    TIMESTAMP="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
-    sed -i.bak "s/last_updated:.*/last_updated: \"${TIMESTAMP}\"/" .workflow/state.yaml
-    rm -f .workflow/state.yaml.bak
+# write_uws_hook <hooks dir>: the UWS pre-commit hook. It touches a commit only when
+# the commit already stages .workflow/state.yaml: it then refreshes last_updated in
+# that file. It never stages files the commit did not include and never writes
+# checkpoints.log. Delete .git/hooks/pre-commit to opt out.
+write_uws_hook() {
+    local hooks_dir="$1"
+    mkdir -p "${hooks_dir}"
+    cat > "${hooks_dir}/pre-commit" << 'EOF'
+#!/bin/sh
+# Update workflow state before commit (installed by UWS init, v2)
+# Only when this commit already stages .workflow/state.yaml and the file has no
+# unstaged changes: refresh its last_updated and re-stage it. Nothing else.
+if git diff --cached --name-only -- .workflow/state.yaml | grep -q . \
+    && git diff --quiet -- .workflow/state.yaml; then
+    TIMESTAMP="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)"
+    sed -i.uwsbak "s/^last_updated:.*/last_updated: \"${TIMESTAMP}\"/" .workflow/state.yaml
+    rm -f .workflow/state.yaml.uwsbak
     git add .workflow/state.yaml
 fi
-
-# Add checkpoint entry if workflow files changed
-if git diff --cached --name-only | grep -q ".workflow/"; then
-    TIMESTAMP="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
-    echo "${TIMESTAMP} | AUTO | Pre-commit checkpoint" >> .workflow/checkpoints.log
-    git add .workflow/checkpoints.log
-fi
+exit 0
 EOF
-    
     chmod +x "${hooks_dir}/pre-commit"
-    echo "  ✓ Git hooks configured"
+}
+
+# The hook earlier versions installed staged .workflow/state.yaml into every commit and
+# appended "AUTO | Pre-commit checkpoint" to checkpoints.log. Re-running init replaces
+# it (only a UWS hook: its first comment line says so).
+upgrade_uws_hook() {
+    local hooks_dir hook
+    git rev-parse --git-dir > /dev/null 2>&1 || return 0
+    hooks_dir="$(git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)"
+    hook="${hooks_dir}/pre-commit"
+    [[ -f "$hook" ]] || return 0
+    grep -q "Update workflow state before commit" "$hook" 2>/dev/null || return 0
+    grep -q "installed by UWS init, v2" "$hook" 2>/dev/null && return 0
+    write_uws_hook "$hooks_dir"
+    echo "Updated the UWS pre-commit hook: it no longer stages .workflow/state.yaml into every commit."
 }
 
 # Validate workflow scripts
@@ -464,6 +501,8 @@ fi
 
 export WORKFLOW_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/.workflow"
 export STATE_FILE="\${WORKFLOW_DIR}/state.yaml"
+# The scripts' "run ... next" hints name this wrapper
+export UWS_CMD="\${UWS_CMD:-./uws}"
 
 CMD="\${1:-help}"
 shift 2>/dev/null || true
@@ -474,6 +513,7 @@ case "\$CMD" in
     sdlc)         "\$UWS_SCRIPTS/sdlc.sh" "\$@" ;;
     research)     "\$UWS_SCRIPTS/research.sh" "\$@" ;;
     orchestrate)  "\$UWS_SCRIPTS/orchestrate.sh" "\$@" ;;
+    kb)           "\$UWS_SCRIPTS/kb.sh" "\$@" ;;
     dashboard)    "\$UWS_SCRIPTS/start_dashboard.sh" "\$@" ;;
     agent|skill)
         echo "uws \$CMD: retired. Agents are Claude Code subagents: run './uws orchestrate dispatch \"<task>\"' or use /agents. Skills are native Claude Code skills." >&2
@@ -493,9 +533,10 @@ case "\$CMD" in
         echo ""
         echo "Workflow:"
         echo "  status                Show workflow status"
-        echo "  sdlc [action]         SDLC phases (start|status|next|fail|reset)"
-        echo "  research [action]     Research phases (start|status|next|reject|reset)"
-        echo "  checkpoint [msg]      Create checkpoint"
+        echo "  sdlc [action]         SDLC phases (status|start|next|goto|fail|reset|goal|check|deliverables)"
+        echo "  research [action]     Research phases (status|start|next|reject|reset|goal|check|deliverables)"
+        echo "  checkpoint create [msg]  Create checkpoint (also: list, restore <ID>)"
+        echo "  kb <verb>             Project knowledge base (docs/kb/)"
         echo "  recover               Recover context after break"
         echo ""
         echo "Agents:"
@@ -578,6 +619,12 @@ main() {
     echo "🚀 Initializing ${PROJECT_TYPE} workflow..."
     echo ""
 
+    # Hints (handoff template, next steps) name the per-project ./uws wrapper when this
+    # run creates it
+    if [[ "${UWS_NO_WRAPPER:-false}" != "true" && -z "${UWS_CMD:-}" ]] && ! uws_in_plugin; then
+        UWS_CMD="./uws"
+    fi
+
     # Check for existing workflow
     check_existing_workflow
 
@@ -608,20 +655,20 @@ main() {
     echo "═══════════════════════════════════════════════════════════════"
     echo -e "${GREEN}Workflow system initialized successfully!${NC}"
     echo ""
-    local u="./uws"
-    [[ "${UWS_NO_WRAPPER:-false}" == "true" ]] && u="uws"
+    local m="sdlc" m_name="SDLC"
+    [[ "$PROJECT_TYPE" == "research" ]] && { m="research"; m_name="the research workflow"; }
     echo "Next steps:"
     echo "  1. Review .workflow/config.yaml for customization"
-    echo -e "  2. Run: ${GREEN}${u} status${NC}    to see current state"
-    echo -e "  3. Run: ${GREEN}${u} sdlc start${NC} to begin SDLC"
+    echo -e "  2. Declare the goal: ${GREEN}$(uws_hint "$m" goal '"<what you are building>"')${NC} (optional; turns on deliverable gating)"
+    echo -e "  3. Run: ${GREEN}$(uws_hint "$m" start)${NC} to begin ${m_name}"
     echo ""
     echo "Commands (run from this project directory):"
-    echo "  ${u} status              - Show workflow status"
-    echo "  ${u} sdlc [action]       - SDLC workflow"
-    echo "  ${u} research [action]   - Research workflow"
-    echo "  ${u} checkpoint create [msg] - Create checkpoint"
-    echo "  ${u} orchestrate dispatch \"<task>\" - Hand the current phase to its subagent"
-    echo "  ${u} recover             - Recover context"
+    echo "  $(uws_hint status)              - Show workflow status"
+    echo "  $(uws_hint sdlc '[action]')       - SDLC workflow"
+    echo "  $(uws_hint research '[action]')   - Research workflow"
+    echo "  $(uws_hint checkpoint create '[msg]') - Create checkpoint"
+    echo "  $(uws_hint orchestrate dispatch '"<task>"') - Hand the current phase to its subagent"
+    echo "  $(uws_hint recover)             - Recover context"
     echo "═══════════════════════════════════════════════════════════════"
 }
 

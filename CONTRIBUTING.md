@@ -93,8 +93,8 @@ Add screenshots here
 ### Running Tests
 
 ```bash
-# Run all tests
-./tests/run_all_tests.sh
+# Run all tests (close stdin: some tests run init, which prompts on a terminal)
+./tests/run_all_tests.sh </dev/null
 
 # Test specific component
 bats tests/unit/test_workflow_routing.bats
@@ -103,23 +103,30 @@ bats tests/integration/test_orchestrate_pilot.bats
 
 ### Writing Tests
 
-1. Create test files in `tests/` directory
-2. Follow naming convention: `test_[component].py`
-3. Include both unit and integration tests
+1. Put BATS tests in `tests/unit/`, `tests/integration/` or `tests/system/`, named
+   `test_<component>.bats`; shared helpers are in `tests/helpers/`
+2. Write assertions that fail under macOS's bash 3.2: `[[ ... ]] || false`, `[ ... ]`,
+   or `run` plus a check of `$status` (a bare `[[ ]]` or `! cmd` line never fails a test)
+3. For a behaviour fix, add the failing test first
 4. Test edge cases and error handling
 
 ## 📁 Project Structure
 
 ```
 universal-workflow-system/
-├── .workflow/          # Core workflow system
-│   ├── agents/        # Agent definitions
-│   ├── skills/        # Skill library
-│   └── knowledge/     # Knowledge base
-├── scripts/           # Utility scripts
-├── docs/             # Documentation
-├── tests/            # Test files
-└── docs/             # Documentation & tutorials
+├── bin/uws                    # the CLI
+├── scripts/                   # workflow scripts; scripts/lib/ holds the shared libraries
+├── plugins/uws/               # the Claude Code plugin (commands, hooks, skills; scripts/ and
+│                              #   agents/ are symlinks that the plugin cache materialises)
+├── .claude-plugin/            # marketplace manifest
+├── .claude/                   # Claude Code config for developing UWS itself, and the
+│                              #   generated subagents (.claude/agents/)
+├── claude-code-integration/   # the per-project installer
+├── antigravity-integration/   # Gemini Antigravity workflows
+├── dashboard/                 # the review/PM page served by `uws dashboard`
+├── docs/                      # design documents, personas, tutorials
+├── examples/                  # walkthrough projects
+└── tests/                     # BATS tests and fixtures
 ```
 
 ## 🎨 Code Style
@@ -138,10 +145,10 @@ universal-workflow-system/
 - Validate YAML syntax
 
 ### Python Code (if applicable)
-- Follow PEP 8
-- Use type hints
-- Add docstrings
-- Run black formatter
+- Follow PEP 8 and add docstrings
+- `scripts/research_check.py`, `scripts/kb_import.py` and `scripts/dashboard_server.py` run
+  on users' machines with a bare `python3`: standard library only (the dashboard's
+  `websockets` import is optional; CI checks the first two)
 
 ## 📚 Documentation Standards
 
@@ -178,6 +185,10 @@ We use semantic versioning (MAJOR.MINOR.PATCH):
 - MAJOR: Breaking changes
 - MINOR: New features (backward compatible)
 - PATCH: Bug fixes
+
+The release number lives in `VERSION`. A release changes it together with the `version` in
+`plugins/uws/.claude-plugin/plugin.json` (Claude Code updates installed plugins only when
+that string changes) and the literals in the two installers; a test checks that they agree.
 
 ## 💡 Feature Requests
 

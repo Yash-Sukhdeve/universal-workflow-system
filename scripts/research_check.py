@@ -131,7 +131,8 @@ DEFAULT_CONFIG = {
     "tex_main": None,            # restrict prose to files reachable from this .tex via \input
     "prose_dirs": None,          # default: every .tex under the root, plus paper/**/*.md
     "code_dirs": ["research", "benchmarks"],
-    "references": None,          # default: paper/references.bib, then references.bib
+    "references": None,          # default: paper/references.bib, then references.bib (bib build
+                                 # writes a new one under paper/ when paper/ exists)
     "numbers_tex": "paper/generated/numbers.tex",
     "exclude_dirs": [],
     "min_quote_words": 5,
@@ -594,6 +595,12 @@ def _number_shape(rel, nid, lineno, row):
     macro = row.get("macro")
     if macro and not re.match(r"^\\[A-Za-z]+$", str(macro)):
         bad("macro must look like \\\\Name")
+    rounding = row.get("rounding")
+    if rounding not in (None, ""):
+        kind, _, digits = str(rounding).partition(":")
+        if rounding != "exact" and (kind not in ROUNDING or not digits.isdigit()):
+            bad("rounding %r is not valid: use exact or <kind>:<digits> (kind: %s), e.g. round:3"
+                % (rounding, ", ".join(sorted(ROUNDING))))
     # Optional fields; their values are checked when present.
     ev = row.get("evaluation")
     if ev is not None and ev not in EVALUATIONS:
@@ -644,46 +651,62 @@ def _git(project, args):
 
 
 def check_append_only(project, led, bases=None):
-    """Every line committed at a base ref is still present, byte for byte (AT9).
+    """Every line ever committed is still present, byte for byte (AT9).
 
-    Default bases: HEAD (catches uncommitted edits or deletions) and HEAD~1 (catches a
-    committed deletion). Outside a git repository there is nothing to compare against.
+    Default bases: HEAD (catches uncommitted edits or deletions) and every commit that
+    touched the file, so an in-place edit stays reported however many commits follow it.
+    Outside a git repository there is nothing to compare against.
     """
     if not led.exists:
         return []
     return append_only_findings(project, led.rel, "LEDGER-APPEND", bases)
 
 
+def _row_label(line):
+    try:
+        obj = json.loads(line)
+        key = obj.get("id") or obj.get("exp") or obj.get("path") or obj.get("citekey") or "?"
+        return "%s@%s" % (key, obj.get("rev", 1))
+    except (ValueError, AttributeError):
+        return "?"
+
+
 def append_only_findings(project, rel, rule, bases=None):
-    """Lines of a JSON Lines file committed at HEAD / HEAD~1 must still be present."""
+    """Lines of a JSON Lines file committed at HEAD or in any commit that touched it (or at
+    the given `bases`) must still be present. A finding names the row (id@rev), the newest
+    commit that had the original line, and the line where the row is now (or was)."""
     out = []
     path = project.path(rel)
     if not os.path.isfile(path):
         return out
     if not in_git(project):
         return out
-    current = set()
+    current, where_now = set(), {}
     with open(path, encoding="utf-8") as fh:
-        for raw in fh:
+        for n, raw in enumerate(fh, 1):
             if raw.strip():
-                current.add(raw.rstrip("\n"))
-    for ref in (bases or ["HEAD", "HEAD~1"]):
+                line = raw.rstrip("\n")
+                current.add(line)
+                where_now.setdefault(_row_label(line), n)
+    if bases:
+        refs = list(bases)
+    else:
+        log = _git(project, ["log", "--format=%H", "--", rel]) or ""
+        refs = ["HEAD"] + [c for c in log.split() if c]
+    seen = set()
+    for ref in refs:
         old = _git(project, ["show", "%s:./%s" % (ref, rel)])
         if old is None:
             continue
-        for oldline in old.splitlines():
-            if not oldline.strip() or oldline in current:
+        for n, oldline in enumerate(old.splitlines(), 1):
+            if not oldline.strip() or oldline in current or oldline in seen:
                 continue
-            label = "?"
-            try:
-                obj = json.loads(oldline)
-                key = obj.get("id") or obj.get("exp") or obj.get("path") or obj.get("citekey") or "?"
-                label = "%s@%s" % (key, obj.get("rev", 1))
-            except (ValueError, AttributeError):
-                pass
-            out.append(Finding(rel, 1, rule,
+            seen.add(oldline)
+            label = _row_label(oldline)
+            name = ref if ref == "HEAD" else ref[:12]
+            out.append(Finding(rel, where_now.get(label, n), rule,
                                "%s was removed or edited compared with %s; this file is append-only "
-                               "(restore it from git and append a new row instead)" % (label, ref)))
+                               "(restore it from git and append a new row instead)" % (label, name)))
     return out
 
 
@@ -1155,16 +1178,47 @@ def _compare_references(project, refs):
     return out
 
 
-def pi_decision_ids(project):
+_DECISION_HEAD_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:#+\s*)?(D-\d+)\b")
+_PI_DECISION_FIELD_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?PI DECISION(?:\*\*)?\s*:\s*(.*)$", re.I)
+
+
+def pi_decision_records(project):
+    """{D-ID: the text of its PI DECISION field ('' when there is none)} of
+    research/pi/decisions.md. A record starts at a line beginning with its D-ID
+    (`D-001 | raised <date> by <role> | phase <phase>`) and runs to the next record."""
     path = project.path("research/pi/decisions.md")
     if not os.path.isfile(path):
-        return set()
-    ids = set()
-    for raw in read_text(path).splitlines():
-        m = re.match(r"^\s*(?:[-*]\s*)?(?:#+\s*)?(D-\d+)\b", raw)
+        return {}
+    records, cur = {}, None
+    for raw in _strip_html_comments(read_text(path)).splitlines():
+        m = _DECISION_HEAD_RE.match(raw)
         if m:
-            ids.add(m.group(1))
-    return ids
+            cur = m.group(1)
+            records.setdefault(cur, "")
+            continue
+        f = _PI_DECISION_FIELD_RE.match(raw)
+        if cur and f and f.group(1).strip() and not records[cur]:
+            records[cur] = f.group(1).strip()
+    return records
+
+
+def pi_decision_ids(project):
+    """D-IDs whose record holds the PI's decision (a non-empty PI DECISION field). A bare
+    `D-<n>` line is not a decision: anyone can append one."""
+    return set(d for d, text in pi_decision_records(project).items() if text)
+
+
+def pi_decision_problem(project, did):
+    """Why `did` cannot be used as a PI decision, or None."""
+    if not DID_RE.fullmatch(did or ""):
+        return "give --pi-decision D-<n>"
+    records = pi_decision_records(project)
+    if did not in records:
+        return "%s is not recorded in research/pi/decisions.md" % did
+    if not records[did]:
+        return ("%s has no PI DECISION in research/pi/decisions.md (its record needs a non-empty "
+                "`PI DECISION:` line)" % did)
+    return None
 
 
 def bib_ingest(project, args):
@@ -1239,7 +1293,10 @@ def _keymap_set(project, citekey, source_key):
 
 
 def bib_build(project, args):
-    out = project.path(args.out) if args.out else (project.references_path() or project.path("references.bib"))
+    # Default: the configured or existing references.bib; a new one goes next to the
+    # manuscript (paper/references.bib) when the project has a paper/ directory
+    default_new = "paper/references.bib" if os.path.isdir(project.path("paper")) else "references.bib"
+    out = project.path(args.out) if args.out else (project.references_path() or project.path(default_new))
     findings = []
     for path in bib_source_files(project):
         try:
@@ -1736,11 +1793,100 @@ NUM_SUFFIX_EXEMPT = re.compile(r"^(?:\s*\\(?:textwidth|linewidth|columnwidth|tex
 LITERAL_RE = re.compile(r"uws:literal\b(.*)")
 
 # Where results are reported (design 6.4 d): the abstract, tables and figures, and files or
-# top-level sections named introduction, results, evaluation, experiments, discussion or
-# conclusion. A subsection title counts only for the narrower list (so "Evaluation Metrics"
-# inside a method section is not in scope).
-_SCOPE_RE = re.compile(r"(abstract|intro|result|evaluation|experiments\b|discussion|conclusion)", re.I)
+# top-level sections named introduction, results, findings, analysis, performance, outcomes,
+# evaluation, experiments, discussion or conclusion. A subsection title counts only for the
+# narrower list (so "Evaluation Metrics" inside a method section is not in scope). Outside
+# these places a hand-typed number is still reported when its sentence names a metric of the
+# number ledger or the number is a ledger value (_hand_typed_numbers).
+_SCOPE_RE = re.compile(r"(abstract|intro|result|findings?|analys[ie]s|performance|outcomes?|evaluation|"
+                       r"experiments\b|discussion|conclusion)", re.I)
 _SCOPE_SUB_RE = re.compile(r"(abstract|intro|result|conclusion)", re.I)
+
+
+# Metric names a sentence can use for a ledger number, one spelling each (ROC-AUC -> auc).
+# A hand-typed number in a sentence that names a metric of the number ledger is presented as
+# a result of this work, wherever it is.
+METRIC_TERM_RE = re.compile(r"\b(?:roc[- ]?)?(auc|accuracy|f1|precision|recall|sensitivity|specificity|rmse|"
+                            r"mae|mse|mape|r2|bleu|rouge|perplexity|kappa|ndcg|mrr|error rate|latency|throughput)\b",
+                            re.I)
+# Words of a row's metric that a sentence about it shares ("held-out test rows (count)")
+_CONTENT_WORD_RE = re.compile(r"[a-z]{4,}")
+_STOP_WORDS = frozenset("from with that this were what when which their there over under into than "
+                        "value values mean count number".split())
+
+
+def metric_terms(text):
+    return set(m.group(1).lower() for m in METRIC_TERM_RE.finditer(str(text or "")))
+
+
+def _content_words(text):
+    return set(w for w in _CONTENT_WORD_RE.findall(str(text or "").lower()) if w not in _STOP_WORDS)
+
+
+def ledger_values(project):
+    """[(N-ID, row, printed Decimal or None, raw Decimal or None, metric terms)] of the
+    current number rows."""
+    out = []
+    numbers = project.numbers()
+    for nid in sorted(numbers.latest):
+        row = numbers.latest[nid][1]
+        printed = raw = None
+        pn = _printed_number(row.get("printed"))
+        try:
+            printed = Decimal(pn) if pn is not None else None
+        except InvalidOperation:
+            printed = None
+        rv = row.get("raw")
+        if not isinstance(rv, bool) and isinstance(rv, (int, float, str)):
+            try:
+                raw = Decimal(str(rv))
+            except InvalidOperation:
+                raw = None
+        out.append((nid, row, printed, raw, metric_terms(row.get("metric"))))
+    return out
+
+
+def _is_value_of(num, printed, raw):
+    """True when `num` (as typed) is the row's printed value, or its raw value rounded to the
+    places `num` has (0.91 and 0.9125 are both the value 0.9125)."""
+    try:
+        d = Decimal(num)
+    except InvalidOperation:
+        return False
+    if printed is not None and d == printed:
+        return True
+    if raw is not None and "." in num:
+        return abs(d - raw) <= Decimal(5).scaleb(-(_decimals(num) + 1))
+    return False
+
+
+def _near_miss(num, values, integers=False):
+    """The ledger row `num` nearly equals: within 10% of its printed value, but not its value
+    (a typo or a stale number). With integers=True only integer (count) rows are compared."""
+    try:
+        d = Decimal(num)
+    except InvalidOperation:
+        return None
+    for nid, row, printed, raw, _terms in values:
+        if printed is None or printed == 0:
+            continue
+        if integers != (printed == printed.to_integral_value() and "." not in str(row.get("printed"))):
+            continue
+        if _is_value_of(num, printed, raw):
+            continue
+        if abs(d - printed) / abs(printed) <= Decimal("0.10"):
+            return nid, row
+    return None
+
+
+def _ledger_metric_in(text, values):
+    """(term, N-ID) when `text` names a metric that a ledger row measures, else None."""
+    terms = metric_terms(text)
+    for nid, _row, _p, _r, row_terms in values:
+        common = sorted(terms & row_terms)
+        if common:
+            return common[0], nid
+    return None
 
 
 def number_tokens(code):
@@ -1910,6 +2056,15 @@ class WhereLinks(object):
                                          % (nid, place, row.get("printed"), shown), "warn"))
 
 
+def doc_title(doc):
+    """The \\title{...} of a .tex file (or its first Markdown H1), '' when there is none."""
+    for code in doc.code:
+        m = re.search(r"\\title\{([^}]*)\}", code) if doc.is_tex else re.match(r"^#\s+(.*)", code)
+        if m:
+            return m.group(1)
+    return ""
+
+
 def number_occurrences(project, doc, sent):
     """Ledger numbers in a sentence: [(offset, label, N-ID, row)] for uses of ledger macros
     (never other LaTeX commands) and for hand-typed values located by a row's `where`."""
@@ -1930,8 +2085,9 @@ def number_occurrences(project, doc, sent):
     return out
 
 
-def check_numbers(project, only_ids=None):
-    """Number provenance (design 6.4 a-e; AT5)."""
+def check_numbers(project, only_ids=None, strict=False):
+    """Number provenance (design 6.4 a-e; AT5). strict: the peer_review and publication gates
+    (a CV value presented as held-out blocks)."""
     findings = []
     numbers = project.numbers()
     findings.extend(numbers.parse_errors)
@@ -1972,7 +2128,7 @@ def check_numbers(project, only_ids=None):
         if run:
             findings.extend(_check_run(project, numbers.rel, lineno, nid, run, row))
         findings.extend(_check_formula(numbers, nid, lineno, row))
-        findings.extend(_check_evaluation(numbers.rel, nid, lineno, row))
+        findings.extend(_check_evaluation(numbers.rel, nid, lineno, row, project))
         if macros is not None and row.get("macro"):
             if row["macro"] not in macros:
                 where("macro %s is not defined in %s" % (row["macro"], macro_rel), "NUM-MACRO")
@@ -1990,7 +2146,7 @@ def check_numbers(project, only_ids=None):
     if not only_ids:
         findings.extend(project.links().findings)
         findings.extend(_hand_typed_numbers(project, macro_rel))
-        findings.extend(_split_disclosure(project, macro_rel))
+        findings.extend(_split_disclosure(project, macro_rel, strict))
     return findings
 
 
@@ -2244,11 +2400,33 @@ TRAIN_WORD_RE = re.compile(r"\b(training|train(?:ing)?[- ](?:set|split|data)|in[
 VALID_WORD_RE = re.compile(r"\bvalidation\b", re.I)
 HELDOUT_WORD_RE = re.compile(r"(held[- ]out|\btest(?:ing)?[- ](?:set|split|data|score|AUC|F1|accuracy)\b|\bunseen\b|out[- ]of[- ]sample)", re.I)
 SPLIT_WORDS = {"cross-validation": CV_WORD_RE, "training": TRAIN_WORD_RE, "validation": VALID_WORD_RE}
-_CV_SOURCE_RE = re.compile(r"(\bcv\b|cv_|_cv|cross[-_ ]?valid|\bfolds?\b|\d+[-_ ]?fold)", re.I)
+# Keys and metric names of cross-validation values: cv, cv5_..., cv10, cvacc, cv_auc,
+# kfold/k_fold, 5fold, oof (out-of-fold), fold_mean, cross-validation ...
+_CV_SOURCE_RE = re.compile(r"((?<![a-z])cv(?:\d+|acc|auc|f1)?(?![a-z])|cv_|_cv|cross[-_ ]?valid|\bfolds?\b|"
+                           r"\d+[-_ ]?folds?|k[-_ ]?folds?|(?<![a-z])oof(?![a-z])|out[-_ ]?of[-_ ]?fold|"
+                           r"folds?[-_ ]?(?:mean|avg|average))", re.I)
 _TEST_SOURCE_RE = re.compile(r"(\btest\b|test_|_test|held[-_ ]?out)", re.I)
 
 
-def _check_evaluation(rel, nid, lineno, row):
+def _json_keys(path):
+    """Every key of a JSON file (nested), or [] when it is not JSON."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    keys, stack = [], [data]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            keys.extend(str(k) for k in cur)
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return keys
+
+
+def _check_evaluation(rel, nid, lineno, row, project=None):
     if row.get("data_origin") == "literature":
         return []
     ev = row.get("evaluation")
@@ -2262,13 +2440,39 @@ def _check_evaluation(rel, nid, lineno, row):
     if ev in ("cross-validation", "training") and _TEST_SOURCE_RE.search(source) and not _CV_SOURCE_RE.search(source):
         return [Finding(rel, lineno, "NUM-SPLIT", "%s: evaluation is %s, but its metric/pointer describe a held-out "
                         "test value (%s)" % (nid, ev, source.strip()))]
+    # A held-out row whose key says nothing about its split, in an output that also holds
+    # cross-validation values: the key may be the CV one under a neutral name
+    pointer = str(row.get("pointer") or "")
+    out_rel = row.get("output")
+    if (ev == "held-out" and project is not None and out_rel and not _TEST_SOURCE_RE.search(pointer)
+            and not HELDOUT_WORD_RE.search(pointer)):
+        out_path = project.path(str(out_rel))
+        if os.path.isfile(out_path) and any(_CV_SOURCE_RE.search(k) for k in _json_keys(out_path)):
+            return [Finding(rel, lineno, "NUM-SPLIT", "%s: evaluation is held-out, but pointer %s names neither a "
+                            "test nor a held-out split, and %s also holds cross-validation values; check that the "
+                            "key is the held-out one" % (nid, pointer, out_rel), "warn")]
     return []
 
 
-def _split_disclosure(project, macro_rel):
+# A held-out word after a negation is a disclaimer ("not a held-out result")
+_NEGATED_BEFORE_RE = re.compile(r"(?:\b(?:not|no|never|nor|rather than|instead of)\s+(?:(?:an?|the)\s+)?)$", re.I)
+
+
+def _says_heldout(text):
+    """The first held-out word of `text` that is not negated, or None."""
+    for m in HELDOUT_WORD_RE.finditer(text):
+        if not _NEGATED_BEFORE_RE.search(text[max(0, m.start() - 30):m.start()]):
+            return m.group(0)
+    return None
+
+
+def _split_disclosure(project, macro_rel, strict=False):
     """A CV, training or validation value must say so where it is used: through its macro,
-    or typed by hand at a place its row's `where` names."""
+    or typed by hand at a place its row's `where` names. A CV value in a sentence that also
+    calls its result held-out is a warning; at the peer_review and publication gates
+    (strict) it blocks unless the line cites a recorded PI decision (% D-<n> ...)."""
     out = []
+    decisions = pi_decision_ids(project) if strict else set()
     if not any(r.get("evaluation") in SPLIT_WORDS for _l, r in project.numbers().latest.values()):
         return out
     for path in project.tex_files():
@@ -2286,35 +2490,85 @@ def _split_disclosure(project, macro_rel):
                     out.append(Finding(doc.rel, sent.line_of(off), "NUM-SPLIT",
                                        "%s (%s) is a %s value, but the sentence/caption does not say so; "
                                        "a reader will take it for a held-out result" % (label, nid, ev)))
-                elif HELDOUT_WORD_RE.search(sent.text):
-                    out.append(Finding(doc.rel, sent.line_of(off), "NUM-SPLIT",
-                                       "%s (%s) is a %s value in a sentence that also says %r; check that it is "
-                                       "not presented as held-out" % (label, nid, ev,
-                                                                       HELDOUT_WORD_RE.search(sent.text).group(0)), "warn"))
+                else:
+                    word = _says_heldout(sent.text)
+                    if not word:
+                        continue
+                    ln = sent.line_of(off)
+                    cited = set(DID_RE.findall(" ".join(doc.comment[l - 1] for l in sent.lines))) & decisions
+                    level = "block" if strict and not cited else "warn"
+                    out.append(Finding(doc.rel, ln, "NUM-SPLIT",
+                                       "%s (%s) is a %s value in a sentence that also says %r; a reader takes it for "
+                                       "a held-out result: say which split it comes from, or cite the PI decision that "
+                                       "allows the wording on the line (%% D-<n>)" % (label, nid, ev, word), level))
     return out
 
 
+def _literal_decision(project, reason):
+    """The PI decision a `uws:literal D-<n> <reason>` marker cites, when it is recorded."""
+    m = re.match(r"\s*(D-\d+)\b", reason)
+    if m and m.group(1) in pi_decision_ids(project):
+        return m.group(1)
+    return None
+
+
+def _sentence_text_by_line(doc):
+    by_line = {}
+    for sent in doc.sentence_list():
+        for ln in sent.lines:
+            by_line.setdefault(ln, []).append(sent.text)
+    return dict((ln, " ".join(texts)) for ln, texts in by_line.items())
+
+
 def _hand_typed_numbers(project, macro_rel):
-    """NUM-LITERAL (design 6.4 d): hand-typed numbers where results are reported, and every
-    hand-typed value that a row's `where` locates, wherever it is."""
+    """NUM-LITERAL (design 6.4 d): hand-typed numbers where results are reported, every
+    hand-typed value that a row's `where` locates, wherever it is, and, outside the results
+    sections, numbers whose sentence names a ledger metric or that are a ledger value.
+
+    `% uws:literal <reason>` accepts a line's numbers, except a number close to a ledger
+    value (a typo or a stale copy) or one in a sentence that names a ledger metric (a result
+    typed by hand): those need a recorded PI decision, `% uws:literal D-<n> <reason>`."""
     out = []
     numbers = project.numbers()
     links = project.links()
+    values = ledger_values(project)
     for path in project.tex_files():
         rel = project.rel(path)
         if rel == macro_rel:
             continue
         doc = project.doc(path)
         linked = links.numbers.get(doc.path, {})
+        sentences = _sentence_text_by_line(doc)
         for idx, code in enumerate(doc.code):
+            context = sentences.get(idx + 1, code)
             lit = LITERAL_RE.search(doc.comment[idx])
             if lit:
-                if not lit.group(1).strip():
+                reason = lit.group(1).strip()
+                if not reason:
                     out.append(Finding(rel, idx + 1, "NUM-LITERAL", "uws:literal needs a reason"))
+                    continue
+                if _literal_decision(project, reason):
+                    continue
+                for _st, _en, text, num, reportable in number_tokens(code):
+                    if not reportable:
+                        continue
+                    near = _near_miss(num, values)
+                    metric = _ledger_metric_in(context, values)
+                    if near:
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed %s is marked uws:literal, but it is close to %s (%s): a typo "
+                                           "or a stale number? Use its macro %s, or cite the PI decision that allows "
+                                           "it: %% uws:literal D-<n> <reason>"
+                                           % (text, near[0], near[1].get("printed"), near[1].get("macro") or "")))
+                    elif metric:
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed %s is marked uws:literal in a sentence about %s, a metric of the "
+                                           "number ledger (%s): use a generated macro, or cite the PI decision that "
+                                           "allows it: %% uws:literal D-<n> <reason>" % (text, metric[0], metric[1])))
                 continue
             here = dict(((st, en), nid) for st, en, _t, nid in linked.get(idx + 1, []))
             in_scope = _number_scope(doc, idx)
-            for st, en, text, _num, reportable in number_tokens(code):
+            for st, en, text, num, reportable in number_tokens(code):
                 nid = here.get((st, en))
                 if nid:
                     macro = numbers.latest[nid][1].get("macro")
@@ -2325,6 +2579,51 @@ def _hand_typed_numbers(project, macro_rel):
                     out.append(Finding(rel, idx + 1, "NUM-LITERAL",
                                        "hand-typed number %s: use a generated macro from the number ledger, "
                                        "or mark the line `%% uws:literal <reason>`" % text))
+                elif in_scope:
+                    # A unit-less integer is usually a count, a year or an identifier; it is
+                    # reported only when it nearly equals a ledger count its sentence is about.
+                    near = _near_miss(num, values, integers=True)
+                    if near and _content_words(context) & _content_words(near[1].get("metric")):
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed %s is close to %s (%s, %s): use its macro %s, or mark the line "
+                                           "`%% uws:literal <reason>`" % (text, near[0], near[1].get("printed"),
+                                                                          near[1].get("metric"),
+                                                                          near[1].get("macro") or "")))
+                elif reportable:
+                    metric = _ledger_metric_in(context, values)
+                    same = [v for v in values if _is_value_of(num, v[2], v[3])]
+                    if metric:
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed number %s in a sentence about %s, a metric of the number ledger "
+                                           "(%s): use a generated macro, or mark the line `%% uws:literal <reason>`"
+                                           % (text, metric[0], metric[1])))
+                    elif same:
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed number %s is the value of %s: use its macro %s, or mark the "
+                                           "line `%% uws:literal <reason>`"
+                                           % (text, same[0][0], same[0][1].get("macro") or "(it has none yet)")))
+    return out
+
+
+def literal_inventory(project, macro_rel=None):
+    """Every number a `uws:literal` marker accepts, as a warning, so the PI sees them all at
+    the publication gate (design 6.4 d)."""
+    out = []
+    if macro_rel is None:
+        macro_rel = read_number_macros(project)[0]
+    for path in project.tex_files():
+        rel = project.rel(path)
+        if rel == macro_rel:
+            continue
+        doc = project.doc(path)
+        for idx, code in enumerate(doc.code):
+            lit = LITERAL_RE.search(doc.comment[idx])
+            if not lit or not lit.group(1).strip():
+                continue
+            for _st, _en, text, _num, reportable in number_tokens(code):
+                if reportable:
+                    out.append(Finding(rel, idx + 1, "NUM-LITERAL", "%s is typed by hand (uws:literal: %s)"
+                                       % (text, lit.group(1).strip()), "warn"))
     return out
 
 
@@ -2446,21 +2745,29 @@ def _slop_prose(project, doc):
                                    % (m.group(0), need, need)))
         # Ledger numbers in the sentence: macro uses and hand-typed values located by `where`.
         occurrences = number_occurrences(project, doc, sentence)
-        # C3 disclosure: non-measured numbers or claims need a disclosure word nearby.
+        # C3 disclosure: non-measured numbers or claims need a disclosure word nearby: in the
+        # sentence or its caption (else it blocks), or only in its paragraph, section
+        # heading or the document title (then it warns: a reader who quotes the sentence
+        # alone loses the disclosure).
         disclosed = bool(DISCLOSURE_RE.search(sent))
         if not disclosed:
             fid = doc.env[start - 1]
             if fid is not None and DISCLOSURE_RE.search(doc.captions.get(fid, "")):
                 disclosed = True
         if not disclosed:
+            lo, hi = doc.paragraph_lines(start)
+            near = " ".join(doc.code[lo - 1:hi]) + " " + doc.section[start - 1] + " " + doc.top_section[start - 1]
+            near_ok = bool(DISCLOSURE_RE.search(near) or DISCLOSURE_RE.search(doc_title(doc)))
+            level = "warn" if near_ok else "block"
+            note = "; only its paragraph, section heading or title says so" if near_ok else ""
             for off, label, nid, row in occurrences:
                 if row.get("data_origin") in NON_MEASURED:
                     out.append(Finding(doc.rel, line_of(off), "C3", "%s (%s) is %s data but the sentence/caption "
-                                       "does not say so" % (label, nid, row.get("data_origin"))))
+                                       "does not say so%s" % (label, nid, row.get("data_origin"), note), level))
             for c, r in rows:
                 if r and r.get("data_origin") in NON_MEASURED:
-                    out.append(Finding(doc.rel, start, "C3",
-                                       "%s rests on %s data but the sentence does not say so" % (c, r.get("data_origin"))))
+                    out.append(Finding(doc.rel, start, "C3", "%s rests on %s data but the sentence does not say so%s"
+                                       % (c, r.get("data_origin"), note), level))
         # C6: labels a generator assigned are not ground truth (PROMISE audit). Evidence
         # tied to the sentence (a C-ID on it, a claim row whose `where` names its line, or a
         # ledger number in it) blocks; without such a link the only evidence is that some
@@ -3197,10 +3504,12 @@ def plan_freeze(project, args):
             row["reason"] = args.reason
         if results:
             did = args.pi_decision or ""
-            if not args.reason or not DID_RE.fullmatch(did) or did not in pi_decision_ids(project):
+            problem = pi_decision_problem(project, did) if did else None
+            if not args.reason or not did or problem:
                 print("refused: results for %s exist (%s), so changing the frozen plan is a deviation. It needs "
                       "--reason \"...\" and --pi-decision D-<n> recorded in research/pi/decisions.md "
-                      "(apocalypt.md P5; design section 7.3)." % (exp, ", ".join(r[0] for r in results[:5])),
+                      "(apocalypt.md P5; design section 7.3)%s." % (exp, ", ".join(r[0] for r in results[:5]),
+                                                                     ": " + problem if problem else ""),
                       file=sys.stderr)
                 return EXIT_FINDINGS
             dev_rel = "%s/%s/deviations.md" % (EXPERIMENTS_REL, exp)
@@ -3775,9 +4084,10 @@ def data_add(project, args):
             return EXIT_FINDINGS
         if rel.startswith(RAW_DATA_REL + "/"):
             did = args.pi_decision or ""
-            if not DID_RE.fullmatch(did) or did not in pi_decision_ids(project):
-                print("refused: replacing raw data needs --pi-decision D-<n> recorded in research/pi/decisions.md",
-                      file=sys.stderr)
+            problem = pi_decision_problem(project, did) if did else None
+            if not did or problem:
+                print("refused: replacing raw data needs --pi-decision D-<n> recorded in research/pi/decisions.md%s"
+                      % (": " + problem if problem else ""), file=sys.stderr)
                 return EXIT_FINDINGS
             row["pi_decision"] = did
         row["supersedes_sha256"] = prev[1].get("sha256")
@@ -4535,6 +4845,12 @@ def check_review_hash(project):
     if any(h == current for _n, h in reviewed):
         return []
     seen = ", ".join("%s: %s" % (n, _short(h) if h else "no Manuscript line") for n, h in reviewed)
+    if not any(h for _n, h in reviewed):
+        missing = ", ".join(n for n, _h in reviewed)
+        return [Finding("research/reviews", 1, "GATE-REVIEW-HASH",
+                        "%s has no Manuscript line, so no review names the manuscript it covers; the red team writes "
+                        "`Manuscript: sha256:<hash>` (`uws research check manuscript-hash`; now sha256:%s) in its "
+                        "review" % (missing if len(reviewed) == 1 else "No review (%s)" % missing, _short(current)))]
     return [Finding("research/reviews", 1, "GATE-REVIEW-HASH",
                     "no red-team review covers the current manuscript (sha256:%s); reviews name %s. The manuscript "
                     "changed after review: dispatch the red team again" % (_short(current), seen))]
@@ -5029,20 +5345,66 @@ def check_reviews(project, strict_major):
     return out
 
 
+def check_deviation_disclosure(project):
+    """A plan changed after results (a DEV row) must be reported in the manuscript: its DEV-ID
+    or its EXP-ID appears in the text (preregistration: deviations are reported, Nosek et
+    al. 2018). Comments do not count."""
+    out = []
+    plans = project.plans()
+    devs = [(exp, lineno, row) for exp, rows in sorted(plans.by_exp.items())
+            for lineno, row in rows if row.get("deviation")]
+    if not devs:
+        return out
+    text = "\n".join("\n".join(project.doc(p).code) for p in project.prose_files())
+    for exp, lineno, row in devs:
+        dev = str(row.get("deviation"))
+        if not re.search(r"\b%s\b" % re.escape(dev), text) and not re.search(r"\b%s\b" % re.escape(exp), text):
+            out.append(Finding(plans.rel, lineno, "PLAN-DEVIATION",
+                               "%s: %s (%s) changed the frozen plan after results existed, and the manuscript does not "
+                               "report it: name %s (or %s) where the deviation is reported"
+                               % (exp, dev, row.get("pi_decision") or "no PI decision", dev, exp)))
+    return out
+
+
+APPROVAL_RE = re.compile(r"^\s*PUBLICATION-APPROVAL:\s*(.*?)\s*$", re.M)
+APPROVAL_HASH_RE = re.compile(r"^sha256:([0-9a-f]{64})\s+by\s+\S+")
+
+
 def check_pi_approval(project):
+    """The PI approves publication with one line in research/pi/decisions.md:
+    `PUBLICATION-APPROVAL: sha256:<manuscript hash> by <PI>` (the hash of the manuscript as it
+    is now, `uws research check manuscript-hash`), or, where review.sh keeps change requests
+    (.uws/crs/), `PUBLICATION-APPROVAL: CR-<id>` of an approved change request."""
     rel = "research/pi/decisions.md"
     path = project.path(rel)
-    text = read_text(path) if os.path.isfile(path) else ""
-    m = re.search(r"^\s*PUBLICATION-APPROVAL:\s*(CR-[\w-]+)", text, re.M)
+    # The template's example line sits in an HTML comment; comments are not approvals
+    text = _strip_html_comments(read_text(path)) if os.path.isfile(path) else ""
+    current = manuscript_hash(project)[0]
+    how = "`PUBLICATION-APPROVAL: sha256:%s by <PI>`" % current
+    m = APPROVAL_RE.search(text)
     if not m:
-        return [Finding(rel, 1, "GATE-PI", "no `PUBLICATION-APPROVAL: CR-...` line: the PI approves publication")]
-    cr = m.group(1)
+        return [Finding(rel, 1, "GATE-PI", "no PUBLICATION-APPROVAL line: the PI approves publication with %s" % how)]
+    line = text.count("\n", 0, m.start()) + 1
+    value = m.group(1)
+    hm = APPROVAL_HASH_RE.match(value)
+    if hm:
+        if hm.group(1) != current:
+            return [Finding(rel, line, "GATE-PI", "the PI approved sha256:%s, but the manuscript is now sha256:%s; "
+                            "the PI approves the manuscript as it is now: %s" % (_short(hm.group(1)), _short(current), how))]
+        return []
+    cm = re.match(r"^(CR-[\w-]+)", value)
+    if not cm:
+        return [Finding(rel, line, "GATE-PI", "PUBLICATION-APPROVAL %r is neither a manuscript hash nor a change "
+                        "request; write %s" % (value, how))]
+    cr = cm.group(1)
     crs = project.path(".uws/crs")
-    if os.path.isdir(crs):
-        if os.path.isdir(os.path.join(crs, cr)):
-            return [Finding(rel, text.count("\n", 0, m.start()) + 1, "GATE-PI", "%s is still pending review" % cr)]
-        if not os.path.isdir(os.path.join(crs, "ARCHIVED_" + cr)):
-            return [Finding(rel, text.count("\n", 0, m.start()) + 1, "GATE-PI", "%s was not approved with review.sh" % cr)]
+    if not os.path.isdir(crs):
+        return [Finding(rel, line, "GATE-PI", "%s cannot be checked: this project has no .uws/crs/ (where review.sh "
+                        "keeps change requests). Record the PI's approval of this manuscript as %s" % (cr, how))]
+    if os.path.isdir(os.path.join(crs, cr)):
+        return [Finding(rel, line, "GATE-PI", "%s is still pending review" % cr)]
+    if not os.path.isdir(os.path.join(crs, "ARCHIVED_" + cr)):
+        return [Finding(rel, line, "GATE-PI", "%s was not approved with review.sh" % cr)]
     return []
 
 
@@ -5106,14 +5468,16 @@ def run_gate(project, phase, allow_missing_cache=None):
     if phase == "data_collection":
         findings.extend(check_slop(project, prose=False, code=True))
     if idx >= PHASES.index("analysis"):
-        findings.extend(check_numbers(project))
+        findings.extend(check_numbers(project, strict=idx >= PHASES.index("peer_review")))
         findings.extend(check_slop(project))
         findings.extend(check_repro_current(project))
     if idx >= PHASES.index("peer_review"):
         findings.extend(check_reviews(project, strict_major=True))
         findings.extend(check_review_hash(project))
+        findings.extend(check_deviation_disclosure(project))
     if phase == "publication":
         findings.extend(check_pi_approval(project))
+        findings.extend(literal_inventory(project))
     findings = dedupe(findings)
     notes = ["not checked yet: " + text for first, text in reversed(NOT_CHECKED) if idx >= PHASES.index(first)]
     if phase in ("literature_review", "analysis"):
@@ -5242,7 +5606,10 @@ def cmd_init(project):
         "research/sources/index.jsonl": "",
         "research/QUESTION.md": QUESTION_TEMPLATE,
         "research/pi/decisions.md": "# PI decisions\n\n<!-- One record per decision: `D-001 | raised <date> by <role> | phase <phase>`, then\n"
-                                    "     CONCERN / EVIDENCE / RISK / ALTERNATIVE / RECOMMENDATION / COST / PI DECISION. -->\n",
+                                    "     CONCERN / EVIDENCE / RISK / ALTERNATIVE / RECOMMENDATION / COST / PI DECISION.\n"
+                                    "     A D-ID counts only once its `PI DECISION:` line is filled in.\n"
+                                    "     The PI approves publication with one line:\n"
+                                    "     PUBLICATION-APPROVAL: sha256:<hash from `uws research check manuscript-hash`> by <PI> -->\n",
         "research/pi/questions.md": "# Open questions for the PI\n\n<!-- Q-001 | raised by <role> | blocking: yes/no | options | assumption otherwise made -->\n",
     }
     for rel, content in files.items():
@@ -5299,22 +5666,53 @@ def find_root(start):
         d = parent
 
 
+NUMBERS_ADD_HELP = """\
+add '<one JSON object>': a number row. Required:
+  macro        \\Name, the LaTeX macro that prints it (`check macros` defines it)
+  metric       what it measures, e.g. "held-out ROC-AUC"
+  output       project path of the file holding the value
+  pointer      /json/pointer into it (CSV: /<row>/<column> or /<column>=<value>/<column>)
+  rounding     exact, or <kind>:<digits> with kind round, round-half-even, floor, ceil, trunc
+  data_origin  measured | simulated | synthetic-generated | literature
+  evaluation   held-out | validation | cross-validation | training | n/a
+  exp          EXP-<name> whose frozen plan it answers, or "exploratory"
+  run | inputs RUN-<nnnn> that produced it, or a list of input paths
+Filled in when missing: id, rev, supersedes, output_sha256, raw, printed.
+Optional: where (paper/main.tex:12), formula, tolerance, unrounded, scale.
+A literature value needs only macro, metric, output, pointer, rounding, data_origin."""
+
+CLAIMS_ADD_HELP = """\
+add '<one JSON object>': a claim row. Required: text, category, status ("unverified" for a
+new claim), author (a role such as scout or writer). Categories and their evidence:
+  established_fact, reported_finding   sources: [{"citekey", "quote" (verbatim), "locator"}]
+  own_observation                      numbers: [N-IDs] or run
+  inference                            depends_on: [C-IDs]
+  hypothesis                           mechanism, distinguishing_prediction,
+                                       strongest_alternative, undermining_observation
+  estimate, open_question
+Optional: where (paper/main.tex:12), strength (none | association | empirical | causal |
+proof), data_origin. Filled in when missing: id, rev, supersedes. Only another role
+verifies a claim (verified_by, verified_at, verdict "supports")."""
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="research_check.py", description=__doc__.split("\n\n")[0])
     p.add_argument("--root", help="project root (default: nearest directory with research/ledger or .workflow)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     sub = p.add_subparsers(dest="cmd")
     s = sub.add_parser("ledger", help="claim and number ledger rules")
-    s.add_argument("--base", action="append", help="git ref to compare for append-only (repeatable; default HEAD and HEAD~1)")
+    s.add_argument("--base", action="append", help="git ref to compare for append-only (repeatable; default HEAD and every commit that touched the ledger)")
     sub.add_parser("bib", help="bib_sources provenance and references.bib equality")
     s = sub.add_parser("quotes", help="quotes are verbatim in the cached source text")
     s.add_argument("--allow-missing-cache", action="store_true", help="report a missing cache as a warning (CI without caches)")
-    s = sub.add_parser("numbers", help="number provenance and hand-typed numbers; `add '<json>'` appends a row")
+    s = sub.add_parser("numbers", help="number provenance and hand-typed numbers; `add '<json>'` appends a row",
+                       epilog=NUMBERS_ADD_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
     s.add_argument("row", nargs="?", help="for add: one JSON object (or - for stdin); id, rev, output_sha256, raw "
                    "and printed are filled in when missing")
     s.add_argument("--id", action="append", help="check only these N-IDs (repeatable)")
-    s = sub.add_parser("claims", help="claim ledger rules (as `ledger`); `add '<json>'` appends a validated row")
+    s = sub.add_parser("claims", help="claim ledger rules (as `ledger`); `add '<json>'` appends a validated row",
+                       epilog=CLAIMS_ADD_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
     s.add_argument("row", nargs="?", help="for add: one JSON object (or - for stdin); id and rev are filled in")
     s = sub.add_parser("slop", help="S1 S2 S4 S6 C1 C3 C5 C6")

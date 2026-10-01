@@ -13,6 +13,9 @@ if [[ -z "${RED:-}" ]]; then
     CYAN='\033[0;36m'
     NC='\033[0m'
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; CYAN=''; NC=''; }
 
 # Minimum bash version required
 readonly MIN_BASH_VERSION="4.0"
@@ -188,7 +191,7 @@ validate_workflow_structure() {
 
     if [[ ! -d "$workflow_dir" ]]; then
         echo -e "${RED}Error: Workflow directory not found: $workflow_dir${NC}" >&2
-        echo -e "  Run: ${CYAN}./scripts/init_workflow.sh${NC}" >&2
+        echo -e "  Run: ${CYAN}$(declare -f uws_hint >/dev/null 2>&1 && uws_hint init || echo "uws init")${NC}" >&2
         return 1
     fi
 
