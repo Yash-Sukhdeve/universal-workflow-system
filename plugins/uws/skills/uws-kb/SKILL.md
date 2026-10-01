@@ -71,8 +71,9 @@ its PI promotes them. Writes fail until the user runs `${CLAUDE_PLUGIN_ROOT}/bin
 KB must be its own git repository).
 
 `${CLAUDE_PLUGIN_ROOT}/bin/uws kb import vector --db <path> [--scope global] --dry-run` and
-`${CLAUDE_PLUGIN_ROOT}/bin/uws kb import automemory --dir <path> --dry-run` show what the older memory stores
-would add; import for real only when the user asks. Imports only read their sources and arrive
+`${CLAUDE_PLUGIN_ROOT}/bin/uws kb import automemory --dir <path> [--include-index] --dry-run` show what the older
+memory stores would add (`--include-index` also reads each entry of `MEMORY.md`); import for
+real only when the user asks. Imports only read their sources and arrive
 as candidates: `${CLAUDE_PLUGIN_ROOT}/bin/uws kb review --imported` lists them with the triage steps, and
 `${CLAUDE_PLUGIN_ROOT}/bin/uws kb dispute <ID> --by <counter-evidence ID>` marks a wrong one. Never edit the
 user's `MEMORY.md` or the vector-memory databases.

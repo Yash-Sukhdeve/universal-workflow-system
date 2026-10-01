@@ -786,12 +786,23 @@ imports only read their sources; no import was run on the real stores.
   falls back to the global KB for an ID the project lacks. `stats` adds a global line.
 
 **Imports** (section 7). `uws kb import vector --db <path> [--scope project|global] [--dry-run]`;
-`uws kb import automemory --dir <path> [--dry-run]` (project only).
+`uws kb import automemory --dir <path> [--include-index] [--dry-run]` (project only).
 - Read-only: `kb_import.py` opens the database through a `mode=ro` URI connection and copies it
   into memory with SQLite's backup API (fallback: a byte copy in a temporary directory). It reads
   only `memory_metadata`, so the `vec0` extension is not needed. Auto-memory files are only read,
-  and `MEMORY.md` is not opened. The tests make the fixtures read-only and compare hashes and
-  directory listings before and after.
+  and `MEMORY.md` is not opened unless `--include-index` asks for it. The tests make the fixtures
+  read-only and compare hashes and directory listings before and after.
+- `--include-index`: on a machine like this one most project facts sit in `MEMORY.md` itself
+  (2.1: 93 lines, 17.9 KB) rather than in topic files, so importing topic files alone would
+  leave them out of the triage that D2 needs. With the flag, each top-level list item or
+  paragraph of `MEMORY.md` becomes a candidate with source `import:automemory#MEMORY.md:L<first
+  line>`, tags `import, automemory, index, <section heading>` and the entry quoted in the body.
+  Nested items join their parent (with "; "), fenced code stays inside its entry, list, quote
+  and bold markers are dropped from the claim, and lines that only link a topic file, or
+  entries under 12 characters, are skipped with the reason printed. The file is still only
+  read; trimming it remains the PI's own edit (D2). A line number moves when the file is
+  edited, so a rerun after an edit adds the new reference to the existing candidate (R7) instead
+  of a second item.
 - Each row becomes a candidate: `evidence: inferred`, `source: [import:vector-local#<row id>]`
   (`vector-global` for `--scope global`, `automemory#<file>`), `captured_by: import`, `author:
   kb-import`. The claim is the row without its `PHASE n | DOMAIN: d | CATEGORY: c |` prefix, cut
@@ -805,7 +816,7 @@ imports only read their sources; no import was run on the real stores.
   duplicate pairs of 2.2-1. A rerun changes nothing.
 - Skipped, with the reason printed: text that looks like a secret; global claims naming a
   project or home path; auto-memory `user` and `feedback` memories (they stay in auto-memory,
-  section 7), files without front matter, and `MEMORY.md`.
+  section 7), files without front matter, and `MEMORY.md` (unless `--include-index`).
 - Suspected fixture (2.2-5 as a rule, project imports only): `flags: [suspected-fixture]` plus
   `flag_detail` when a row names at least one concrete thing (a path, a file name with an
   extension, a snake_case identifier, a backticked term) and none of them occurs in the

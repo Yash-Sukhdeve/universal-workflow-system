@@ -24,6 +24,6 @@ this plugin's CLI (`${CLAUDE_PLUGIN_ROOT}/bin/uws kb approve <ID>`). You may run
 `recommend <ID> "<why>"` to record that an item looks ready. `learn` writes meta-learning
 proposals (candidates) from `docs/kb/outcomes.tsv` and the usage log, and `proposals` lists
 them; approving a proposal is the PI's decision and never applies its change. `import` reads
-a vector-memory database or auto-memory directory and only adds candidates; run it with
-`--dry-run` unless the user asked for the real import, and never edit `MEMORY.md` or the
-databases. `review --imported` lists imports with the PI's triage steps. Summarise the result.
+a vector-memory database or auto-memory directory (with `--include-index`, also the entries of
+`MEMORY.md`) and only adds candidates; run it with `--dry-run` unless the user asked for the
+real import, and never edit `MEMORY.md` or the databases. `review --imported` lists imports with the PI's triage steps. Summarise the result.

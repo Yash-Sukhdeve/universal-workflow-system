@@ -40,9 +40,11 @@
 #   init [--global]            create the project KB, or the global KB as its own
 #                              git repository at <global memory dir>/kb
 #   import vector --db <path> [--scope project|global] [--dry-run]
-#   import automemory --dir <path> [--dry-run]
+#   import automemory --dir <path> [--include-index] [--dry-run]
 #                              turn a vector-memory database or Claude Code auto-memory
-#                              topic files into candidates (sources are only read)
+#                              topic files into candidates (sources are only read;
+#                              --include-index also reads the entries of MEMORY.md,
+#                              which UWS never edits)
 #
 # Scope: --global (or --scope global) runs a verb on the global KB, and so does
 # an ID written global:K-...; learn and proposals are project-only. Global writes
@@ -2830,7 +2832,7 @@ unesc_field() {
 # brought back. Rows that look like secrets are skipped; in the global KB, so
 # are claims that name a project or home path.
 cmd_import() {
-    local kind="${1:-}" db="" dir="" dry=false
+    local kind="${1:-}" db="" dir="" dry=false index=false
     [[ $# -gt 0 ]] && shift
     case "$kind" in
         vector|automemory) ;;
@@ -2841,6 +2843,7 @@ cmd_import() {
             --db) db="${2:-}"; shift 2 || die 2 "import: --db needs a path" ;;
             --dir) dir="${2:-}"; shift 2 || die 2 "import: --dir needs a path" ;;
             --dry-run) dry=true; shift ;;
+            --include-index) index=true; shift ;;
             *) die 2 "import: unknown argument '$1'" ;;
         esac
     done
@@ -2849,6 +2852,7 @@ cmd_import() {
     local -a pyargs=()
     if [[ "$kind" == "vector" ]]; then
         [[ -n "$db" && -z "$dir" ]] || die 2 "import vector: give --db <path to vector_memory.db>"
+        [[ "$index" == "false" ]] || die 2 "import vector: --include-index is for 'import automemory'"
         [[ -f "$db" ]] || die 2 "import vector: no such file: ${db}"
         if [[ "$SCOPE" == "global" ]]; then label="vector-global"; else label="vector-local"; fi
         pyargs=(vector --db "$db" --scope "$SCOPE" --label "$label")
@@ -2859,6 +2863,8 @@ cmd_import() {
         [[ "$SCOPE" == "project" ]] || die 2 "import automemory: auto-memory holds one project's facts; import it into that project's KB"
         label="automemory"
         pyargs=(automemory --dir "$dir")
+        # MEMORY.md is only read, and only when asked; UWS never edits it (D2)
+        [[ "$index" == "false" ]] || pyargs+=(--include-index)
         src_desc="$(basename "$dir")/"
     fi
     # The suspected-fixture rule compares with the project's tracked files

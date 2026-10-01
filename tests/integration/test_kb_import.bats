@@ -300,7 +300,7 @@ EOF
     run "$UWS" kb import automemory --dir "$mem"
     [ "$status" -eq 0 ]
     [ "$(cd "$mem" && ls -la && cat ./*.md | git hash-object --stdin)" = "$before" ]
-    [[ "$output" == *"skip automemory#MEMORY.md: the auto-memory index: not read and never edited by UWS"* ]]
+    [[ "$output" == *"skip automemory#MEMORY.md: the auto-memory index: not read (--include-index imports its entries; UWS never edits it)"* ]]
     [[ "$output" == *"skip automemory#prefers-short.md: a user memory (preference or correction): it stays in auto-memory"* ]]
     [[ "$output" == *"skip automemory#no-emoji.md: a feedback memory"* ]]
     [[ "$output" == *"skip automemory#loose.md: no front matter"* ]]
@@ -315,6 +315,103 @@ EOF
     [ "$status" -eq 1 ]
     r="$(item_with "$KB" 'latency dashboard')"
     grep -q '^flags: \[suspected-fixture\]$' "$r"
+    chmod 755 "$mem"
+}
+
+@test "import automemory --include-index: MEMORY.md entries become candidates; the file is only read" {
+    local mem="${TEST_TMP_DIR}-src/automem"
+    chmod 755 "$SRC"
+    mkdir -p "$mem"
+    # Line numbers matter: each entry's source is import:automemory#MEMORY.md:L<first line>
+    cat > "$mem/MEMORY.md" <<'EOF'
+# Project Memory
+
+> **RELEASE PROCESS (2026-09-01):** The release job runs `scripts/kb.sh lint`
+> before tagging, and a failed lint blocks the tag.
+
+## Tooling
+- [deploy notes](deploy-notes.md) — the release checklist
+- ok
+- The release job runs scripts/kb.sh lint before tagging
+- Training reads configs/train_resnet.yaml and sets batch_size from it
+  - the GPU nodes need the cuda_visible_devices list
+- The CI token = Zq7xYp3Lm9Rt2Wv8Ab
+
+## Commands
+Check the KB before a release:
+```
+./scripts/kb.sh lint
+
+# exit 1 lists the violations
+```
+EOF
+    cat > "$mem/deploy-notes.md" <<'EOF'
+---
+name: deploy-notes
+description: "The release job runs scripts/kb.sh lint before tagging"
+type: project
+---
+Body of the project memory.
+EOF
+    chmod 444 "$mem"/*.md
+    chmod 555 "$mem" "$SRC"
+    local before
+    before="$(cd "$mem" && ls -la && cat ./*.md | git hash-object --stdin)"
+    # a dry run lists the entries and writes nothing
+    run "$UWS" kb import automemory --dir "$mem" --include-index --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"would add K-20260924-"*"[fact] from import:automemory#MEMORY.md:L3: RELEASE PROCESS (2026-09-01): The release job runs"* ]]
+    [ ! -e "$KB" ]
+    run "$UWS" kb import automemory --dir "$mem" --include-index
+    [ "$status" -eq 0 ]
+    [ "$(cd "$mem" && ls -la && cat ./*.md | git hash-object --stdin)" = "$before" ]
+    [[ "$output" == *"skip automemory#MEMORY.md:L7: an index line pointing to the topic file deploy-notes.md"* ]]
+    [[ "$output" == *"skip automemory#MEMORY.md:L8: too short to be a fact"* ]]
+    [[ "$output" == *"skip import:automemory#MEMORY.md:L12: text looks like a secret (assignment)"* ]]
+    [[ "$output" == *"import:automemory#deploy-notes.md: same claim as "*" (R7); collapsed into it (source added)"* ]]
+    [[ "$output" == *"Summary: 6 record(s); added 4 candidate(s) (1 flagged suspected-fixture), 1 duplicate(s) collapsed (R7), 0 already retired, 3 skipped."* ]]
+    run grep -rl 'Zq7xYp3Lm9Rt2Wv8Ab' "$KB"
+    [ "$status" -eq 1 ]
+    local q d fx cmd
+    # a quoted, bold, two-line entry is one claim; the section names a tag
+    q="$(item_with "$KB" 'RELEASE PROCESS')"
+    [ "$(field "$q" claim)" = 'RELEASE PROCESS (2026-09-01): The release job runs `scripts/kb.sh lint` before tagging, and a failed lint blocks the tag.' ]
+    grep -q '^source: \["import:automemory#MEMORY.md:L3"\]$' "$q"
+    grep -q '^tags: \[import, automemory, index, project-memory\]$' "$q"
+    [ "$(field "$q" captured_by)" = "import" ]
+    [ "$(field "$q" evidence)" = "inferred" ]
+    grep -q '(file=MEMORY.md; line=3; section=Project Memory); the source was only read.' "$q"
+    grep -q '^> > \*\*RELEASE PROCESS (2026-09-01):\*\* The release job runs `scripts/kb.sh lint`$' "$q"
+    # the index entry and the topic file say the same thing: one item, both sources
+    d="$(item_with "$KB" 'claim: "The release job runs scripts/kb.sh lint before tagging"')"
+    grep -q '^source: \["import:automemory#MEMORY.md:L9", "import:automemory#deploy-notes.md"\]$' "$d"
+    # a nested item joins its parent; names absent from the project raise the flag
+    fx="$(item_with "$KB" 'train_resnet')"
+    [ "$(field "$fx" claim)" = "Training reads configs/train_resnet.yaml and sets batch_size from it; the GPU nodes need the cuda_visible_devices list" ]
+    grep -q '^flags: \[suspected-fixture\]$' "$fx"
+    # a fenced block stays inside its entry
+    cmd="$(item_with "$KB" 'Check the KB before a release')"
+    [ "$(field "$cmd" claim)" = "Check the KB before a release: ./scripts/kb.sh lint # exit 1 lists the violations" ]
+    grep -q '^tags: \[import, automemory, index, commands\]$' "$cmd"
+    # imports are leads: the PI restates them before anything is trusted
+    "$UWS" kb pi --set "$PI" >/dev/null
+    run "$UWS" kb approve "$(id_of "$q")"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"rests on an import (import:automemory#MEMORY.md:L3)"* ]]
+    run "$UWS" kb lint
+    [ "$status" -eq 0 ]
+    # a rerun changes nothing
+    local listing events
+    listing="$(ls "$KB/items")"; events="$(cat "$KB/events.tsv")"
+    run "$UWS" kb import automemory --dir "$mem" --include-index
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"added 0 candidate(s)"* ]]
+    [ "$(ls "$KB/items")" = "$listing" ]
+    [ "$(cat "$KB/events.tsv")" = "$events" ]
+    # the flag belongs to the auto-memory import only
+    run "$UWS" kb import vector --db "${SRC}/local.db" --include-index
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"--include-index is for 'import automemory'"* ]]
     chmod 755 "$mem"
 }
 

@@ -22,12 +22,14 @@ backslash, tab, newline and carriage return escaped as \\ \t \n \r:
   S <ref> <reason>
   I <note>
 
-  ref       row id (vector) or file name (automemory)
+  ref       row id (vector), file name (automemory), or MEMORY.md:L<line> (an
+            index entry, with --include-index)
   type      fact | decision | lesson | anti-pattern (a guess from the category)
   tags      comma-separated tags ("-" when none)
   flags     "suspected-fixture" or "-"
   text      the text the claim is made from (vector: the row without its
-            "PHASE n | DOMAIN: d | CATEGORY: c |" prefix; automemory: the description)
+            "PHASE n | DOMAIN: d | CATEGORY: c |" prefix; automemory: the description;
+            an index entry: its text without list, quote and bold markers)
   meta      "key=value; ..." facts about the source row for the item body
   original  the source text, verbatim
 
@@ -355,15 +357,18 @@ def front_matter(text):
     return None, text
 
 
-RE_INDEX_LINK = re.compile(r"^\s*[-*+]\s*\[[^\]]*\]\([^)\s]+\.md\)")
+RE_INDEX_LINK = re.compile(r"^\s*[-*+]\s*\[[^\]]*\]\(([^)\s]+\.md)\)")
+RE_FENCE = re.compile(r"^\s*(```|~~~)")
 
 
 def index_entries(text):
     """(line number, heading, block) for each top-level list item or paragraph of MEMORY.md.
 
-    Nested (indented) lines belong to the item above them; headings name the section.
+    Nested (indented) lines belong to the item above them; headings name the section;
+    a fenced code block stays inside the entry it appears in (its blank lines and
+    "#" lines do not split it).
     """
-    entries, block, state = [], [], {"heading": "", "start": 0}
+    entries, block, state = [], [], {"heading": "", "start": 0, "fence": False}
 
     def flush():
         if block:
@@ -372,6 +377,11 @@ def index_entries(text):
 
     for no, line in enumerate(text.splitlines(), start=1):
         s = line.rstrip()
+        if state["fence"]:
+            block.append(s)
+            if RE_FENCE.match(s):
+                state["fence"] = False
+            continue
         if not s.strip():
             flush()
             continue
@@ -385,16 +395,39 @@ def index_entries(text):
         if not block:
             state["start"] = no
         block.append(s)
+        if RE_FENCE.match(s):
+            state["fence"] = True
     flush()
     return entries
 
 
+def section_tag(heading):
+    """A tag from a section heading: lower case, at most 40 bytes, cut at a word boundary."""
+    t = re.sub(r"[^a-z0-9._+-]+", "-", heading.lower()).strip("-")
+    if len(t) > 40:
+        t = t[:41]
+        t = t[:t.rfind("-")] if "-" in t[1:] else t[:40]
+    return t.strip("-")
+
+
 def plain(block):
-    """One line of text from a Markdown block: list, quote and bold markers removed."""
-    parts = []
+    """One line of text from a Markdown block: list, quote, bold and code-fence markers removed.
+
+    A nested list item is joined to the text before it with "; ", other lines with a space.
+    """
+    out = ""
     for line in block.splitlines():
-        parts.append(re.sub(r"^\s*(?:>\s*)*(?:[-*+]\s+)?", "", line))
-    return re.sub(r"\*\*|__", "", " ".join(p for p in parts if p))
+        if RE_FENCE.match(line):
+            continue
+        m = re.match(r"^\s*(?:>\s*)*([-*+]\s+)?(.*)$", line)
+        text = m.group(2).strip()
+        if not text:
+            continue
+        if out:
+            out += ("; " if m.group(1) else " ") + text
+        else:
+            out = text
+    return re.sub(r"\*\*|__", "", out)
 
 
 def read_index(args, project, path):
@@ -407,15 +440,17 @@ def read_index(args, project, path):
         return
     for no, heading, block in index_entries(text):
         ref = "MEMORY.md:L%d" % no
-        if RE_INDEX_LINK.match(block) and "\n" not in block:
-            emit("S", ref, "an index line pointing to a topic file (imported on its own)")
+        link = RE_INDEX_LINK.match(block)
+        if link and "\n" not in block:
+            emit("S", ref, "an index line pointing to the topic file %s (topic files are read on their own)"
+                 % link.group(1))
             continue
         claim = plain(block)
         if len(claim) < 12:
             emit("S", ref, "too short to be a fact")
             continue
         tags = []
-        for t in ["import", "automemory", "index", heading.lower()[:40]]:
+        for t in ["import", "automemory", "index", section_tag(heading)]:
             c = clean_tag(t)
             if c and c not in tags:
                 tags.append(c)

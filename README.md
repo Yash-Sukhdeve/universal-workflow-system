@@ -410,13 +410,15 @@ the global KB's PI promotes its items.
 
 `uws kb import` turns the older memory stores into candidates for the PI to triage. It only
 reads its sources (a vector-memory database is copied into memory through a read-only
-connection; auto-memory files are read, and `MEMORY.md` is not opened) and never makes anything
-trusted:
+connection; auto-memory files are read, and `MEMORY.md` is opened only with `--include-index`,
+never written) and never makes anything trusted:
 
 ```bash
 uws kb import vector --db memory/vector_memory.db --dry-run      # what it would add
 uws kb import vector --db ~/uws-global-knowledge/memory/vector_memory.db --scope global
 uws kb import automemory --dir ~/.claude/projects/<project>/memory
+uws kb import automemory --dir ~/.claude/projects/<project>/memory --include-index --dry-run
+                                         # also each entry of MEMORY.md (read only)
 uws kb review --imported                 # the triage queue, with the steps to keep, correct,
                                          # refute (uws kb dispute) or drop each item
 ```

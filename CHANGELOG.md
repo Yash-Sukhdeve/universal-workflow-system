@@ -27,9 +27,11 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
   `search -- <words>` takes words that start with a dash. `show` finds global IDs; `stats` lists
   the global KB and this machine's usage
 - `uws kb import vector --db <path> [--scope project|global] [--dry-run]` and
-  `uws kb import automemory --dir <path> [--dry-run]` (`scripts/kb_import.py`, Python standard
-  library only): a read-only SQLite connection copied into memory with the backup API (only
-  `memory_metadata` is read), or read-only file reads (`MEMORY.md` is not opened). Rows become
+  `uws kb import automemory --dir <path> [--include-index] [--dry-run]` (`scripts/kb_import.py`,
+  Python standard library only): a read-only SQLite connection copied into memory with the backup
+  API (only `memory_metadata` is read), or read-only file reads (`MEMORY.md` is opened only with
+  `--include-index`, which imports each top-level entry as `automemory#MEMORY.md:L<line>`; UWS
+  never writes it). Rows become
   candidates with `evidence: inferred`, `source: [import:vector-local#<row>]` (or
   `vector-global`, `automemory#<file>`) and `captured_by: import`; the vector-memory prefix is
   dropped from the claim, long rows are cut to 240 bytes, duplicates collapse by R7, retired
@@ -56,7 +58,7 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
 - Test isolation: `tests/helpers/test_helper.bash` exports `UWS_KB_GUARD_ROOT` and a
   non-existent `UWS_GLOBAL_MEMORY_DIR`; while it is set, no KB write (items, outcomes, usage,
   caches) lands in the UWS checkout unless a test sets `UWS_KB_ALLOW_GUARDED_WRITE=1`
-- Tests: `tests/integration/test_kb_global.bats` (7), `test_kb_import.bats` (11) and
+- Tests: `tests/integration/test_kb_global.bats` (7), `test_kb_import.bats` (12) and
   `test_kb_usage.bats` (14), on synthetic SQLite fixtures built with the vector-memory schema
   (`tests/fixtures/kb/make_vector_db.py`)
 
