@@ -178,6 +178,78 @@ EOF
     [ "$status" -ne 0 ]
 }
 
+@test "init: the pre-commit hook leaves commits that do not stage .workflow/ alone" {
+    cd "$PROJ"
+    git config user.email "t@example.com"; git config user.name "T"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    [ -x "$PROJ/.git/hooks/pre-commit" ]
+    local log_before
+    log_before="$(cat .workflow/checkpoints.log)"
+    echo "print(1)" > app.py
+    git add app.py
+    git commit -qm "app only"
+    # only app.py in the commit; nothing from .workflow/ staged or written
+    [ "$(git show --name-only --format= HEAD)" = "app.py" ]
+    [ "$(cat .workflow/checkpoints.log)" = "$log_before" ]
+    run git ls-files .workflow
+    [ -z "$output" ]
+}
+
+@test "init: the pre-commit hook refreshes last_updated when the commit stages state.yaml" {
+    cd "$PROJ"
+    git config user.email "t@example.com"; git config user.name "T"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    source "${PROJECT_ROOT}/scripts/lib/portable.sh"
+    sed_inplace 's/^last_updated:.*/last_updated: "2000-01-01T00:00:00Z"/' .workflow/state.yaml
+    local log_before
+    log_before="$(cat .workflow/checkpoints.log)"
+    git add .workflow
+    git commit -qm "track workflow state"
+    run git show HEAD:.workflow/state.yaml
+    [[ "$output" != *"2000-01-01"* ]] || false
+    # no AUTO line, and checkpoint snapshots stay out of the repository
+    [ "$(cat .workflow/checkpoints.log)" = "$log_before" ]
+    "${PROJECT_ROOT}/bin/uws" checkpoint create "snap" </dev/null >/dev/null
+    git add .workflow
+    run git status --porcelain -- .workflow/checkpoints/snapshots
+    [ -z "$output" ]
+}
+
+@test "init: re-running init replaces the old UWS pre-commit hook, and only that one" {
+    mkdir -p "$PROJ/.git/hooks"
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    # the hook earlier versions wrote
+    printf '#!/bin/bash\n# Update workflow state before commit\ngit add .workflow/state.yaml\necho "x | AUTO | Pre-commit checkpoint" >> .workflow/checkpoints.log\n' > .git/hooks/pre-commit
+    run "${PROJECT_ROOT}/bin/uws" init software </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Updated the UWS pre-commit hook"* ]] || false
+    run grep -c "AUTO | Pre-commit" .git/hooks/pre-commit
+    [ "$output" = "0" ]
+    # a project's own hook is never touched
+    printf '#!/bin/sh\necho project-hook\n' > .git/hooks/pre-commit
+    run "${PROJECT_ROOT}/bin/uws" init software </dev/null
+    grep -q "project-hook" .git/hooks/pre-commit
+}
+
+@test "sdlc goal and start update last_updated in state.yaml" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    source "${PROJECT_ROOT}/scripts/lib/portable.sh"
+    sed_inplace 's/^last_updated:.*/last_updated: "2000-01-01T00:00:00Z"/' .workflow/state.yaml
+    "${PROJECT_ROOT}/bin/uws" sdlc goal "A parser" </dev/null >/dev/null
+    run grep -c '^last_updated: "2000-01-01' .workflow/state.yaml
+    [ "$output" = "0" ]
+    sed_inplace 's/^last_updated:.*/last_updated: "2000-01-01T00:00:00Z"/' .workflow/state.yaml
+    "${PROJECT_ROOT}/bin/uws" sdlc start </dev/null >/dev/null
+    run grep -c '^last_updated: "2000-01-01' .workflow/state.yaml
+    [ "$output" = "0" ]
+    sed_inplace 's/^last_updated:.*/last_updated: "2000-01-01T00:00:00Z"/' .workflow/state.yaml
+    "${PROJECT_ROOT}/bin/uws" research goal "A study" </dev/null >/dev/null
+    run grep -c '^last_updated: "2000-01-01' .workflow/state.yaml
+    [ "$output" = "0" ]
+}
+
 @test "init: an existing pre-commit hook is not overwritten" {
     mkdir -p "$PROJ/.git/hooks"
     printf '#!/bin/sh\necho project-hook\n' > "$PROJ/.git/hooks/pre-commit"
@@ -473,58 +545,4 @@ no_stale_hint() {
     grep -q 'Bash 3.2+ required' "${PROJECT_ROOT}/install.sh"
     run grep -c 'Bash 4.0+ required' "${PROJECT_ROOT}/install.sh"
     [ "$output" = "0" ]
-}
-
-@test "init: the pre-commit hook leaves commits that do not stage .workflow/ alone" {
-    cd "$PROJ"
-    git config user.email "t@example.com"; git config user.name "T"
-    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
-    [ -x "$PROJ/.git/hooks/pre-commit" ]
-    local log_before
-    log_before="$(cat .workflow/checkpoints.log)"
-    echo "print(1)" > app.py
-    git add app.py
-    git commit -qm "app only"
-    # only app.py in the commit; nothing from .workflow/ staged or written
-    [ "$(git show --name-only --format= HEAD)" = "app.py" ]
-    [ "$(cat .workflow/checkpoints.log)" = "$log_before" ]
-    run git ls-files .workflow
-    [ -z "$output" ]
-}
-
-@test "init: the pre-commit hook refreshes last_updated when the commit stages state.yaml" {
-    cd "$PROJ"
-    git config user.email "t@example.com"; git config user.name "T"
-    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
-    source "${PROJECT_ROOT}/scripts/lib/portable.sh"
-    sed_inplace 's/^last_updated:.*/last_updated: "2000-01-01T00:00:00Z"/' .workflow/state.yaml
-    local log_before
-    log_before="$(cat .workflow/checkpoints.log)"
-    git add .workflow
-    git commit -qm "track workflow state"
-    run git show HEAD:.workflow/state.yaml
-    [[ "$output" != *"2000-01-01"* ]] || false
-    # no AUTO line, and checkpoint snapshots stay out of the repository
-    [ "$(cat .workflow/checkpoints.log)" = "$log_before" ]
-    "${PROJECT_ROOT}/bin/uws" checkpoint create "snap" </dev/null >/dev/null
-    git add .workflow
-    run git status --porcelain -- .workflow/checkpoints/snapshots
-    [ -z "$output" ]
-}
-
-@test "init: re-running init replaces the old UWS pre-commit hook, and only that one" {
-    mkdir -p "$PROJ/.git/hooks"
-    cd "$PROJ"
-    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
-    # the hook earlier versions wrote
-    printf '#!/bin/bash\n# Update workflow state before commit\ngit add .workflow/state.yaml\necho "x | AUTO | Pre-commit checkpoint" >> .workflow/checkpoints.log\n' > .git/hooks/pre-commit
-    run "${PROJECT_ROOT}/bin/uws" init software </dev/null
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Updated the UWS pre-commit hook"* ]] || false
-    run grep -c "AUTO | Pre-commit" .git/hooks/pre-commit
-    [ "$output" = "0" ]
-    # a project's own hook is never touched
-    printf '#!/bin/sh\necho project-hook\n' > .git/hooks/pre-commit
-    run "${PROJECT_ROOT}/bin/uws" init software </dev/null
-    grep -q "project-hook" .git/hooks/pre-commit
 }

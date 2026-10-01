@@ -471,6 +471,19 @@ gate_enabled() {
 }
 
 #######################################
+# Set the top-level last_updated of state.yaml to now (only when the key exists:
+# older files keep metadata.last_updated, which checkpoint.sh maintains).
+# Arguments: $1 - (optional) file
+#######################################
+touch_last_updated() {
+    local file="${1:-$(_wr_state_file)}" ts
+    [[ -f "$file" ]] || return 0
+    grep -q '^last_updated:' "$file" 2>/dev/null || return 0
+    ts="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)"
+    sed_inplace "s|^last_updated:.*|last_updated: \"${ts}\"|" "$file" 2>/dev/null || true
+}
+
+#######################################
 # One-shot sync on a methodology phase change: advance current_phase + the
 # board, seed the deliverable ledger, and refresh the handoff header.
 # Called from sdlc.sh / research.sh set_phase().
@@ -481,6 +494,7 @@ sync_meta_phase() {
     local uws; uws="$(uws_phase_for_methodology "$m" "$phase")"
     set_uws_phase "$uws" "$file"
     mp_ensure "$m" "$phase" "${total:-0}" "$file"
+    touch_last_updated "$file"
 
     local cp="" goal=""
     if declare -f yaml_get >/dev/null 2>&1; then

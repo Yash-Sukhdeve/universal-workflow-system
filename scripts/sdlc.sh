@@ -618,6 +618,7 @@ main() {
                 fi
             else
                 yaml_set "$STATE_FILE" "goal" "$details" >/dev/null 2>&1 || true
+                declare -f touch_last_updated > /dev/null 2>&1 && touch_last_updated "$STATE_FILE"
                 # Keep the handoff's managed summary (which shows the goal) current
                 if declare -f refresh_handoff_header > /dev/null 2>&1; then
                     refresh_handoff_header "" "" "" "${WORKFLOW_DIR}/handoff.md"
