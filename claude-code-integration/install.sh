@@ -53,7 +53,7 @@ ask() {
 # Portable ISO-8601 timestamp (BSD date has no -I on older macOS)
 iso_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# Colors
+# Colors (none unless stdout is a terminal and NO_COLOR / TERM=dumb are unset)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -61,6 +61,7 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; BOLD=''; NC=''; }
 
 # Configuration
 UWS_VERSION="1.3.0"
@@ -157,8 +158,17 @@ if [[ -f "$WORKFLOW_DIR/state.yaml" ]]; then
     [[ -z "$PROJECT_TYPE" ]] && PROJECT_TYPE=$(grep -E "^  type:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || true)
     PROJECT_TYPE="${PROJECT_TYPE:-unknown}"
 
+    # The methodology phase is what /uws-sdlc and /uws-research move; current_phase is
+    # the coarse UWS phase (this installer's scripts do not advance it)
+    SDLC_PHASE=$(grep -E "^sdlc_phase:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || true)
+    RESEARCH_PHASE=$(grep -E "^research_phase:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' "' || true)
+    GOAL=$(grep -E "^goal:" "$WORKFLOW_DIR/state.yaml" 2>/dev/null | head -1 | sed -e 's/^goal:[[:space:]]*//' -e 's/^"//' -e 's/"$//' | tr -d '\\' || true)
+
     CONTEXT+="## Workflow State\n"
-    CONTEXT+="- Phase: ${PHASE}\n"
+    [[ -n "$GOAL" ]] && CONTEXT+="- Goal: ${GOAL}\n"
+    [[ -n "$SDLC_PHASE" ]] && CONTEXT+="- SDLC phase: ${SDLC_PHASE}\n"
+    [[ -n "$RESEARCH_PHASE" ]] && CONTEXT+="- Research phase: ${RESEARCH_PHASE}\n"
+    CONTEXT+="- UWS phase: ${PHASE}\n"
     CONTEXT+="- Checkpoint: ${CHECKPOINT}\n"
     CONTEXT+="- Project Type: ${PROJECT_TYPE}\n\n"
 fi
@@ -262,14 +272,14 @@ cat > "${UWS_DIR}/scripts/common.sh" << 'SCRIPT_EOF'
 #!/bin/bash
 # UWS Common Utilities - Shared by all workflow scripts
 
-# Colors
-readonly UWS_GREEN='\033[0;32m'
-readonly UWS_YELLOW='\033[1;33m'
-readonly UWS_RED='\033[0;31m'
-readonly UWS_CYAN='\033[0;36m'
-readonly UWS_BLUE='\033[0;34m'
-readonly UWS_BOLD='\033[1m'
-readonly UWS_NC='\033[0m'
+# Colors: none unless stdout is a terminal (slash commands capture the output for
+# Claude, which must not get raw ANSI escapes)
+if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
+    readonly UWS_GREEN='\033[0;32m' UWS_YELLOW='\033[1;33m' UWS_RED='\033[0;31m' \
+        UWS_CYAN='\033[0;36m' UWS_BLUE='\033[0;34m' UWS_BOLD='\033[1m' UWS_NC='\033[0m'
+else
+    readonly UWS_GREEN='' UWS_YELLOW='' UWS_RED='' UWS_CYAN='' UWS_BLUE='' UWS_BOLD='' UWS_NC=''
+fi
 
 # Resolve workflow directory
 _uws_resolve_workflow_dir() {
@@ -531,6 +541,11 @@ case "$ACTION" in
     goto)   cmd_goto "$@" ;;
     fail)   cmd_fail "$*" ;;
     reset)  cmd_reset ;;
+    goal|check|deliverables)
+        echo -e "${UWS_YELLOW}'${ACTION}' (goal-driven deliverable gating) is not part of the per-project install.${UWS_NC}"
+        echo "It comes with the Claude Code plugin (/uws:sdlc ${ACTION}) and the uws CLI (uws sdlc ${ACTION})."
+        exit 2
+        ;;
     *)
         echo -e "${UWS_RED}Unknown action: ${ACTION}${UWS_NC}"
         echo "Usage: sdlc.sh {status|start|next|goto|fail|reset}"
@@ -730,6 +745,11 @@ case "$ACTION" in
     goto)   cmd_goto "$@" ;;
     reject) cmd_reject "$*" ;;
     reset)  cmd_reset ;;
+    goal|check|deliverables)
+        echo -e "${UWS_YELLOW}'${ACTION}' (goal-driven deliverable gating and the research checks) is not part of the per-project install.${UWS_NC}"
+        echo "It comes with the Claude Code plugin (/uws:research ${ACTION}) and the uws CLI (uws research ${ACTION})."
+        exit 2
+        ;;
     *)
         echo -e "${UWS_RED}Unknown action: ${ACTION}${UWS_NC}"
         echo "Usage: research.sh {status|start|next|goto|reject|reset}"
@@ -1024,7 +1044,7 @@ if [[ ! -f "${WORKFLOW_DIR}/state.yaml" ]]; then
 
 # Current workflow position
 current_phase: "phase_1_planning"
-current_checkpoint: "CP_INIT"
+current_checkpoint: "CP_1_001"
 
 # Project metadata
 project:

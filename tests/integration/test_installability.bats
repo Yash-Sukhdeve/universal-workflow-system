@@ -70,6 +70,27 @@ install_into_project() {
     [[ "$(echo "$ctx" | grep -A1 'Modified files:' | tail -1)" != "0" ]] || false
 }
 
+@test "installer: SessionStart context names the SDLC/research phase and goal; checkpoint matches the log" {
+    install_into_project --yes
+    # state.yaml and checkpoints.log agree on the first checkpoint
+    grep -Eq '^current_checkpoint: "?CP_1_001"?$' "$PROJ/.workflow/state.yaml"
+    grep -q '| CP_1_001 |' "$PROJ/.workflow/checkpoints.log"
+    run env -u WORKFLOW_DIR bash -c "cd '$PROJ' && ./.uws/scripts/sdlc.sh start" </dev/null
+    [ "$status" -eq 0 ]
+    printf 'goal: "Ship a parser"\n' >> "$PROJ/.workflow/state.yaml"
+    run bash -c "cd '$PROJ' && CLAUDE_PROJECT_DIR='$PROJ' .uws/hooks/session_start.sh"
+    [ "$status" -eq 0 ]
+    local ctx
+    ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
+    [[ "$ctx" == *"- SDLC phase: requirements"* ]] || false
+    [[ "$ctx" == *"- Goal: Ship a parser"* ]] || false
+    [[ "$ctx" == *"- Checkpoint: CP_1_001"* ]] || false
+    # the bundled scripts have no deliverable gate, and say where it is
+    run env -u WORKFLOW_DIR bash -c "cd '$PROJ' && ./.uws/scripts/sdlc.sh goal 'x'" </dev/null
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"not part of the per-project install"* ]] || false
+}
+
 @test "installer: upgrade migrates a v1.2.0 flat hooks array and keeps other permissions" {
     mkdir -p "$PROJ/.claude" "$PROJ/.uws"
     echo "1.2.0" > "$PROJ/.uws/version"
