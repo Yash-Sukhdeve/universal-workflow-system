@@ -369,3 +369,34 @@ no_stale_hint() {
     [[ "$output" != *"Declare the project goal"* && "$output" != *"Start a methodology"* ]] || false
     rm -rf "$(dirname "$MAT")"
 }
+
+@test "orchestrate: without the plugin or agent files, dispatch warns how to get the subagent" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" sdlc start </dev/null >/dev/null
+    run "${PROJECT_ROOT}/bin/uws" orchestrate dispatch "Write the requirements" </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"warning: no subagent uws-researcher"* ]] || false
+    [[ "$output" == *"/plugin install uws@uws"* ]] || false
+    [[ "$output" == *"cp '${PROJECT_ROOT}/.claude/agents'/uws-*.md .claude/agents/"* ]] || false
+    # the printed copy command works, and then the warning is gone
+    mkdir -p .claude/agents && cp "${PROJECT_ROOT}"/.claude/agents/uws-*.md .claude/agents/
+    run "${PROJECT_ROOT}/bin/uws" orchestrate status </dev/null
+    [[ "$output" != *"warning: no subagent"* ]] || false
+    [[ "$output" == *"Subagent:    uws-researcher"* ]] || false
+}
+
+@test "orchestrate: the plugin names its own subagent and ships an orchestrate command" {
+    materialize_plugin
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "$MAT/bin/uws" init software </dev/null >/dev/null
+    "$MAT/bin/uws" sdlc start </dev/null >/dev/null
+    run "$MAT/bin/uws" orchestrate dispatch "Write the requirements" </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"warning: no subagent"* ]] || false
+    [[ "$output" == *"run the uws:uws-researcher subagent"* ]] || false
+    [[ "$output" == *'/uws:orchestrate collect "researcher: requirements artifact"'* ]] || false
+    [ -f "$PLUGIN_DIR/commands/orchestrate.md" ]
+    grep -q 'CLAUDE_PLUGIN_ROOT}/bin/uws orchestrate dispatch' "$PLUGIN_DIR/commands/orchestrate.md"
+    rm -rf "$(dirname "$MAT")"
+}
