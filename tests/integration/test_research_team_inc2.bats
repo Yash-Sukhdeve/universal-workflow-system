@@ -676,7 +676,12 @@ EOF
     run check numbers
     [ "$status" -eq 1 ]
     [[ "$output" == *"paper/main.tex:25 NUM-SPLIT \\GbAucCv (N-0001) is a cross-validation value, but the sentence/caption does not say so"* ]] || false
+    # a disclaimer ("not a held-out estimate") is not a presentation as held-out
     sed_inplace 's/^The model reaches .*/The 5-fold CV mean \\GbAucCv{} is not a held-out estimate./' "$P/paper/main.tex"
+    run check numbers
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"NUM-SPLIT"* ]] || false
+    sed_inplace 's/^The 5-fold CV mean .*/The 5-fold CV mean \\GbAucCv{} is close to the held-out estimate./' "$P/paper/main.tex"
     run check numbers
     [ "$status" -eq 0 ]
     [[ "$output" == *"NUM-SPLIT [warn]"* ]] || false

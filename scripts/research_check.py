@@ -1736,11 +1736,100 @@ NUM_SUFFIX_EXEMPT = re.compile(r"^(?:\s*\\(?:textwidth|linewidth|columnwidth|tex
 LITERAL_RE = re.compile(r"uws:literal\b(.*)")
 
 # Where results are reported (design 6.4 d): the abstract, tables and figures, and files or
-# top-level sections named introduction, results, evaluation, experiments, discussion or
-# conclusion. A subsection title counts only for the narrower list (so "Evaluation Metrics"
-# inside a method section is not in scope).
-_SCOPE_RE = re.compile(r"(abstract|intro|result|evaluation|experiments\b|discussion|conclusion)", re.I)
+# top-level sections named introduction, results, findings, analysis, performance, outcomes,
+# evaluation, experiments, discussion or conclusion. A subsection title counts only for the
+# narrower list (so "Evaluation Metrics" inside a method section is not in scope). Outside
+# these places a hand-typed number is still reported when its sentence names a metric of the
+# number ledger or the number is a ledger value (_hand_typed_numbers).
+_SCOPE_RE = re.compile(r"(abstract|intro|result|findings?|analys[ie]s|performance|outcomes?|evaluation|"
+                       r"experiments\b|discussion|conclusion)", re.I)
 _SCOPE_SUB_RE = re.compile(r"(abstract|intro|result|conclusion)", re.I)
+
+
+# Metric names a sentence can use for a ledger number, one spelling each (ROC-AUC -> auc).
+# A hand-typed number in a sentence that names a metric of the number ledger is presented as
+# a result of this work, wherever it is.
+METRIC_TERM_RE = re.compile(r"\b(?:roc[- ]?)?(auc|accuracy|f1|precision|recall|sensitivity|specificity|rmse|"
+                            r"mae|mse|mape|r2|bleu|rouge|perplexity|kappa|ndcg|mrr|error rate|latency|throughput)\b",
+                            re.I)
+# Words of a row's metric that a sentence about it shares ("held-out test rows (count)")
+_CONTENT_WORD_RE = re.compile(r"[a-z]{4,}")
+_STOP_WORDS = frozenset("from with that this were what when which their there over under into than "
+                        "value values mean count number".split())
+
+
+def metric_terms(text):
+    return set(m.group(1).lower() for m in METRIC_TERM_RE.finditer(str(text or "")))
+
+
+def _content_words(text):
+    return set(w for w in _CONTENT_WORD_RE.findall(str(text or "").lower()) if w not in _STOP_WORDS)
+
+
+def ledger_values(project):
+    """[(N-ID, row, printed Decimal or None, raw Decimal or None, metric terms)] of the
+    current number rows."""
+    out = []
+    numbers = project.numbers()
+    for nid in sorted(numbers.latest):
+        row = numbers.latest[nid][1]
+        printed = raw = None
+        pn = _printed_number(row.get("printed"))
+        try:
+            printed = Decimal(pn) if pn is not None else None
+        except InvalidOperation:
+            printed = None
+        rv = row.get("raw")
+        if not isinstance(rv, bool) and isinstance(rv, (int, float, str)):
+            try:
+                raw = Decimal(str(rv))
+            except InvalidOperation:
+                raw = None
+        out.append((nid, row, printed, raw, metric_terms(row.get("metric"))))
+    return out
+
+
+def _is_value_of(num, printed, raw):
+    """True when `num` (as typed) is the row's printed value, or its raw value rounded to the
+    places `num` has (0.91 and 0.9125 are both the value 0.9125)."""
+    try:
+        d = Decimal(num)
+    except InvalidOperation:
+        return False
+    if printed is not None and d == printed:
+        return True
+    if raw is not None and "." in num:
+        return abs(d - raw) <= Decimal(5).scaleb(-(_decimals(num) + 1))
+    return False
+
+
+def _near_miss(num, values, integers=False):
+    """The ledger row `num` nearly equals: within 10% of its printed value, but not its value
+    (a typo or a stale number). With integers=True only integer (count) rows are compared."""
+    try:
+        d = Decimal(num)
+    except InvalidOperation:
+        return None
+    for nid, row, printed, raw, _terms in values:
+        if printed is None or printed == 0:
+            continue
+        if integers != (printed == printed.to_integral_value() and "." not in str(row.get("printed"))):
+            continue
+        if _is_value_of(num, printed, raw):
+            continue
+        if abs(d - printed) / abs(printed) <= Decimal("0.10"):
+            return nid, row
+    return None
+
+
+def _ledger_metric_in(text, values):
+    """(term, N-ID) when `text` names a metric that a ledger row measures, else None."""
+    terms = metric_terms(text)
+    for nid, _row, _p, _r, row_terms in values:
+        common = sorted(terms & row_terms)
+        if common:
+            return common[0], nid
+    return None
 
 
 def number_tokens(code):
@@ -1930,8 +2019,9 @@ def number_occurrences(project, doc, sent):
     return out
 
 
-def check_numbers(project, only_ids=None):
-    """Number provenance (design 6.4 a-e; AT5)."""
+def check_numbers(project, only_ids=None, strict=False):
+    """Number provenance (design 6.4 a-e; AT5). strict: the peer_review and publication gates
+    (a CV value presented as held-out blocks)."""
     findings = []
     numbers = project.numbers()
     findings.extend(numbers.parse_errors)
@@ -1972,7 +2062,7 @@ def check_numbers(project, only_ids=None):
         if run:
             findings.extend(_check_run(project, numbers.rel, lineno, nid, run, row))
         findings.extend(_check_formula(numbers, nid, lineno, row))
-        findings.extend(_check_evaluation(numbers.rel, nid, lineno, row))
+        findings.extend(_check_evaluation(numbers.rel, nid, lineno, row, project))
         if macros is not None and row.get("macro"):
             if row["macro"] not in macros:
                 where("macro %s is not defined in %s" % (row["macro"], macro_rel), "NUM-MACRO")
@@ -1990,7 +2080,7 @@ def check_numbers(project, only_ids=None):
     if not only_ids:
         findings.extend(project.links().findings)
         findings.extend(_hand_typed_numbers(project, macro_rel))
-        findings.extend(_split_disclosure(project, macro_rel))
+        findings.extend(_split_disclosure(project, macro_rel, strict))
     return findings
 
 
@@ -2244,11 +2334,33 @@ TRAIN_WORD_RE = re.compile(r"\b(training|train(?:ing)?[- ](?:set|split|data)|in[
 VALID_WORD_RE = re.compile(r"\bvalidation\b", re.I)
 HELDOUT_WORD_RE = re.compile(r"(held[- ]out|\btest(?:ing)?[- ](?:set|split|data|score|AUC|F1|accuracy)\b|\bunseen\b|out[- ]of[- ]sample)", re.I)
 SPLIT_WORDS = {"cross-validation": CV_WORD_RE, "training": TRAIN_WORD_RE, "validation": VALID_WORD_RE}
-_CV_SOURCE_RE = re.compile(r"(\bcv\b|cv_|_cv|cross[-_ ]?valid|\bfolds?\b|\d+[-_ ]?fold)", re.I)
+# Keys and metric names of cross-validation values: cv, cv5_..., cv10, cvacc, cv_auc,
+# kfold/k_fold, 5fold, oof (out-of-fold), fold_mean, cross-validation ...
+_CV_SOURCE_RE = re.compile(r"((?<![a-z])cv(?:\d+|acc|auc|f1)?(?![a-z])|cv_|_cv|cross[-_ ]?valid|\bfolds?\b|"
+                           r"\d+[-_ ]?folds?|k[-_ ]?folds?|(?<![a-z])oof(?![a-z])|out[-_ ]?of[-_ ]?fold|"
+                           r"folds?[-_ ]?(?:mean|avg|average))", re.I)
 _TEST_SOURCE_RE = re.compile(r"(\btest\b|test_|_test|held[-_ ]?out)", re.I)
 
 
-def _check_evaluation(rel, nid, lineno, row):
+def _json_keys(path):
+    """Every key of a JSON file (nested), or [] when it is not JSON."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    keys, stack = [], [data]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            keys.extend(str(k) for k in cur)
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return keys
+
+
+def _check_evaluation(rel, nid, lineno, row, project=None):
     if row.get("data_origin") == "literature":
         return []
     ev = row.get("evaluation")
@@ -2262,13 +2374,39 @@ def _check_evaluation(rel, nid, lineno, row):
     if ev in ("cross-validation", "training") and _TEST_SOURCE_RE.search(source) and not _CV_SOURCE_RE.search(source):
         return [Finding(rel, lineno, "NUM-SPLIT", "%s: evaluation is %s, but its metric/pointer describe a held-out "
                         "test value (%s)" % (nid, ev, source.strip()))]
+    # A held-out row whose key says nothing about its split, in an output that also holds
+    # cross-validation values: the key may be the CV one under a neutral name
+    pointer = str(row.get("pointer") or "")
+    out_rel = row.get("output")
+    if (ev == "held-out" and project is not None and out_rel and not _TEST_SOURCE_RE.search(pointer)
+            and not HELDOUT_WORD_RE.search(pointer)):
+        out_path = project.path(str(out_rel))
+        if os.path.isfile(out_path) and any(_CV_SOURCE_RE.search(k) for k in _json_keys(out_path)):
+            return [Finding(rel, lineno, "NUM-SPLIT", "%s: evaluation is held-out, but pointer %s names neither a "
+                            "test nor a held-out split, and %s also holds cross-validation values; check that the "
+                            "key is the held-out one" % (nid, pointer, out_rel), "warn")]
     return []
 
 
-def _split_disclosure(project, macro_rel):
+# A held-out word after a negation is a disclaimer ("not a held-out result")
+_NEGATED_BEFORE_RE = re.compile(r"(?:\b(?:not|no|never|nor|rather than|instead of)\s+(?:(?:an?|the)\s+)?)$", re.I)
+
+
+def _says_heldout(text):
+    """The first held-out word of `text` that is not negated, or None."""
+    for m in HELDOUT_WORD_RE.finditer(text):
+        if not _NEGATED_BEFORE_RE.search(text[max(0, m.start() - 30):m.start()]):
+            return m.group(0)
+    return None
+
+
+def _split_disclosure(project, macro_rel, strict=False):
     """A CV, training or validation value must say so where it is used: through its macro,
-    or typed by hand at a place its row's `where` names."""
+    or typed by hand at a place its row's `where` names. A CV value in a sentence that also
+    calls its result held-out is a warning; at the peer_review and publication gates
+    (strict) it blocks unless the line cites a recorded PI decision (% D-<n> ...)."""
     out = []
+    decisions = pi_decision_ids(project) if strict else set()
     if not any(r.get("evaluation") in SPLIT_WORDS for _l, r in project.numbers().latest.values()):
         return out
     for path in project.tex_files():
@@ -2286,35 +2424,85 @@ def _split_disclosure(project, macro_rel):
                     out.append(Finding(doc.rel, sent.line_of(off), "NUM-SPLIT",
                                        "%s (%s) is a %s value, but the sentence/caption does not say so; "
                                        "a reader will take it for a held-out result" % (label, nid, ev)))
-                elif HELDOUT_WORD_RE.search(sent.text):
-                    out.append(Finding(doc.rel, sent.line_of(off), "NUM-SPLIT",
-                                       "%s (%s) is a %s value in a sentence that also says %r; check that it is "
-                                       "not presented as held-out" % (label, nid, ev,
-                                                                       HELDOUT_WORD_RE.search(sent.text).group(0)), "warn"))
+                else:
+                    word = _says_heldout(sent.text)
+                    if not word:
+                        continue
+                    ln = sent.line_of(off)
+                    cited = set(DID_RE.findall(" ".join(doc.comment[l - 1] for l in sent.lines))) & decisions
+                    level = "block" if strict and not cited else "warn"
+                    out.append(Finding(doc.rel, ln, "NUM-SPLIT",
+                                       "%s (%s) is a %s value in a sentence that also says %r; a reader takes it for "
+                                       "a held-out result: say which split it comes from, or cite the PI decision that "
+                                       "allows the wording on the line (%% D-<n>)" % (label, nid, ev, word), level))
     return out
 
 
+def _literal_decision(project, reason):
+    """The PI decision a `uws:literal D-<n> <reason>` marker cites, when it is recorded."""
+    m = re.match(r"\s*(D-\d+)\b", reason)
+    if m and m.group(1) in pi_decision_ids(project):
+        return m.group(1)
+    return None
+
+
+def _sentence_text_by_line(doc):
+    by_line = {}
+    for sent in doc.sentence_list():
+        for ln in sent.lines:
+            by_line.setdefault(ln, []).append(sent.text)
+    return dict((ln, " ".join(texts)) for ln, texts in by_line.items())
+
+
 def _hand_typed_numbers(project, macro_rel):
-    """NUM-LITERAL (design 6.4 d): hand-typed numbers where results are reported, and every
-    hand-typed value that a row's `where` locates, wherever it is."""
+    """NUM-LITERAL (design 6.4 d): hand-typed numbers where results are reported, every
+    hand-typed value that a row's `where` locates, wherever it is, and, outside the results
+    sections, numbers whose sentence names a ledger metric or that are a ledger value.
+
+    `% uws:literal <reason>` accepts a line's numbers, except a number close to a ledger
+    value (a typo or a stale copy) or one in a sentence that names a ledger metric (a result
+    typed by hand): those need a recorded PI decision, `% uws:literal D-<n> <reason>`."""
     out = []
     numbers = project.numbers()
     links = project.links()
+    values = ledger_values(project)
     for path in project.tex_files():
         rel = project.rel(path)
         if rel == macro_rel:
             continue
         doc = project.doc(path)
         linked = links.numbers.get(doc.path, {})
+        sentences = _sentence_text_by_line(doc)
         for idx, code in enumerate(doc.code):
+            context = sentences.get(idx + 1, code)
             lit = LITERAL_RE.search(doc.comment[idx])
             if lit:
-                if not lit.group(1).strip():
+                reason = lit.group(1).strip()
+                if not reason:
                     out.append(Finding(rel, idx + 1, "NUM-LITERAL", "uws:literal needs a reason"))
+                    continue
+                if _literal_decision(project, reason):
+                    continue
+                for _st, _en, text, num, reportable in number_tokens(code):
+                    if not reportable:
+                        continue
+                    near = _near_miss(num, values)
+                    metric = _ledger_metric_in(context, values)
+                    if near:
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed %s is marked uws:literal, but it is close to %s (%s): a typo "
+                                           "or a stale number? Use its macro %s, or cite the PI decision that allows "
+                                           "it: %% uws:literal D-<n> <reason>"
+                                           % (text, near[0], near[1].get("printed"), near[1].get("macro") or "")))
+                    elif metric:
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed %s is marked uws:literal in a sentence about %s, a metric of the "
+                                           "number ledger (%s): use a generated macro, or cite the PI decision that "
+                                           "allows it: %% uws:literal D-<n> <reason>" % (text, metric[0], metric[1])))
                 continue
             here = dict(((st, en), nid) for st, en, _t, nid in linked.get(idx + 1, []))
             in_scope = _number_scope(doc, idx)
-            for st, en, text, _num, reportable in number_tokens(code):
+            for st, en, text, num, reportable in number_tokens(code):
                 nid = here.get((st, en))
                 if nid:
                     macro = numbers.latest[nid][1].get("macro")
@@ -2325,6 +2513,51 @@ def _hand_typed_numbers(project, macro_rel):
                     out.append(Finding(rel, idx + 1, "NUM-LITERAL",
                                        "hand-typed number %s: use a generated macro from the number ledger, "
                                        "or mark the line `%% uws:literal <reason>`" % text))
+                elif in_scope:
+                    # A unit-less integer is usually a count, a year or an identifier; it is
+                    # reported only when it nearly equals a ledger count its sentence is about.
+                    near = _near_miss(num, values, integers=True)
+                    if near and _content_words(context) & _content_words(near[1].get("metric")):
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed %s is close to %s (%s, %s): use its macro %s, or mark the line "
+                                           "`%% uws:literal <reason>`" % (text, near[0], near[1].get("printed"),
+                                                                          near[1].get("metric"),
+                                                                          near[1].get("macro") or "")))
+                elif reportable:
+                    metric = _ledger_metric_in(context, values)
+                    same = [v for v in values if _is_value_of(num, v[2], v[3])]
+                    if metric:
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed number %s in a sentence about %s, a metric of the number ledger "
+                                           "(%s): use a generated macro, or mark the line `%% uws:literal <reason>`"
+                                           % (text, metric[0], metric[1])))
+                    elif same:
+                        out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                           "hand-typed number %s is the value of %s: use its macro %s, or mark the "
+                                           "line `%% uws:literal <reason>`"
+                                           % (text, same[0][0], same[0][1].get("macro") or "(it has none yet)")))
+    return out
+
+
+def literal_inventory(project, macro_rel=None):
+    """Every number a `uws:literal` marker accepts, as a warning, so the PI sees them all at
+    the publication gate (design 6.4 d)."""
+    out = []
+    if macro_rel is None:
+        macro_rel = read_number_macros(project)[0]
+    for path in project.tex_files():
+        rel = project.rel(path)
+        if rel == macro_rel:
+            continue
+        doc = project.doc(path)
+        for idx, code in enumerate(doc.code):
+            lit = LITERAL_RE.search(doc.comment[idx])
+            if not lit or not lit.group(1).strip():
+                continue
+            for _st, _en, text, _num, reportable in number_tokens(code):
+                if reportable:
+                    out.append(Finding(rel, idx + 1, "NUM-LITERAL", "%s is typed by hand (uws:literal: %s)"
+                                       % (text, lit.group(1).strip()), "warn"))
     return out
 
 
@@ -5106,7 +5339,7 @@ def run_gate(project, phase, allow_missing_cache=None):
     if phase == "data_collection":
         findings.extend(check_slop(project, prose=False, code=True))
     if idx >= PHASES.index("analysis"):
-        findings.extend(check_numbers(project))
+        findings.extend(check_numbers(project, strict=idx >= PHASES.index("peer_review")))
         findings.extend(check_slop(project))
         findings.extend(check_repro_current(project))
     if idx >= PHASES.index("peer_review"):
@@ -5114,6 +5347,7 @@ def run_gate(project, phase, allow_missing_cache=None):
         findings.extend(check_review_hash(project))
     if phase == "publication":
         findings.extend(check_pi_approval(project))
+        findings.extend(literal_inventory(project))
     findings = dedupe(findings)
     notes = ["not checked yet: " + text for first, text in reversed(NOT_CHECKED) if idx >= PHASES.index(first)]
     if phase in ("literature_review", "analysis"):
