@@ -1757,27 +1757,50 @@ def _number_scope(doc, idx):
 # them is ignored): file:line, file:first-last, file:l1,l2 or file#label. Text in
 # parentheses is a note, never a place: the PROMISE ledger wrote "audit/recovered/x.tex:108
 # (the section paper/main-promise.tex:106 inputs; ...)", and main-promise.tex:106 is where the
-# missing section is input, not where the number is printed.
-WHERE_ITEM_RE = re.compile(r"(?<![\w./-])([\w./-]+\.(?:tex|md))(?::(\d+(?:\s*[-,]\s*\d+)*)|#([^\s;,()]+))")
+# missing section is input, not where the number is printed. A file name may contain spaces
+# ("paper/sec one.tex:2") when it names one of the manuscript files.
+WHERE_LOC_RE = re.compile(r"(\.(?:tex|md))(?::(\d+(?:\s*[-,]\s*\d+)*)|#([^\s;,()]+))")
+WHERE_TOKEN_RE = re.compile(r"[\w./-]+$")
 PAREN_NOTE_RE = re.compile(r"\([^()]*\)")
 
 
-def parse_where(text):
-    """[(path, spec, [(first, last), ...] or None, label or None)] of a `where` field."""
+def parse_where(text, known=()):
+    """[(path, spec, [(first, last), ...] or None, label or None)] of a `where` field.
+
+    The path of a place is the longest text before its `.tex`/`.md` in the same
+    `;`-separated segment, starting at a word, that names one of the `known` manuscript
+    files (project-relative), so a name with spaces is read whole; otherwise it is the run
+    of path characters ([\\w./-]) just before the extension."""
     out = []
     text, prev = str(text or ""), None
     while prev != text:   # innermost parentheses first, so nested notes go too
         prev, text = text, PAREN_NOTE_RE.sub(" ", text)
-    for m in WHERE_ITEM_RE.finditer(text):
-        path, spec, label = m.group(1), m.group(2), m.group(3)
-        if spec:
-            locs = []
-            for part in re.split(r"\s*,\s*", spec):
-                ends = [int(x) for x in re.split(r"\s*-\s*", part)]
-                locs.append((min(ends), max(ends)))
-            out.append((path, spec, locs, None))
-        else:
-            out.append((path, "#" + label, None, label))
+    for segment in text.split(";"):
+        start = 0
+        for m in WHERE_LOC_RE.finditer(segment):
+            ext, spec, label = m.group(1), m.group(2), m.group(3)
+            before, path = segment[start:m.start()], None
+            start = m.end()
+            for i in range(len(before)):
+                if i and not before[i - 1].isspace():
+                    continue
+                cand = before[i:].strip()
+                if cand and os.path.normpath(cand + ext).replace(os.sep, "/") in known:
+                    path = cand + ext
+                    break
+            if path is None:
+                tok = WHERE_TOKEN_RE.search(before)
+                if not tok:
+                    continue
+                path = tok.group(0) + ext
+            if spec:
+                locs = []
+                for part in re.split(r"\s*,\s*", spec):
+                    ends = [int(x) for x in re.split(r"\s*-\s*", part)]
+                    locs.append((min(ends), max(ends)))
+                out.append((path, spec, locs, None))
+            else:
+                out.append((path, "#" + label, None, label))
     return out
 
 
@@ -1798,6 +1821,7 @@ class WhereLinks(object):
         self.claims = {}    # abs path -> {lineno: set of C-IDs}
         self.findings = []
         prose = set(os.path.abspath(f) for f in project.prose_files())
+        self.known = set(project.rel(f).replace(os.sep, "/") for f in prose)
         numbers = project.numbers()
         for nid in sorted(numbers.latest):
             lineno, row = numbers.latest[nid]
@@ -1821,7 +1845,7 @@ class WhereLinks(object):
                         self.claims.setdefault(doc.path, {}).setdefault(ln, set()).add(cid)
 
     def _places(self, project, prose, rel, lineno, rid, where, report):
-        for path, spec, locs, label in parse_where(where):
+        for path, spec, locs, label in parse_where(where, self.known):
             place = "%s%s" % (path, spec if label else ":" + spec)
             full = os.path.abspath(project.path(path))
             if full not in prose:

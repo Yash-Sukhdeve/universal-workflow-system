@@ -233,6 +233,16 @@ EOF
     [[ "$output" == *"NUM-WHERE [warn] N-0001: where names paper/main.tex:9, but its printed value 0.912 is not there"* ]]
 }
 
+@test "P0 where: a manuscript file whose name has a space is linked, after free text too" {
+    printf '\\section{Discussion}\nThe 5-fold CV mean ROC-AUC is 0.912.\n' > "$P/paper/sec one.tex"
+    add_revision N-0001 '{"where": "printed at paper/sec one.tex:2"}'
+    run check numbers
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"paper/sec one.tex:2 NUM-LITERAL hand-typed number 0.912 is N-0001: use its macro \\GbAucCv"* ]]
+    [[ "$output" != *"NUM-WHERE"* ]]
+}
+
 # ── P1: coverage and false positives ─────────────────────────────────────────
 
 @test "P1 NUM-LITERAL: numbers with units (1.1ms, 1.1\\,ms, 30\\%) are caught, in the introduction too" {
