@@ -22,7 +22,8 @@
 #   kb_agent_model, kb_current_phase, kb_cr_model, kb_record_gate_fail,
 #   kb_record_gate_pass
 #   Increment 2 (design section 18): kb_global_memory_dir, kb_global_dir, kb_global_ready,
-#   kb_guarded, kb_session_id, kb_usage_record, kb_is_global_id, kb_scan_scope_args
+#   kb_guarded, kb_session_id, kb_usage_record, kb_is_global_id, kb_scan_scope_args,
+#   kb_git_env_clear
 
 if [[ "${_UWS_KB_UTILS_LOADED:-}" == "true" ]]; then
     return 0 2>/dev/null || true
@@ -640,13 +641,27 @@ kb_global_dir() {
     printf '%s/kb\n' "$(kb_global_memory_dir)"
 }
 
+# kb_git_env_clear: unset the variables that point git at another repository
+# than the one around the directory it runs in (GIT_DIR, GIT_WORK_TREE,
+# GIT_INDEX_FILE, ...: `git rev-parse --local-env-vars`), as git's own scripts
+# do. git exports GIT_DIR to hooks (absolute in a worktree), and with it set
+# `git -C <any dir> rev-parse --show-toplevel` prints <any dir>. Changes the
+# caller's environment: call it in a subshell, or in a process that works on
+# the global KB only.
+kb_git_env_clear() {
+    # shellcheck disable=SC2046
+    unset $(git rev-parse --local-env-vars 2>/dev/null)
+    return 0
+}
+
 # Succeeds when <dir> exists and is the top level of its own git repository
 # (design risk 13: global writes are refused otherwise, so every change to the
-# cross-project KB stays auditable and reversible in git).
+# cross-project KB stays auditable and reversible in git). An inherited
+# GIT_DIR is ignored (kb_git_env_clear, in the command substitution's subshell).
 kb_global_ready() {
     local d="$1" top real
     [[ -n "$d" && -d "$d" ]] || return 1
-    top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" || return 1
+    top="$(kb_git_env_clear; git -C "$d" rev-parse --show-toplevel 2>/dev/null)" || return 1
     [[ -n "$top" ]] || return 1
     real="$(cd "$d" && pwd -P)" || return 1
     top="$(cd "$top" && pwd -P)" || return 1

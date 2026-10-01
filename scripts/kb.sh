@@ -123,6 +123,9 @@ select_global() {
     KB="$(global_kb)"
     ROOT="$KB"
     PI_CFG="${KB}/config.yaml"
+    # Every git command from here on (init, mv, config user.email, HEAD) is about
+    # the global KB's own repository, never one an inherited GIT_DIR names
+    kb_git_env_clear
 }
 
 # How IDs of this KB are shown, so commands run from a project reach it

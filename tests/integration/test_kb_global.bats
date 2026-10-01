@@ -105,6 +105,32 @@ EOF
     [ -z "$(git -C "$GKB" log --oneline 2>/dev/null)" ]
 }
 
+@test "global: an inherited GIT_DIR does not make a plain directory pass for the KB's own repository" {
+    # git exports GIT_DIR to hooks (absolute in worktrees); a plain directory is still no repository
+    mkdir -p "$GKB"
+    run env GIT_DIR="${TEST_TMP_DIR}/.git" "$UWS" kb add --global --type lesson \
+        --claim "Prefer atomic renames for config writes" --evidence reported \
+        --source url:https://example.org/d --quote "q"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"not its own git repository"* ]] || false
+    [ ! -e "$GKB/items" ]
+    [ ! -e "$GKB/events.tsv" ]
+    # init --global gives the KB its own repository and leaves the project's alone
+    local head
+    head="$(git rev-parse HEAD)"
+    run env GIT_DIR="${TEST_TMP_DIR}/.git" "$UWS" kb init --global
+    [ "$status" -eq 0 ]
+    [ -d "$GKB/.git" ]
+    [ "$(git rev-parse HEAD)" = "$head" ]
+    git -C "$GKB" config user.email "$PI"
+    run env GIT_DIR="${TEST_TMP_DIR}/.git" "$UWS" kb add --global --type lesson \
+        --claim "Prefer atomic renames for config writes" --evidence reported \
+        --source url:https://example.org/d --quote "q"
+    [ "$status" -eq 0 ]
+    [ -n "$(ls "$GKB/items")" ]
+    [ -z "$(git status --porcelain)" ]
+}
+
 @test "global: claims naming a project or home path are refused; lint I8 reports a hand-edited one" {
     init_global
     run "$UWS" kb add --global --type fact --claim "The checker lives in scripts/kb.sh" --evidence reported \
