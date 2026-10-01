@@ -4783,6 +4783,13 @@ def cmd_ledger_add(project, kind, text):
     if kind == "numbers":
         project._numbers = view
         run_rel = "research/runs/%s/run.json" % row.get("run") if row.get("run") else None
+        # A macro another current row uses. The ledger-wide check reports a duplicate on the
+        # ID that sorts later, which for a revision of a lower ID is the other row's line.
+        macro = row.get("macro")
+        others = sorted(nid for nid, (_l, r) in led.latest.items() if nid != rid and macro and r.get("macro") == macro)
+        if others:
+            findings.append(Finding(led.rel, lineno, "NUM-SCHEMA", "%s: macro %s is also used by %s; each number "
+                                    "needs its own macro" % (rid, macro, ", ".join(others))))
         findings.extend(f for f in check_numbers(project, [rid]) if f.rule != "NUM-MACRO" and
                         ((f.path == led.rel and f.line == lineno) or (run_rel and f.path == run_rel)))
         if row.get("data_origin") != "literature":
@@ -4798,6 +4805,7 @@ def cmd_ledger_add(project, kind, text):
     else:
         project._claims = view
         findings.extend(_check_claim(project, view, project.numbers(), lineno, row))
+    findings = dedupe(findings)
     emit(findings, False)
     # A row is refused for what is wrong with the row itself (schema, references, its value
     # against the output file, links). A printed value that its evidence does not support is a

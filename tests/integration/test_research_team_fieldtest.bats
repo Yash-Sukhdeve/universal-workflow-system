@@ -730,6 +730,45 @@ inst_listing() {
     [ "$status" -eq 0 ]
 }
 
+N0001_FIELDS='"rounding":"floor:3","metric":"5-fold CV mean ROC-AUC, training split","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/cv_auc_mean","data_origin":"synthetic-generated","evaluation":"cross-validation","exp":"EXP-LEAK","inputs":["research/data/raw/gb_scores.csv"]'
+
+@test "P2 numbers add: a revision of an existing ID gets the next rev and supersedes; existing lines stay" {
+    local first n
+    first="$(head -1 "$P/research/ledger/numbers.jsonl")"
+    n="$(wc -l < "$P/research/ledger/numbers.jsonl")"
+    run check numbers add "{\"id\":\"N-0001\",\"macro\":\"\\\\GbAucCv\",${N0001_FIELDS}}"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"appended N-0001 rev 2"* ]]
+    [ "$(head -1 "$P/research/ledger/numbers.jsonl")" = "$first" ]
+    [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$((n + 1))" ]
+    python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).read().splitlines()[-1]); assert r["id"]=="N-0001" and r["rev"]==2 and r["supersedes"]=="N-0001@1" and r["printed"]=="0.912", r' \
+        "$P/research/ledger/numbers.jsonl"
+    run check ledger
+    [ "$status" -eq 0 ]
+}
+
+@test "P2 numbers add: a revision that takes another row's macro is refused (whichever ID sorts first)" {
+    run check numbers add '{"macro":"\\GbAucTest","rounding":"round:3","metric":"held-out ROC-AUC","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/test_auc","data_origin":"synthetic-generated","evaluation":"held-out","exp":"EXP-LEAK","inputs":["research/data/raw/gb_scores.csv"]}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"appended N-0002 rev 1"* ]]
+    local n
+    n="$(wc -l < "$P/research/ledger/numbers.jsonl")"
+    # A new row (it sorts after N-0001) reusing N-0001's macro: refused.
+    run check numbers add "{\"macro\":\"\\\\GbAucCv\",${N0001_FIELDS}}"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"N-0003: macro \\GbAucCv is also used by N-0001"* ]]
+    # A revision of N-0001 (it sorts before N-0002) taking N-0002's macro: refused too.
+    run check numbers add "{\"id\":\"N-0001\",\"macro\":\"\\\\GbAucTest\",${N0001_FIELDS}}"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"N-0001: macro \\GbAucTest is also used by N-0002"* ]]
+    [[ "$output" == *"refused"* ]]
+    [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$n" ]
+    run check numbers
+    [[ "$output" != *"is also used by"* ]]
+}
+
 @test "P2 macros: valid rows are written, invalid rows are reported and skipped" {
     add_number '{"id":"N-0002","macro":"\\Bad","printed":"5.8","raw":0.058,"rounding":"round:1","metric":"m","data_origin":"measured","evaluation":"held-out","exp":"exploratory","inputs":[]}'
     rm "$P/paper/generated/numbers.tex"
