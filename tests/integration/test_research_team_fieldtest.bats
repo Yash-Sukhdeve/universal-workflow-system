@@ -349,6 +349,37 @@ EOF
     [[ "$output" == *"paper/main.tex:24 BIB-MISSING \\cite{handwritten} has no bib_sources/handwritten.bib"* ]]
 }
 
+@test "P1 BIB-UNDEFINED: multi-line, biblatex, capitalised, spaced and multicite \\cite forms are all read" {
+    cat >> "$P/paper/main.tex" << 'EOF'
+Multi-line: \cite{sandve2013,
+  ghostMultiLine2020}.
+\parencite{ghostParen2021} \textcite{ghostText2022} \autocite[see][p.~2]{ghostAuto2023}
+\Citet{ghostCapital2019} and \cite {ghostSpace2018}; \footcite{ghostFoot2016}.
+\cites{ghostMultiA2014}{ghostMultiB2013} and \citeauthor{ghostAuthor2012}.
+% \cite{ghostComment2011}
+Control: \citep{ghostControl2017}. \citetext{priv.\ comm.} \citestyle{plain}
+EOF
+    local l
+    l="$(line_of 'Multi-line: \cite{sandve2013,')"
+    run check bib
+    echo "$output"
+    [ "$status" -eq 1 ]
+    local want
+    for want in "$((l + 1)) BIB-UNDEFINED \\cite{ghostMultiLine2020}" \
+                "$((l + 2)) BIB-UNDEFINED \\cite{ghostParen2021}" "$((l + 2)) BIB-UNDEFINED \\cite{ghostText2022}" \
+                "$((l + 2)) BIB-UNDEFINED \\cite{ghostAuto2023}" "$((l + 3)) BIB-UNDEFINED \\cite{ghostCapital2019}" \
+                "$((l + 3)) BIB-UNDEFINED \\cite{ghostSpace2018}" "$((l + 3)) BIB-UNDEFINED \\cite{ghostFoot2016}" \
+                "$((l + 4)) BIB-UNDEFINED \\cite{ghostMultiA2014}" "$((l + 4)) BIB-UNDEFINED \\cite{ghostMultiB2013}" \
+                "$((l + 4)) BIB-UNDEFINED \\cite{ghostAuthor2012}" "$((l + 6)) BIB-UNDEFINED \\cite{ghostControl2017}"; do
+        [[ "$output" == *"paper/main.tex:${want} "* ]] || { echo "missing: $want"; false; }
+    done
+    [[ "$output" != *"ghostComment2011"* ]]
+    [[ "$output" != *"sandve2013"* ]]
+    [[ "$output" != *"priv."* ]]
+    [[ "$output" != *"{plain}"* ]]
+    [ "$(printf '%s\n' "$output" | grep -c 'BIB-UNDEFINED' || true)" -eq 11 ]
+}
+
 @test "P1 run/repro: --output takes a glob for timestamped names; the concrete file is recorded and re-found" {
     cat > "$P/research/code/stamped.py" << 'EOF'
 import json

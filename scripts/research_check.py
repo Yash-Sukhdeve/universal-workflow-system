@@ -46,6 +46,7 @@ Only `run`, `repro` and `retraction --online` execute commands or use the networ
 
 import argparse
 import ast
+import bisect
 import csv
 import datetime
 import glob
@@ -950,26 +951,78 @@ def expected_references(project):
     return "\n".join(chunks)
 
 
+# A LaTeX citation command: \\cite and every command with "cite" in its name (natbib
+# \\citep, \\citet, \\Citet, \\citeauthor; biblatex \\parencite, \\textcite, \\autocite,
+# \\footcite, \\Parencite; a user's \\mycite). Two natbib commands take no keys.
+CITE_CMD_RE = re.compile(r"\\([A-Za-z]*[Cc]ite[A-Za-z]*)\*?")
+CITE_NOT_KEYS = ("citetext", "citestyle")
+
+
+def tex_citations(text):
+    """[(key, offset of the key)] for every citation key in comment-stripped LaTeX `text`.
+
+    Reads optional [pre][post] notes, whitespace (a newline too) before an argument, key
+    lists that continue on the next line, and biblatex multicite commands (\\cites,
+    \\parencites ...), whose (global notes) and several {keys} groups are all read."""
+    out, n = [], len(text)
+    for m in CITE_CMD_RE.finditer(text):
+        name = m.group(1)
+        if name.lower() in CITE_NOT_KEYS:
+            continue
+        multi = name.lower().endswith("cites")
+        pos = m.end()
+        while True:
+            j = pos
+            for opener, closer, limit in ((("(", ")", 2) if multi else (None, None, 0)), ("[", "]", 2)):
+                count = 0
+                while opener and count < limit:
+                    while j < n and text[j].isspace():
+                        j += 1
+                    if j < n and text[j] == opener:
+                        k = text.find(closer, j + 1)
+                        if k < 0:
+                            break
+                        j, count = k + 1, count + 1
+                    else:
+                        break
+            while j < n and text[j].isspace():
+                j += 1
+            if j >= n or text[j] != "{":
+                break
+            k = text.find("}", j + 1)
+            if k < 0:
+                break
+            for km in re.finditer(r"[^,\s]+", text[j + 1:k]):
+                if km.group(0) != "*":
+                    out.append((km.group(0), j + 1 + km.start()))
+            pos = k + 1
+            if not multi:
+                break
+    return out
+
+
 def cited_keys(project):
-    """Citekeys used in .tex (\\cite variants) and Markdown ([@key]) with their locations."""
+    """Citekeys used in .tex (\\cite variants, see tex_citations) and Markdown ([@key]) with
+    their locations. A .tex file is read as a whole (comments removed), so a key list that
+    continues on the next line is read too; each key is reported on its own line."""
     out = []
     files = set(project.tex_files()) | set(project.prose_files())
     if os.path.isdir(project.path("research")):
         files |= set(project.walk("research", (".md",)))
-    cite_re = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{([^}]*)\}")
     md_re = re.compile(r"\[(-?@[^\]]+)\]")
     for path in sorted(files):
         rel = project.rel(path)
-        for lineno, raw in enumerate(read_text(path).splitlines(), 1):
-            code = split_tex_comment(raw)[0] if path.endswith(".tex") else raw
-            if path.endswith(".tex"):
-                for m in cite_re.finditer(code):
-                    for key in m.group(1).split(","):
-                        key = key.strip()
-                        if key and key != "*":
-                            out.append((rel, lineno, key))
-            else:
-                for m in md_re.finditer(code):
+        lines = read_text(path).splitlines()
+        if path.endswith(".tex"):
+            starts, text = [], ""
+            for raw in lines:
+                starts.append(len(text))
+                text += split_tex_comment(raw)[0] + "\n"
+            for key, off in tex_citations(text):
+                out.append((rel, bisect.bisect_right(starts, off), key))
+        else:
+            for lineno, raw in enumerate(lines, 1):
+                for m in md_re.finditer(raw):
                     for key in re.findall(r"-?@([\w:./-]+[\w])", m.group(1)):
                         out.append((rel, lineno, key))
     return out
@@ -1644,7 +1697,7 @@ def read_number_macros(project):
 
 
 NUM_STRIP_RE = re.compile(
-    r"\\(?:cite\w*|citep|citet|ref|eqref|autoref|cref|Cref|label|url|href|includegraphics|input|include|"
+    r"\\(?:[A-Za-z]*[Cc]ite\w*|ref|eqref|autoref|cref|Cref|label|url|href|includegraphics|input|include|"
     r"vspace|hspace|setlength|addtolength|resizebox|scalebox|rule|cmidrule|renewcommand|newcommand|"
     r"definecolor|begin|end|usepackage|documentclass|bibliography\w*|arraystretch|multicolumn|multirow|"
     r"fontsize|linespread|setcounter|pgfplots\w*)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})*")
@@ -2261,7 +2314,8 @@ S4_TEXT_RE = re.compile(r"\b(TODO|TBD|FIXME|XXX)\b|lorem ipsum|\[citation needed
 S4_TAG_RE = re.compile(r"\b(TODO|TBD|FIXME|XXX)\b")
 S6_PROOF_RE = re.compile(r"\b(prove[sdn]?|proving|proof that)\b", re.I)
 S6_CAUSAL_RE = re.compile(r"\b(caus(?:e|es|ed|ing|al|ally|ation)|enables? causal)\b", re.I)
-CITE_RE = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{|\[-?@\w")
+CITE_RE = re.compile(r"\\(?![A-Za-z]*[Cc]ite(?:text|style)(?![A-Za-z]))[A-Za-z]*[Cc]ite[A-Za-z]*\*?\s*"
+                     r"(?:\([^)]*\)\s*){0,2}(?:\[[^\]]*\]\s*){0,2}\{|\[-?@\w")
 DISCLOSURE_RE = re.compile(r"\b(simulat\w*|synthetic\w*|generated|modell?ed|artificial)\b", re.I)
 GROUND_TRUTH_RE = re.compile(r"\b(ground[- ]truth|gold[- ]standard|gold labels?|human[- ]annotated|annotated|"
                              r"manually (?:labell?ed|annotated)|expert[- ]labell?ed)\b", re.I)
@@ -4559,17 +4613,16 @@ def check_retractions(project):
                                    "claim against it" % (cid, key, rec["status"], notice), "warn"))
     retracted = {k for k, (_l, r) in bad.items() if r["status"] == "retracted"}
     if retracted:
-        cite_re = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{([^}]*)\}")
         for path in project.tex_files():
             doc = project.doc(path)
             for _start, sent, _cids, line_of in doc.sentences():
-                for m in cite_re.finditer(sent):
-                    keys = {k.strip() for k in m.group(1).split(",")}
-                    for key in sorted(keys & retracted):
-                        if not RETRACT_WORD_RE.search(sent):
-                            out.append(Finding(doc.rel, line_of(m.start()), "RETRACTION",
-                                               "\\cite{%s}: Crossref lists this source as retracted, and the sentence "
-                                               "does not say so" % key))
+                if RETRACT_WORD_RE.search(sent):
+                    continue
+                for key, off in tex_citations(sent):
+                    if key in retracted:
+                        out.append(Finding(doc.rel, line_of(off), "RETRACTION",
+                                           "\\cite{%s}: Crossref lists this source as retracted, and the sentence "
+                                           "does not say so" % key))
     return out
 
 
