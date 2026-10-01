@@ -34,11 +34,13 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
   `--include-index`, which imports each top-level entry as `automemory#MEMORY.md:L<line>`; UWS
   never writes it). Rows become
   candidates with `evidence: inferred`, `source: [import:vector-local#<row>]` (or
-  `vector-global`, `automemory#<file>`) and `captured_by: import`; the vector-memory prefix is
-  dropped from the claim, long rows are cut to 240 bytes, duplicates collapse by R7, retired
+  `vector-global`, `automemory#<file>`) and `captured_by: import`; the local
+  `PHASE n | DOMAIN: d | CATEGORY: c |` prefix is dropped from the claim (a global row keeps its
+  `TOOL:` prefix), long rows are cut to 240 bytes, duplicates collapse by R7, retired
   claims are not brought back, secrets and (globally) project paths are skipped, auto-memory
-  preferences and feedback stay where they are, and rows naming nothing the project contains are
-  flagged `suspected-fixture` for the PI
+  preferences and feedback stay where they are, and rows that name concrete things (paths, file
+  names, snake_case names, backticked terms), none of which the project contains, are flagged
+  `suspected-fixture` for the PI (project imports only)
 - `uws kb review --imported [--global]`: the import triage queue with the PI's steps (keep or
   correct with `add --supersedes`, refute with `add --contradicts` + `dispute` + `approve`, drop
   with `reject`). `approve` refuses an item whose source is an import. No rule retires an

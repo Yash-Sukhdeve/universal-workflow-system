@@ -425,8 +425,9 @@ uws kb review --imported                 # the triage queue, with the steps to k
 ```
 
 Duplicates collapse into one item, rows that look like secrets are skipped, preferences and
-corrections stay in auto-memory, and rows that name nothing the project contains are flagged
-`suspected-fixture`. `approve` refuses an import as it stands: the PI restates it with a
+corrections stay in auto-memory, and rows that name concrete things (paths, file names,
+snake_case names, backticked terms), none of which the project contains, are flagged
+`suspected-fixture` (project imports only). `approve` refuses an import as it stands: the PI restates it with a
 resolvable source (`uws kb add ... --supersedes <ID>`, repeating the claim to keep it as it is)
 and approving the restatement retires the import. No rule retires an import before the PI has
 reviewed it: `prune` skips imports, and restating or disputing one changes nothing until the
@@ -434,12 +435,12 @@ PI approves (decision D6). The vector-memory servers and skills
 keep running unchanged.
 
 `uws orchestrate dispatch` adds up to 5 trusted items (1000 bytes) that share at least two
-words with the task to the subagent's `TASK.md`, under a heading that calls them leads to
+whole words with the task to the subagent's `TASK.md`, under a heading that calls them leads to
 verify, not evidence. Searches, `show` and these briefs are logged per machine in
-`docs/kb/.cache/usage.tsv` (gitignored). From that log, `uws kb prune` lists trusted items no
-one retrieved in the last 20 sessions (older than 90 days, decisions excepted) for you to retire
-with `uws kb retire <ID> unused`, and `uws kb learn` measures the unused share and proposes a
-shorter review window when it passes 50%.
+`docs/kb/.cache/usage.tsv` (gitignored). From that log, `uws kb prune` lists trusted items not
+retrieved on this machine in the last 20 sessions (older than 90 days, decisions excepted) for
+you to retire with `uws kb retire <ID> unused`, and `uws kb learn` measures the unused share and
+proposes a shorter review window when it passes 50%.
 
 ---
 
