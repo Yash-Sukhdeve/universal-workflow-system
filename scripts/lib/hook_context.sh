@@ -207,13 +207,22 @@ uws_hook_context() {
 
     # Outside the plugin, name the `uws` CLI briefly: the context is byte-budgeted
     local UWS_CMD="${UWS_CMD:-uws}"
+    local m1="sdlc" m2="research"
+    [[ "$ptype" == "research" ]] && { m1="research"; m2="sdlc"; }
 
     local head="UWS workflow state (.workflow/ in this project):"
-    head+=$'\n'"- goal: $(_uws_trunc "${goal:-(none declared)}" 220)"
+    if [[ -n "$goal" ]]; then
+        head+=$'\n'"- goal: $(_uws_trunc "$goal" 220)"
+    else
+        head+=$'\n'"- goal: (none declared; set one with $(uws_hint "$m1" goal '"..."'))"
+    fi
     [[ -n "$ptype" ]]    && head+=$'\n'"- project_type: ${ptype}"
     head+=$'\n'"- current_phase: ${cphase:-unknown}"
     [[ -n "$sdlc" ]]     && head+=$'\n'"- sdlc_phase: ${sdlc}"
     [[ -n "$research" ]] && head+=$'\n'"- research_phase: ${research}"
+    if [[ -z "$sdlc" && -z "$research" ]]; then
+        head+=$'\n'"- methodology: not started ($(uws_hint "$m1" start) or $(uws_hint "$m2" start))"
+    fi
     head+=$'\n'"- current_checkpoint: ${cp:-none}"
     [[ -n "$updated" ]]  && head+=$'\n'"- last_updated: ${updated}"
 

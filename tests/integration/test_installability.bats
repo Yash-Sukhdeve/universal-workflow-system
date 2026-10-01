@@ -343,3 +343,29 @@ no_stale_hint() {
     [[ "$output" == *"kb pi --set <email>, in your own terminal"* ]] || false
     [[ "$output" == *"${PROJECT_ROOT}/bin/uws kb pi --set"* || "$output" == *": uws kb pi --set"* ]] || false
 }
+
+@test "hints: the plugin's session context names /uws:checkpoint and the bootstrap steps, then drops them once done" {
+    materialize_plugin
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "$MAT/bin/uws" init software </dev/null >/dev/null
+    run env CLAUDE_PROJECT_DIR="$PROJ" CLAUDE_PLUGIN_ROOT="$MAT" "$MAT/hooks/session_start.sh"
+    [ "$status" -eq 0 ]
+    local ctx
+    ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
+    [[ "$ctx" == *"Save progress with /uws:checkpoint <msg>."* ]] || false
+    [[ "$ctx" == *'goal: (none declared; set one with /uws:sdlc goal "...")'* ]] || false
+    [[ "$ctx" == *"methodology: not started (/uws:sdlc start or /uws:research start)"* ]] || false
+    [[ "$ctx" != *" uws "* ]] || false
+    grep -q 'next step: `/uws:sdlc goal' "$PROJ/.workflow/handoff.md"
+    # Once the goal is set and SDLC started, nothing tells the model to do them again
+    "$MAT/bin/uws" sdlc goal "A calculator" </dev/null >/dev/null
+    "$MAT/bin/uws" sdlc start </dev/null >/dev/null
+    run env CLAUDE_PROJECT_DIR="$PROJ" CLAUDE_PLUGIN_ROOT="$MAT" "$MAT/hooks/session_start.sh"
+    ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
+    [[ "$ctx" != *"none declared"* && "$ctx" != *"not started"* ]] || false
+    run grep -c 'none declared\|not started\|Declare the project goal\|Start a methodology' "$PROJ/.workflow/handoff.md"
+    [ "$output" = "0" ]
+    run "$MAT/bin/uws" recover </dev/null
+    [[ "$output" != *"Declare the project goal"* && "$output" != *"Start a methodology"* ]] || false
+    rm -rf "$(dirname "$MAT")"
+}

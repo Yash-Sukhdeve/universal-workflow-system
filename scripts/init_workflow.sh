@@ -249,9 +249,9 @@ ${summary_block}
 2. UWS initialized: ${init_date}
 
 ## Next Actions
-<!-- Keep this list current; open items are shown to Claude at session start. -->
-- [ ] Declare the project goal: \`uws sdlc goal "..."\` or \`uws research goal "..."\`
-- [ ] Start a methodology: \`uws sdlc start\` or \`uws research start\`
+<!-- Keep this list current; open items are shown to Claude at session start.
+     Declaring the goal and starting a methodology are listed in the summary above
+     until state.yaml shows they are done. -->
 
 ## Blockers
 - None

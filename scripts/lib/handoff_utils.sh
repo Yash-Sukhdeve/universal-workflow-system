@@ -236,8 +236,20 @@ uws_handoff_render_block() {
     else
         echo "- **Checkpoint**: ${cp:-none}"
     fi
-    echo "- **Goal**: ${goal:-(none declared; set with: uws sdlc goal \"...\" or uws research goal \"...\")}"
+    # The first methodology to suggest: research for research projects, else SDLC
+    local m1="sdlc" m2="research"
+    [[ "$ptype" == "research" ]] && { m1="research"; m2="sdlc"; }
+    # Bootstrap steps come from state.yaml, so they disappear once done (a seeded
+    # "Next Actions" item would stay open until someone edited it by hand)
+    if [[ -n "$goal" ]]; then
+        echo "- **Goal**: ${goal}"
+    else
+        echo "- **Goal**: (none declared) - next step: \`$(uws_hint "$m1" goal '"<what you are building>"')\` (turns on deliverable gating)"
+    fi
     [[ -n "$ptype" ]] && echo "- **Project type**: ${ptype}"
+    if [[ -z "$sdlc" && -z "$research" ]]; then
+        echo "- **Methodology**: not started - next step: \`$(uws_hint "$m1" start)\` (or \`$(uws_hint "$m2" start)\`)"
+    fi
     if [[ -n "$agent" && "$agent_status" == "active" ]]; then
         echo "- **Active agent**: ${agent} (docs/personas/${agent}.md)"
     fi
