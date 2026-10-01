@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Knowledge base (increment 2)
+
+Increment 2 of `docs/design/knowledge-base.md` (section 18): the global KB, imports of the older
+memory stores, knowledge leads in subagent briefs, and usage counts for rule R4. Only the PI
+promotes items, global ones included; imports create candidates only and only read their
+sources; the vector-memory servers, skills and SessionStart hook are unchanged.
+
+#### Added
+- Global KB at `<global memory dir>/kb` (`UWS_GLOBAL_MEMORY_DIR`, `global_memory_dir` in
+  `~/.config/uws/config.yaml`, or `~/uws-global-knowledge`): `uws kb init --global` creates it
+  and runs `git init`; every global write is refused (exit 2) unless it is its own git
+  repository. `--global`, `--scope global` or a `global:K-...` ID (as an ID argument, or the
+  value of `--supersedes`, `--contradicts` or `--by`) select it, also outside a UWS project;
+  `add --global` prints the new ID as `global:K-...`. It keeps its own PI (`uws kb pi --set <email> --global`, `<global kb>/config.yaml`).
+  Global claims may not name project or home paths (`add`/`import` refuse; `lint` I8)
+- `uws kb search` ranks trusted project and global items together in the same 5-line,
+  1000-byte budget; global lines read `global:K-...`; `--scope project|global` narrows it.
+  Queries drop common function words, and `--min-terms N` asks for N matching whole words;
+  `search -- <words>` takes words that start with a dash. `show` finds global IDs; `stats` lists
+  the global KB and this machine's usage
+- `uws kb import vector --db <path> [--scope project|global] [--dry-run]` and
+  `uws kb import automemory --dir <path> [--include-index] [--dry-run]` (`scripts/kb_import.py`,
+  Python standard library only): a read-only SQLite connection copied into memory with the backup
+  API, or for a WAL database a byte copy opened in a temporary directory, so nothing is created
+  next to the source (only `memory_metadata` is read), or read-only file reads (`MEMORY.md` is opened only with
+  `--include-index`, which imports each top-level entry as `automemory#MEMORY.md:L<line>`; UWS
+  never writes it). Rows become
+  candidates with `evidence: inferred`, `source: [import:vector-local#<row>]` (or
+  `vector-global`, `automemory#<file>`) and `captured_by: import`; the local
+  `PHASE n | DOMAIN: d | CATEGORY: c |` prefix is dropped from the claim (a global row keeps its
+  `TOOL:` prefix), long rows are cut to 240 bytes, duplicates collapse by R7, retired
+  claims are not brought back, secrets and (globally) project paths are skipped, auto-memory
+  preferences and feedback stay where they are, and rows that name concrete things (paths, file
+  names, snake_case names, backticked terms), none of which the project contains, are flagged
+  `suspected-fixture` for the PI (project imports only)
+- `uws kb review --imported [--global]`: the import triage queue with the PI's steps (keep or
+  correct with `add --supersedes`, refute with `add --contradicts` + `dispute` + `approve`, drop
+  with `reject`). `approve` refuses an item whose source is an import. No rule retires an
+  import before the PI has reviewed it (decision D6): `prune` skips imports in R2 and R5, and
+  an import that `add --supersedes` restates (the restatement may repeat its claim) is retired
+  only when the PI approves the restatement
+- `uws kb dispute <ID> --by <ID> ["why"]`: mark an active item disputed with counter-evidence
+  (verified, observed or reported; a trusted item only by a trusted one)
+- `uws kb init` also creates the project KB
+- `orchestrate.sh dispatch` appends "Knowledge base leads (to verify; not evidence)" to the
+  subagent's `TASK.md`: at most 5 trusted items, 1000 bytes, sharing at least two words with
+  the task; nothing when there is no KB or no match
+- Usage log `<kb>/.cache/usage.tsv` (gitignored, per machine) for search, show and brief
+  retrievals, by session (`UWS_KB_SESSION`, else `CLAUDE_CODE_SESSION_ID`, else the day). R4:
+  `prune` lists trusted items (not decisions, older than 90 days) not retrieved in the last 20
+  sessions, for the human to retire with `retire <ID> unused` (reason code `unused`); `learn`
+  measures `r4-unused-share` and proposes halving a review window above 50% (n >= 5), then
+  tracks the adopted change over the next 20 sessions like the other metrics
+  (`UWS_KB_UNUSED_SESSIONS`, `UWS_KB_UNUSED_MIN_AGE_DAYS`, `UWS_KB_LEARN_UNUSED_SHARE`)
+- Test isolation: `tests/helpers/test_helper.bash` exports `UWS_KB_GUARD_ROOT` and a
+  non-existent `UWS_GLOBAL_MEMORY_DIR`; while it is set, no KB write (items, outcomes, usage,
+  caches) lands in the UWS checkout unless a test sets `UWS_KB_ALLOW_GUARDED_WRITE=1`
+- Tests: `tests/integration/test_kb_global.bats` (15), `test_kb_import.bats` (19) and
+  `test_kb_usage.bats` (19), on synthetic SQLite fixtures built with the vector-memory schema
+  (`tests/fixtures/kb/make_vector_db.py`, which can also write custom rows and WAL databases);
+  `tests/helpers/stdlib_only.py` checks that the importer and the fixture builder import only
+  the Python standard library
+
+#### Changed
+- Approving an item retires every active item it contradicts as `disproven-by`, not only
+  trusted ones, and every active item it supersedes (the imports R1 leaves for the PI)
+- `uws kb learn` reports `r4-unused-share` instead of "not measured"
+
+#### Fixed
+- The front-matter list parser kept the space before each later quoted element, so an item with
+  two or more sources could not be approved
+- `uws kb search` (and with it `links` and lint I6) exited 141 with no output once the ranked
+  matches passed about 64 KiB: the output budget stopped reading while `sort` and `cut` were
+  still writing, and `pipefail` turned their SIGPIPE into the script's exit status. The budget
+  now drains its input
+
 ### Meta-learning
 
 Increment 3 of `docs/design/knowledge-base.md` (section 6), built before the global KB and
@@ -49,7 +125,7 @@ changes from those counts; only the PI accepts them and nothing is applied autom
 
 #### Not built
 - The R4-unused-share metric: it needs R4 usage counts, which are not built, and would not
-  come from `outcomes.tsv`; `learn` says it is not measured
+  come from `outcomes.tsv`; `learn` says it is not measured (built in increment 2, above)
 
 #### Fixed
 - `review.sh reject` no longer stops under `set -e` when `NOTIFICATIONS.md` is missing

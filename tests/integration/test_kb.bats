@@ -486,8 +486,10 @@ EOF
     [[ "$output" == *"destructive"* ]]
     run "$UWS" kb add --type question --claim "Why did the design gate fail?"
     [ "$status" -eq 0 ]
+    # increment 2: global items need the global KB repository (uws kb init --global)
     run "$UWS" kb add --type fact --claim "global" --evidence observed --source file:f:1 --scope global
     [ "$status" -eq 2 ]
+    [[ "$output" == *"not its own git repository"* ]]
 }
 
 @test "verify: a check that times out marks a trusted item stale, not disputed" {

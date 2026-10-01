@@ -64,8 +64,9 @@ Workflow Commands:
   orchestrate <cmd> [args] Route the current phase to its subagent
                            (dispatch "<task>" | collect "<summary>" | status)
   kb <verb> [args]         Project knowledge base in docs/kb/ (add|search|links|
-                           show|verify|recommend|review|approve|reject|pi|prune|
-                           retire|restore|lint|stats|learn|proposals);
+                           show|verify|recommend|review|approve|reject|dispute|
+                           pi|prune|retire|restore|lint|stats|learn|proposals|
+                           init|import); --global for the cross-project KB;
                            'uws kb help' for details
 
 Methodology Commands:
@@ -105,6 +106,20 @@ Examples:
 EOF
 }
 
+# Succeeds when `uws kb <verb> [args]` addresses the global KB, which needs no
+# project: --global, --scope global, --scope=global, or a global:K-... ID in an
+# ID position. The rule is kb.sh's own (kb_scan_scope_args), so a --quote or
+# --claim text that starts with global:K- does not count.
+kb_args_global() {
+    local lib="${UWS_INSTALL_DIR}/scripts/lib/kb_utils.sh"
+    [[ -f "$lib" ]] || return 1
+    # shellcheck source=scripts/lib/kb_utils.sh
+    source "$lib"
+    [[ $# -gt 0 ]] && shift
+    kb_scan_scope_args "$@" || return 1
+    [[ "$KB_SCAN_SCOPE" == "global" ]]
+}
+
 # `uws agent` / `uws skill` were retired: agents are real Claude Code
 # subagents (.claude/agents/uws-<role>.md) and skills are native Claude Code
 # skills, so there is nothing to activate or enable.
@@ -142,6 +157,12 @@ main() {
             ;;
         agent|skill)
             retired_command "$cmd"
+            ;;
+        kb)
+            # The global knowledge base lives outside any project
+            if ! find_uws_root >/dev/null 2>&1 && kb_args_global "$@"; then
+                exec "$UWS_INSTALL_DIR/scripts/kb.sh" "$@"
+            fi
             ;;
         uninstall)
             # uninstall doesn't need .workflow/ — find scripts via resolved install dir
