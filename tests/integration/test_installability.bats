@@ -246,8 +246,100 @@ EOF
     [[ "$output" != *$'\033'* ]] || false
     [[ "$output" != *"yq not found"* ]] || false
     local c
-    for c in "status" "sdlc status" "checkpoint list" "recover"; do
+    for c in "status" "sdlc status" "checkpoint list" "recover" "sdlc nope"; do
         run bash -c "'${PROJECT_ROOT}/bin/uws' $c </dev/null 2>&1 | cat"
         [[ "$output" != *$'\033'* && "$output" != *'\033'* ]] || false
     done
+}
+
+# materialize_plugin: a dereferenced copy, as the plugin cache holds it
+materialize_plugin() {
+    MAT="$(mktemp -d)/uws"
+    cp -RL "$PLUGIN_DIR" "$MAT"
+}
+
+no_stale_hint() {
+    [[ "$1" != *"scripts/sdlc.sh"* && "$1" != *"scripts/research.sh"* ]] || false
+    [[ "$1" != *"./scripts/"* && "$1" != *"scripts/checkpoint.sh"* && "$1" != *"scripts/orchestrate.sh"* ]] || false
+    [[ "$1" != *$'\033'* && "$1" != *'\033'* ]] || false
+}
+
+@test "hints: from the plugin, sdlc/status/init name /uws: slash commands, never scripts/ or bare uws" {
+    materialize_plugin
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true run "$MAT/bin/uws" init software </dev/null
+    [ "$status" -eq 0 ]
+    no_stale_hint "$output"
+    [[ "$output" == *"/uws:sdlc start"* ]] || false
+    [[ "$output" != *" uws sdlc"* ]] || false
+    run "$MAT/bin/uws" sdlc goal "A calculator" </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"/uws:sdlc check <n>"* ]] || false
+    no_stale_hint "$output"
+    run "$MAT/bin/uws" sdlc start </dev/null
+    [[ "$output" == *"Run /uws:sdlc next when complete"* ]] || false
+    no_stale_hint "$output"
+    run "$MAT/bin/uws" sdlc next </dev/null
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"mark done with: /uws:sdlc check <n>"* ]] || false
+    [[ "$output" == *"Override with: /uws:sdlc next --force"* ]] || false
+    no_stale_hint "$output"
+    run "$MAT/bin/uws" status </dev/null
+    [[ "$output" == *"Continue work:     /uws:recover"* ]] || false
+    [[ "$output" == *'/uws:checkpoint "<message>"'* ]] || false
+    [[ "$output" == *'/uws:orchestrate dispatch "<task>"'* ]] || false
+    no_stale_hint "$output"
+    run "$MAT/bin/uws" sdlc bogus </dev/null
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Run /uws:sdlc help for usage."* ]] || false
+    no_stale_hint "$output"
+    rm -rf "$(dirname "$MAT")"
+}
+
+@test "hints: from the CLI, an older uws earlier on PATH is not named; the right one is" {
+    cd "$PROJ"
+    local other bin
+    other="$(mktemp -d)"; bin="$(mktemp -d)"
+    printf '#!/bin/sh\necho OLD UWS\n' > "$other/uws"; chmod +x "$other/uws"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    # another uws first on PATH: hints give this install's bin/uws by absolute path
+    run env -u UWS_CMD PATH="$other:$PATH" "${PROJECT_ROOT}/bin/uws" sdlc goal "A parser" </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${PROJECT_ROOT}/bin/uws sdlc check <n>"* ]] || false
+    no_stale_hint "$output"
+    # `uws` on PATH is this install (a symlink, as install.sh makes it): plain `uws`
+    ln -s "${PROJECT_ROOT}/bin/uws" "$bin/uws"
+    run env -u UWS_CMD PATH="$bin:$other:$PATH" "$bin/uws" sdlc start </dev/null
+    [[ "$output" == *"Run uws sdlc next when complete"* ]] || false
+    no_stale_hint "$output"
+    rm -rf "$other" "$bin"
+}
+
+@test "init research: next steps name the research workflow" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true run "${PROJECT_ROOT}/bin/uws" init research </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"research start to begin the research workflow"* ]] || false
+    [[ "$output" != *"to begin SDLC"* ]] || false
+}
+
+@test "kb: an approve refused inside an agent names the CLI the PI can run" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    echo "# demo project" > README.md
+    local id
+    id="$("${PROJECT_ROOT}/bin/uws" kb add --type fact --claim "The README names the demo project" \
+        --evidence verified --source file:README.md:1 --check "grep -q 'demo project' README.md" </dev/null | grep -o 'K-[0-9]*-[0-9a-f]*' | head -1)"
+    [ -n "$id" ]
+    run env -u UWS_CMD CLAUDECODE=1 "${PROJECT_ROOT}/bin/uws" kb approve "$id" </dev/null
+    [ "$status" -eq 6 ]
+    [[ "$output" == *"own terminal, from this project:"*"/bin/uws kb approve <ID>"* || "$output" == *"own terminal, from this project: uws kb approve <ID>"* ]] || false
+    run env -u UWS_CMD CLAUDECODE=1 "${PROJECT_ROOT}/bin/uws" kb pi --set pi@example.com </dev/null
+    [ "$status" -eq 6 ]
+    [[ "$output" == *"own terminal, from this project: "*"kb pi --set pi@example.com"* ]] || false
+    # with no PI set, `kb pi` names the command too
+    run env -u UWS_CMD "${PROJECT_ROOT}/bin/uws" kb pi </dev/null
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"kb pi --set <email>, in your own terminal"* ]] || false
+    [[ "$output" == *"${PROJECT_ROOT}/bin/uws kb pi --set"* || "$output" == *": uws kb pi --set"* ]] || false
 }

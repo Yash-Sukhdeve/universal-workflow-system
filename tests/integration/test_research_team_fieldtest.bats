@@ -859,7 +859,7 @@ inst_listing() {
         run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/scripts/research.sh" "$action"
         echo "$output"
         [ "$status" -eq 1 ]
-        [[ "$output" == *"research.sh ${action} needs .workflow/state.yaml"* ]] || false
+        [[ "$output" == *"research ${action} needs .workflow/state.yaml"* ]] || false
         cmp "$INST/.workflow/state.yaml" "$TEST_TMP_DIR/inst-state.yaml"
     done
     [ ! -e "$NOSTATE/.workflow" ]
@@ -872,8 +872,8 @@ inst_listing() {
     cd "$NOSTATE"
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/scripts/research.sh" next
     [ "$status" -eq 1 ]
-    [[ "$output" == *"research.sh next needs .workflow/state.yaml"* ]] || false
-    [[ "$output" == *"research.sh check"* ]] || false
+    [[ "$output" == *"research next needs .workflow/state.yaml"* ]] || false
+    [[ "$output" == *"uws research check init"* ]] || false
 }
 
 @test "P2 numbers add / claims add append validated rows and never edit existing ones" {

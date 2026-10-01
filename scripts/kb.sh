@@ -81,6 +81,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/kb_utils.sh
 source "${SCRIPT_DIR}/lib/kb_utils.sh"
+# shellcheck source=lib/uws_ui.sh
+source "${SCRIPT_DIR}/lib/uws_ui.sh"
+# Commands in messages: KB_HINT is how the caller runs `uws kb` (/uws:kb in the
+# plugin); KB_CLI is the CLI the PI runs in their own terminal (`uws`, or this
+# install's bin/uws by absolute path when `uws` on PATH is another install).
+KB_HINT="$(uws_hint kb)"
+KB_CLI="$(uws_cli_path)"
 
 ROOT="$(kb_project_root)"
 KB="$(kb_dir "$ROOT")"
@@ -141,7 +148,7 @@ require_writable() {
         die 2 "refusing to write the KB at ${KB}: it is inside the UWS source checkout and the test suite is running (UWS_KB_GUARD_ROOT); a test opts in with UWS_KB_ALLOW_GUARDED_WRITE=1"
     fi
     if [[ "$SCOPE" == "global" ]] && ! kb_global_ready "$KB"; then
-        die 2 "the global KB at ${KB} is not its own git repository, so it is not written (design risk 13); run: uws kb init --global"
+        die 2 "the global KB at ${KB} is not its own git repository, so it is not written (design risk 13); run: ${KB_HINT} init --global"
     fi
 }
 
@@ -1024,7 +1031,7 @@ EOF
         [[ -e "${KB}/items/${id}.md" || -e "${KB}/retired/${id}.md" ]] || break
         if [[ -f "${KB}/retired/${id}.md" && "$(kb_normalize_claim "$(kb_fm_get "${KB}/retired/${id}.md" claim)")" == "$norm" ]]; then
             printf '%s%s\n' "$(id_prefix)" "$id"
-            die 3 "add: this claim was retired as $(id_prefix)${id}; use 'uws kb restore $(id_prefix)${id}'"
+            die 3 "add: this claim was retired as $(id_prefix)${id}; use '${KB_HINT} restore $(id_prefix)${id}'"
         fi
         n=$((n + 2))
         (( n <= 12 )) || die 2 "add: cannot mint a unique ID"
@@ -1191,10 +1198,10 @@ cmd_verify() {
 pi_gate() {
     local verb="$1" as="${2:-}" ctx pi email
     if ctx="$(kb_agent_context)"; then
-        die 6 "${verb}: refused: running inside an AI agent (${ctx} is set). Only the PI may promote; run this in your own terminal. Agents may use 'uws kb recommend'."
+        die 6 "${verb}: refused: running inside an AI agent (${ctx} is set). Only the PI may promote; the PI runs this in their own terminal, from this project: ${KB_CLI} kb ${verb} <ID>. Agents may use '${KB_HINT} recommend'."
     fi
     pi="$(kb_pi_identity "$ROOT" "$PI_CFG")"
-    [[ -n "$pi" ]] || die 6 "${verb}: refused: no PI configured. The PI runs: uws kb pi --set <your git e-mail>"
+    [[ -n "$pi" ]] || die 6 "${verb}: refused: no PI configured. The PI runs, in their own terminal: ${KB_CLI} kb pi --set <your git e-mail>"
     email="$(kb_git_email "$ROOT")"
     if [[ -n "$as" && "$(kb_lower "$as")" != "$(kb_lower "$pi")" ]]; then
         die 6 "${verb}: refused: --as ${as} is not the PI (${pi})"
@@ -1234,7 +1241,7 @@ cmd_approve() {
         case "$s" in
             import:*)
                 # An import is a lead, not evidence (design 18): the PI restates it
-                die 2 "approve: ${id} rests on an import (${s}), a lead to verify, not evidence. Restate it with a resolvable source (uws kb add ...$(scope_flag) --supersedes $(id_prefix)${id}) and approve the new item; see uws kb review --imported$(scope_flag)"
+                die 2 "approve: ${id} rests on an import (${s}), a lead to verify, not evidence. Restate it with a resolvable source (${KB_HINT} add ...$(scope_flag) --supersedes $(id_prefix)${id}) and approve the new item; see ${KB_HINT} review --imported$(scope_flag)"
                 ;;
             file:*@*)
                 local p="${s#file:}"; p="${p%@*}"
@@ -1301,7 +1308,7 @@ EOF
         local tgt
         tgt="$(kb_fm_get "$f" target)"
         echo "Acceptance recorded; nothing was changed${tgt:+ in ${tgt}}."
-        echo "Apply the change in the item's body through a change request (uws kb show ${id})."
+        echo "Apply the change in the item's body through a change request (${KB_HINT} show ${id})."
         if [[ "$(kb_fm_get "$f" proposal_kind)" == "change" ]]; then
             if [[ "$(kb_fm_get "$f" metric)" == "r4-unused-share" ]]; then
                 echo "uws kb learn will measure r4-unused-share over the next ${UWS_KB_UNUSED_SESSIONS} sessions on this machine and propose a revert if it does not improve."
@@ -1339,7 +1346,7 @@ cmd_recommend() {
         kb_fm_set "$f" recommended_by "$(kb_list_format $cur "$actor")"
     fi
     kb_event "$KB" "$id" "$st" "$st" "recommend${why:+:$why}" "$actor"
-    echo "$(id_prefix)${id}: recommendation recorded; only the PI can promote it (uws kb approve $(id_prefix)${id})"
+    echo "$(id_prefix)${id}: recommendation recorded; only the PI can promote it (${KB_CLI} kb approve $(id_prefix)${id}, in their own terminal)"
 }
 
 # review [--imported]: the PI's queue. --imported lists only imported
@@ -1393,19 +1400,19 @@ EOF
             "Triage (the PI; docs/design/knowledge-base.md section 18). An import is a lead, not evidence," \
             "and approve refuses it. No rule retires it before you have reviewed it (decision D6): R2 and" \
             "R5 skip imports, and a restatement (R1) or a dispute takes effect only when you approve it." \
-            "  keep or correct:  uws kb add${sf} --type <T> --claim \"<the claim, corrected if needed>\" \\" \
+            "  keep or correct:  ${KB_CLI} kb add${sf} --type <T> --claim \"<the claim, corrected if needed>\" \\" \
             "                      --evidence <E> --source <resolvable source> --supersedes <ID>" \
-            "                    then, in your own terminal: uws kb approve <new ID>" \
+            "                    then, in your own terminal: ${KB_CLI} kb approve <new ID>" \
             "                    (the approval retires <ID> as superseded-by:<new ID>)" \
-            "  refute:           uws kb add${sf} --type fact --claim \"<what is true>\" --evidence reported \\" \
+            "  refute:           ${KB_CLI} kb add${sf} --type fact --claim \"<what is true>\" --evidence reported \\" \
             "                      --source url:<page> --quote \"<verbatim text>\" --contradicts <ID>" \
-            "                    uws kb dispute <ID> --by <new ID>; then uws kb approve <new ID>" \
+            "                    ${KB_CLI} kb dispute <ID> --by <new ID>; then ${KB_CLI} kb approve <new ID>" \
             "                    (the approval retires <ID> as disproven-by:<new ID>)" \
-            "  drop:             uws kb reject <ID> \"<why>\""
+            "  drop:             ${KB_CLI} kb reject <ID> \"<why>\""
         return 0
     fi
     [[ "$any" == "true" ]] || echo "Nothing to review."
-    echo "Promote: uws kb approve <ID> (PI only, own terminal). Reject: uws kb reject <ID> \"<why>\"."
+    echo "Promote: ${KB_CLI} kb approve <ID> (PI only, own terminal). Reject: ${KB_CLI} kb reject <ID> \"<why>\"."
 }
 
 cmd_pi() {
@@ -1413,7 +1420,7 @@ cmd_pi() {
         local email="${2:-}" ctx cfg tmp
         [[ "$email" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]] || die 2 "pi --set: give an e-mail address"
         if ctx="$(kb_agent_context)"; then
-            die 6 "pi --set: refused inside an AI agent (${ctx} is set); run it in your own terminal"
+            die 6 "pi --set: refused inside an AI agent (${ctx} is set); the PI runs it in their own terminal, from this project: ${KB_CLI} kb pi --set ${email}$(scope_flag)"
         fi
         require_writable
         cfg="$PI_CFG"
@@ -1439,7 +1446,7 @@ cmd_pi() {
     [[ $# -eq 0 ]] || die 2 "pi: use 'pi' or 'pi --set <email>'"
     local pi
     pi="$(kb_pi_identity "$ROOT" "$PI_CFG")"
-    if [[ -n "$pi" ]]; then echo "$pi"; else echo "No PI configured (uws kb pi --set <email>$(scope_flag))"; return 1; fi
+    if [[ -n "$pi" ]]; then echo "$pi"; else echo "No PI configured (${KB_CLI} kb pi --set <email>$(scope_flag), in your own terminal)"; return 1; fi
 }
 
 # ── retire / restore / prune ────────────────────────────────────────────────
@@ -1536,9 +1543,9 @@ cmd_dispute() {
     fi
     rebuild_stats_cache
     if [[ "$(kb_fm_get "$f" captured_by)" == import* ]]; then
-        echo "The PI settles it: uws kb approve $(id_prefix)${by} retires ${id} as disproven-by:${by}; an import is not retired by R2; it waits for the PI's triage (decision D6)."
+        echo "The PI settles it: ${KB_CLI} kb approve $(id_prefix)${by} retires ${id} as disproven-by:${by}; an import is not retired by R2; it waits for the PI's triage (decision D6)."
     else
-        echo "The PI settles it: uws kb approve $(id_prefix)${by} retires ${id} as disproven-by:${by}; otherwise prune --apply retires it after ${UWS_KB_DISPUTE_DAYS} days (R2)."
+        echo "The PI settles it: ${KB_CLI} kb approve $(id_prefix)${by} retires ${id} as disproven-by:${by}; otherwise prune --apply retires it after ${UWS_KB_DISPUTE_DAYS} days (R2)."
     fi
 }
 
@@ -1702,7 +1709,7 @@ EOF
         r4note="R4 (unused) not evaluated: ${R4_WINDOW} of ${UWS_KB_UNUSED_SESSIONS} sessions of usage recorded on this machine."
     fi
     if (( imports > 0 )); then
-        echo "${imports} imported item(s) wait for the PI's triage; prune does not retire them (decision D6): uws kb review --imported$(scope_flag)"
+        echo "${imports} imported item(s) wait for the PI's triage; prune does not retire them (decision D6): ${KB_HINT} review --imported$(scope_flag)"
     fi
     [[ -z "$r4note" ]] || echo "$r4note"
     if [[ -z "$plan" ]]; then echo "Nothing to prune."; return 0; fi
@@ -1710,7 +1717,7 @@ EOF
     while IFS="$TAB" read -r pid act why; do
         [[ -n "$pid" ]] || continue
         if [[ "$act" == "propose" ]]; then
-            echo "R4: $(id_prefix)${pid} was not retrieved in the last ${UWS_KB_UNUSED_SESSIONS} sessions on this machine; retire it only if you agree: uws kb retire $(id_prefix)${pid} unused"
+            echo "R4: $(id_prefix)${pid} was not retrieved in the last ${UWS_KB_UNUSED_SESSIONS} sessions on this machine; retire it only if you agree: ${KB_HINT} retire $(id_prefix)${pid} unused"
         elif [[ "$apply" != "true" ]]; then
             echo "would ${act} ${pid} (${why})"
         elif [[ "$act" == "stale" ]]; then
@@ -1724,7 +1731,7 @@ EOF
     if [[ "$apply" == "true" ]]; then
         rebuild_stats_cache
     else
-        echo "(dry run: nothing changed; run 'uws kb prune --apply', then review and commit)"
+        echo "(dry run: nothing changed; run '${KB_HINT} prune --apply', then review and commit)"
     fi
 }
 
@@ -2662,7 +2669,7 @@ learn_finish() {
         echo "(dry run: nothing written)"
     elif (( LEARN_WRITES > 0 )); then
         rebuild_stats_cache
-        echo "Proposals are candidates: only the PI decides (uws kb proposals; uws kb approve|reject <ID>)."
+        echo "Proposals are candidates: only the PI decides (${KB_HINT} proposals; ${KB_CLI} kb approve|reject <ID>, in their own terminal)."
     fi
     return 0
 }
@@ -2679,7 +2686,7 @@ cmd_proposals() {
         appr="$(kb_fm_get "$f" approved_ts)"; fu="$(kb_fm_get "$f" followup_ts)"; rr="$(kb_fm_get "$f" retired_reason)"
         if [[ "$f" == "${KB}/items/"* && "$st" == "candidate" ]]; then
             open+="${id} [${metric}|${kind}] $(kb_fm_get "$f" claim)"$'\n'
-            open+="    target: $(kb_fm_get "$f" target); details: uws kb show ${id}"$'\n'
+            open+="    target: $(kb_fm_get "$f" target); details: ${KB_HINT} show ${id}"$'\n'
         elif [[ "$kind" == "change" && "$metric" != "manual" && "$st" != "candidate" && -n "$appr" && -z "$fu" && "$rr" != rejected* ]]; then
             if [[ "$metric" == "r4-unused-share" ]]; then
                 tracking+="${id} [${metric}] approved ${appr%%T*}; uws kb learn checks it after ${UWS_KB_UNUSED_SESSIONS} sessions on this machine"$'\n'
@@ -2693,7 +2700,7 @@ cmd_proposals() {
     else
         echo "Waiting for the PI (approving records acceptance and never applies the change):"
         printf '%s' "$open"
-        echo "Decide in your own terminal: uws kb approve <ID> | uws kb reject <ID> \"<why>\""
+        echo "Decide in your own terminal: ${KB_CLI} kb approve <ID> | ${KB_CLI} kb reject <ID> \"<why>\""
     fi
     if [[ -n "$tracking" ]]; then
         echo "Adopted, being measured:"
@@ -2810,7 +2817,7 @@ cmd_stats() {
     local short=false
     [[ "${1:-}" == "--short" ]] && short=true
     if [[ ! -d "${KB}/items" && ! -d "${KB}/retired" ]]; then
-        echo "No KB yet at ${KB#"${ROOT}"/} (add one: uws kb add ...)"
+        echo "No KB yet at ${KB#"${ROOT}"/} (add one: ${KB_HINT} add ...)"
         return 0
     fi
     rebuild_stats_cache
@@ -2820,14 +2827,14 @@ $(kb_counts "$KB")
 EOF
     if [[ "$short" == "true" ]]; then
         if [[ "$SCOPE" == "global" ]]; then
-            printf 'Global KB: %s trusted, %s stale, %s disputed, %s to review. Search: uws kb search <words>\n' "$t" "$s" "$x" "$c"
+            printf 'Global KB: %s trusted, %s stale, %s disputed, %s to review. Search: %s search <words>\n' "$t" "$s" "$x" "$c" "$KB_HINT"
         else
             kb_summary_line "$ROOT"; kb_proposals_line "$ROOT"
         fi
         return 0
     fi
     if [[ "$SCOPE" == "global" ]]; then
-        echo "Global KB ${KB}: $((t + s + x + c)) active (${t} trusted, ${s} stale, ${x} disputed, ${c} candidate), ${r} retired$(kb_global_ready "$KB" || echo "; NOT a git repository, so not written (uws kb init --global)")"
+        echo "Global KB ${KB}: $((t + s + x + c)) active (${t} trusted, ${s} stale, ${x} disputed, ${c} candidate), ${r} retired$(kb_global_ready "$KB" || echo "; NOT a git repository, so not written (${KB_HINT} init --global)")"
     else
         echo "KB ${KB#"${ROOT}"/}: $((t + s + x + c)) active (${t} trusted, ${s} stale, ${x} disputed, ${c} candidate), ${r} retired"
     fi
@@ -2844,7 +2851,7 @@ EOF
             read -r gt gs gx gc gr <<EOF
 $(kb_counts "$g")
 EOF
-            echo "global KB ${g}: ${gt} trusted, ${gs} stale, ${gx} disputed, ${gc} candidate, ${gr} retired (search includes its trusted items; uws kb stats --global)"
+            echo "global KB ${g}: ${gt} trusted, ${gs} stale, ${gx} disputed, ${gc} candidate, ${gr} retired (search includes its trusted items; ${KB_HINT} stats --global)"
         fi
     fi
     local -a files=()
@@ -2886,7 +2893,7 @@ cmd_init() {
         ensure_kb
         local qkb
         qkb="$(kb_shell_quote "$KB")"
-        echo "Next, in your own terminal: uws kb pi --set <your git e-mail> --global. Commit the KB yourself (git -C ${qkb} add -A; git -C ${qkb} commit)."
+        echo "Next, in your own terminal: ${KB_CLI} kb pi --set <your git e-mail> --global. Commit the KB yourself (git -C ${qkb} add -A; git -C ${qkb} commit)."
         return 0
     fi
     require_writable
@@ -3043,7 +3050,7 @@ cmd_import() {
             IFS="$TAB" read -r hitid hitdir hitcb <<< "$hit"
             if [[ "$hitdir" == "retired" ]]; then
                 n_ret=$((n_ret + 1))
-                echo "  ${src}: already retired as $(id_prefix)${hitid} ($(kb_fm_get "${KB}/retired/${hitid}.md" retired_reason)); not brought back (uws kb restore to reopen it)"
+                echo "  ${src}: already retired as $(id_prefix)${hitid} ($(kb_fm_get "${KB}/retired/${hitid}.md" retired_reason)); not brought back (${KB_HINT} restore to reopen it)"
                 continue
             fi
             n_dup=$((n_dup + 1))
@@ -3089,7 +3096,7 @@ cmd_import() {
     done < "$recs"
     echo "Summary: ${n_rows} record(s); $([[ "$dry" == "true" ]] && echo "would add" || echo "added") ${n_new} candidate(s) (${n_flag} flagged suspected-fixture), ${n_dup} duplicate(s) collapsed (R7), ${n_ret} already retired, ${n_skip} skipped."
     [[ "$dry" == "true" ]] || rebuild_stats_cache
-    echo "Nothing imported is trusted. The PI triages each item: uws kb review --imported$(scope_flag)"
+    echo "Nothing imported is trusted. The PI triages each item: ${KB_HINT} review --imported$(scope_flag)"
 }
 
 # write_import_item <id> <type> <claim> <source> <tags csv> <flags|-> <flag detail>
@@ -3202,7 +3209,7 @@ main() {
         init) cmd_init "$@" ;;
         import) cmd_import "$@" ;;
         help|-h|--help) usage ;;
-        *) die 2 "unknown verb '${verb}' (run: uws kb help)" ;;
+        *) die 2 "unknown verb '${verb}' (run: ${KB_HINT} help)" ;;
     esac
 }
 

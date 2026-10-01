@@ -27,6 +27,9 @@ if [[ "${_UWS_HOOK_CONTEXT_LOADED:-}" == "true" ]]; then
 fi
 _UWS_HOOK_CONTEXT_LOADED="true"
 _UWS_HOOK_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# uws_hint: the plugin's /uws:<command>, or `uws ...` for the CLI (never a bare
+# `uws` from the plugin: an older one on PATH would win)
+source "${_UWS_HOOK_LIB_DIR}/uws_ui.sh"
 
 UWS_HOOK_MAX_BYTES="${UWS_HOOK_MAX_BYTES:-1200}"
 
@@ -202,6 +205,9 @@ uws_hook_context() {
     cp="$(uws_state_value "$state" current_checkpoint)"
     updated="$(uws_state_value "$state" last_updated metadata.last_updated)"
 
+    # Outside the plugin, name the `uws` CLI briefly: the context is byte-budgeted
+    local UWS_CMD="${UWS_CMD:-uws}"
+
     local head="UWS workflow state (.workflow/ in this project):"
     head+=$'\n'"- goal: $(_uws_trunc "${goal:-(none declared)}" 220)"
     [[ -n "$ptype" ]]    && head+=$'\n'"- project_type: ${ptype}"
@@ -225,7 +231,7 @@ uws_hook_context() {
     fi
     [[ -n "$kbline" ]] && tail+="$(_uws_trunc "$kbline" 120)"$'\n'
     [[ -n "$kbprop" ]] && tail+="$(_uws_trunc "$kbprop" 80)"$'\n'
-    tail+="Full handoff: .workflow/handoff.md. Save progress with /uws:checkpoint <msg> (or: uws checkpoint create <msg>)."
+    tail+="Full handoff: .workflow/handoff.md. Save progress with $(uws_hint checkpoint create '<msg>')."
 
     local note="(some items omitted; read .workflow/handoff.md)"
     local budget

@@ -26,6 +26,17 @@ resolve_uws_dir() {
 
 UWS_INSTALL_DIR="$(resolve_uws_dir)"
 
+# shellcheck source=scripts/lib/uws_ui.sh
+source "${UWS_INSTALL_DIR}/scripts/lib/uws_ui.sh"
+
+# The hints the scripts print ("run ... next") name the command that reached them:
+# `uws`, or this install's bin/uws by absolute path when `uws` on PATH is another
+# install. The plugin copy prints its /uws:<command> slash commands instead.
+if ! uws_in_plugin; then
+    UWS_CMD="${UWS_CMD:-$(uws_cli_path)}"
+    export UWS_CMD
+fi
+
 # ── Root discovery ──────────────────────────────────────────────────────────
 
 find_uws_root() {
@@ -127,7 +138,7 @@ research_needs_no_state() {
     case "${1:-}" in
         bib) return 0 ;;
         check)
-            [[ -n "${2:-}" && ! "${2}" =~ ^[0-9]+$ ]] && return 0
+            [[ ! "${2:-}" =~ ^[0-9]+$ ]] && return 0
             ;;
     esac
     return 1
@@ -137,7 +148,7 @@ research_needs_no_state() {
 # subagents (.claude/agents/uws-<role>.md) and skills are native Claude Code
 # skills, so there is nothing to activate or enable.
 retired_command() {
-    echo "uws $1: retired. Agents are Claude Code subagents: run 'uws orchestrate dispatch \"<task>\"' or use /agents. Skills are native Claude Code skills." >&2
+    echo "uws $1: retired. Agents are Claude Code subagents: run '$(uws_hint orchestrate dispatch '"<task>"')' or use /agents. Skills are native Claude Code skills." >&2
     exit 2
 }
 

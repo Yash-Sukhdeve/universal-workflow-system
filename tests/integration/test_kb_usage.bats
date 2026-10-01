@@ -177,7 +177,8 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ "$status" -eq 0 ]
     local i
     for i in 2 3 4 5 6; do
-        [[ "$output" == *"R4: K-20260101-00000${i} was not retrieved in the last 3 sessions on this machine; retire it only if you agree: uws kb retire K-20260101-00000${i} unused"* ]] || false
+        # the command is `uws kb`, or this install's bin/uws by path when `uws` on PATH is another one
+        [[ "$output" == *"R4: K-20260101-00000${i} was not retrieved in the last 3 sessions on this machine; retire it only if you agree: "*"uws kb retire K-20260101-00000${i} unused"* ]] || false
     done
     [[ "$output" != *"K-20260101-000001 was not"* ]]   # retrieved
     [[ "$output" != *"K-20260101-0000d1"* ]]            # decisions are excluded

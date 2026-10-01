@@ -90,7 +90,7 @@ require_workflow_initialized() {
     if [[ ! -d ".workflow" ]]; then
         precondition_add_failure "Workflow not initialized: .workflow directory missing"
         echo -e "${RED}Error: Workflow not initialized${NC}" >&2
-        echo -e "${YELLOW}Run './scripts/init_workflow.sh' to initialize${NC}" >&2
+        echo -e "${YELLOW}Run '$(declare -f uws_hint >/dev/null 2>&1 && uws_hint init || echo "uws init")' to initialize${NC}" >&2
         return 1
     fi
 

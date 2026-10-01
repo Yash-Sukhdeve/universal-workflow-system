@@ -21,6 +21,8 @@ fi
 if [[ -f "${SCRIPT_DIR}/lib/vector_memory_setup.sh" ]]; then
     source "${SCRIPT_DIR}/lib/vector_memory_setup.sh"
 fi
+# uws_hint: how to spell the next command (`uws ...`, `./uws ...`, `/uws:...`)
+source "${SCRIPT_DIR}/lib/uws_ui.sh"
 
 # Color codes for output (guard matching validation_utils.sh:14-19)
 if [[ -z "${RED:-}" ]]; then
@@ -467,6 +469,8 @@ fi
 
 export WORKFLOW_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/.workflow"
 export STATE_FILE="\${WORKFLOW_DIR}/state.yaml"
+# The scripts' "run ... next" hints name this wrapper
+export UWS_CMD="\${UWS_CMD:-./uws}"
 
 CMD="\${1:-help}"
 shift 2>/dev/null || true
@@ -477,6 +481,7 @@ case "\$CMD" in
     sdlc)         "\$UWS_SCRIPTS/sdlc.sh" "\$@" ;;
     research)     "\$UWS_SCRIPTS/research.sh" "\$@" ;;
     orchestrate)  "\$UWS_SCRIPTS/orchestrate.sh" "\$@" ;;
+    kb)           "\$UWS_SCRIPTS/kb.sh" "\$@" ;;
     dashboard)    "\$UWS_SCRIPTS/start_dashboard.sh" "\$@" ;;
     agent|skill)
         echo "uws \$CMD: retired. Agents are Claude Code subagents: run './uws orchestrate dispatch \"<task>\"' or use /agents. Skills are native Claude Code skills." >&2
@@ -496,9 +501,10 @@ case "\$CMD" in
         echo ""
         echo "Workflow:"
         echo "  status                Show workflow status"
-        echo "  sdlc [action]         SDLC phases (start|status|next|fail|reset)"
-        echo "  research [action]     Research phases (start|status|next|reject|reset)"
-        echo "  checkpoint [msg]      Create checkpoint"
+        echo "  sdlc [action]         SDLC phases (status|start|next|goto|fail|reset|goal|check|deliverables)"
+        echo "  research [action]     Research phases (status|start|next|reject|reset|goal|check|deliverables)"
+        echo "  checkpoint create [msg]  Create checkpoint (also: list, restore <ID>)"
+        echo "  kb <verb>             Project knowledge base (docs/kb/)"
         echo "  recover               Recover context after break"
         echo ""
         echo "Agents:"
@@ -611,20 +617,24 @@ main() {
     echo "═══════════════════════════════════════════════════════════════"
     echo -e "${GREEN}Workflow system initialized successfully!${NC}"
     echo ""
-    local u="./uws"
-    [[ "${UWS_NO_WRAPPER:-false}" == "true" ]] && u="uws"
+    # Hints name the per-project ./uws wrapper when this run created it
+    if [[ "${UWS_NO_WRAPPER:-false}" != "true" && -z "${UWS_CMD:-}" ]] && ! uws_in_plugin; then
+        UWS_CMD="./uws"
+    fi
+    local m="sdlc" m_name="SDLC"
+    [[ "$PROJECT_TYPE" == "research" ]] && { m="research"; m_name="the research workflow"; }
     echo "Next steps:"
     echo "  1. Review .workflow/config.yaml for customization"
-    echo -e "  2. Run: ${GREEN}${u} status${NC}    to see current state"
-    echo -e "  3. Run: ${GREEN}${u} sdlc start${NC} to begin SDLC"
+    echo -e "  2. Declare the goal: ${GREEN}$(uws_hint "$m" goal '"<what you are building>"')${NC} (optional; turns on deliverable gating)"
+    echo -e "  3. Run: ${GREEN}$(uws_hint "$m" start)${NC} to begin ${m_name}"
     echo ""
     echo "Commands (run from this project directory):"
-    echo "  ${u} status              - Show workflow status"
-    echo "  ${u} sdlc [action]       - SDLC workflow"
-    echo "  ${u} research [action]   - Research workflow"
-    echo "  ${u} checkpoint create [msg] - Create checkpoint"
-    echo "  ${u} orchestrate dispatch \"<task>\" - Hand the current phase to its subagent"
-    echo "  ${u} recover             - Recover context"
+    echo "  $(uws_hint status)              - Show workflow status"
+    echo "  $(uws_hint sdlc '[action]')       - SDLC workflow"
+    echo "  $(uws_hint research '[action]')   - Research workflow"
+    echo "  $(uws_hint checkpoint create '[msg]') - Create checkpoint"
+    echo "  $(uws_hint orchestrate dispatch '"<task>"') - Hand the current phase to its subagent"
+    echo "  $(uws_hint recover)             - Recover context"
     echo "═══════════════════════════════════════════════════════════════"
 }
 

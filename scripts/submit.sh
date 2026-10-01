@@ -23,10 +23,12 @@ NOTIFICATIONS_FILE="${PROJECT_ROOT}/NOTIFICATIONS.md"
 # 1. Identify the active agent: the one orchestrate.sh last dispatched
 #    (state.yaml active_agent.name, written by record_active_agent).
 YAML_UTILS_QUIET=true source "${SCRIPT_DIR}/lib/workflow_routing.sh"
+# uws_hint: how to spell the approve command in the change request
+source "${SCRIPT_DIR}/lib/uws_ui.sh"
 AGENT="$(get_active_agent "${WORKFLOW_DIR}/state.yaml")"
 if [[ -z "$AGENT" ]]; then
     AGENT="unknown"
-    echo "Warning: No active agent recorded (run: uws orchestrate dispatch \"<task>\"). Submitting as 'unknown'."
+    echo "Warning: No active agent recorded (run: $(uws_hint orchestrate dispatch '"<task>"')). Submitting as 'unknown'."
 fi
 
 WORKSPACE_DIR="${PROJECT_ROOT}/workspace/${AGENT}"
@@ -100,7 +102,7 @@ $(find "$WORKSPACE_DIR" -type f | sed "s|$WORKSPACE_DIR/|- |")
 
 ## 🚀 Approval
 Run this command to approve and merge:
-\`./scripts/review.sh approve ${CL_ID}\`
+\`$(uws_hint review approve "${CL_ID}")\`
 EOF
 
 # 5. Update Notifications (Inbox)

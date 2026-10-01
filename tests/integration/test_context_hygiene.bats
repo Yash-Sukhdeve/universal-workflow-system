@@ -180,11 +180,14 @@ EOF
 @test "plugin hook uses the same code path as recover_context.sh --hook" {
     init_project
     local direct plugin
-    direct="$(hook | jq -r '.hookSpecificOutput.additionalContext')"
+    # Only the spelling of commands differs (/uws:checkpoint in the plugin, uws ... from
+    # the CLI: scripts/lib/uws_ui.sh), so compare with the plugin's spelling
+    direct="$(UWS_CMD_STYLE=plugin hook | jq -r '.hookSpecificOutput.additionalContext')"
     plugin="$(cd "$PROJ" && CLAUDE_PROJECT_DIR="$PROJ" CLAUDE_PLUGIN_ROOT="${PROJECT_ROOT}/plugins/uws" \
         "${PROJECT_ROOT}/plugins/uws/hooks/session_start.sh" | jq -r '.hookSpecificOutput.additionalContext')"
     [ -n "$direct" ]
     [ "$direct" = "$plugin" ]
+    [[ "$plugin" == *"Save progress with /uws:checkpoint <msg>."* ]] || false
 }
 
 @test "repo settings.json: SessionStart runs recover_context.sh --hook without discarding stderr" {

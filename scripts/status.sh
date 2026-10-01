@@ -25,6 +25,9 @@ if [[ -f "${SCRIPT_DIR}/lib/workflow_routing.sh" ]]; then
     source "${SCRIPT_DIR}/lib/workflow_routing.sh"
 fi
 
+# uws_hint: how to spell a command (`uws checkpoint create`, `/uws:checkpoint`, ...)
+source "${SCRIPT_DIR}/lib/uws_ui.sh"
+
 # Color codes (no readonly — safe to reassign if sourced libraries set them)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -70,7 +73,7 @@ done
 if ! validate_workflow_initialized 2>/dev/null; then
     if [[ ! -d "${WORKFLOW_DIR}" ]]; then
         echo -e "${RED}Error: Workflow not initialized in $(pwd)${NC}"
-        echo -e "   Run: ${CYAN}~/Documents/universal-workflow-system/scripts/init_workflow.sh${NC} first"
+        echo -e "   Run: ${CYAN}$(uws_hint init)${NC} first"
         exit 1
     fi
 fi
@@ -242,7 +245,7 @@ if [[ -n "$ACTIVE_AGENT" ]]; then
     AGENT_SINCE=$(awk '/^active_agent:/{f=1;next} f&&/^[^[:space:]]/{exit} f&&/^  activated_at:/{sub(/^  activated_at:[[:space:]]*/,"");gsub(/"/,"");print;exit}' "${STATE_FILE}" 2>/dev/null || true)
     echo -e "  🤖 ${BOLD}${ACTIVE_AGENT}${NC}  ${DIM}(subagent uws-${ACTIVE_AGENT}${AGENT_SINCE:+, dispatched ${AGENT_SINCE}})${NC}"
 else
-    echo -e "  ${DIM}None dispatched (uws orchestrate dispatch \"<task>\")${NC}"
+    echo -e "  ${DIM}None dispatched ($(uws_hint orchestrate dispatch '"<task>"'))${NC}"
 fi
 echo ""
 
@@ -315,7 +318,7 @@ if [ "$VERBOSE" = true ]; then
         KB_PROP="$(kb_proposals_line "$(cd "${WORKFLOW_DIR}/.." && pwd)" 2>/dev/null || true)"
         [[ -z "$KB_PROP" ]] || echo -e "  ${YELLOW}${KB_PROP}${NC}"
     else
-        echo -e "  ${DIM}No knowledge base yet (uws kb add ...)${NC}"
+        echo -e "  ${DIM}No knowledge base yet ($(uws_hint kb add) ...)${NC}"
     fi
     echo ""
 fi
@@ -325,9 +328,9 @@ echo -e "${BLUE}┌────────────────────�
 echo -e "${BLUE}│ ${BOLD}QUICK ACTIONS${NC}                                                              ${BLUE}│${NC}"
 echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
 
-echo -e "  ${CYAN}Continue work:${NC}     ${GREEN}./scripts/recover_context.sh${NC}"
-echo -e "  ${CYAN}Create checkpoint:${NC} ${GREEN}./scripts/checkpoint.sh \"message\"${NC}"
-echo -e "  ${CYAN}Dispatch agent:${NC}    ${GREEN}./scripts/orchestrate.sh dispatch \"<task>\"${NC}"
+echo -e "  ${CYAN}Continue work:${NC}     ${GREEN}$(uws_hint recover)${NC}"
+echo -e "  ${CYAN}Create checkpoint:${NC} ${GREEN}$(uws_hint checkpoint create '"<message>"')${NC}"
+echo -e "  ${CYAN}Dispatch agent:${NC}    ${GREEN}$(uws_hint orchestrate dispatch '"<task>"')${NC}"
 echo ""
 
 # Footer

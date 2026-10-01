@@ -191,7 +191,7 @@ validate_workflow_structure() {
 
     if [[ ! -d "$workflow_dir" ]]; then
         echo -e "${RED}Error: Workflow directory not found: $workflow_dir${NC}" >&2
-        echo -e "  Run: ${CYAN}./scripts/init_workflow.sh${NC}" >&2
+        echo -e "  Run: ${CYAN}$(declare -f uws_hint >/dev/null 2>&1 && uws_hint init || echo "uws init")${NC}" >&2
         return 1
     fi
 

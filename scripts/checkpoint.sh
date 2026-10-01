@@ -68,6 +68,7 @@ source_lib "checksum_utils.sh" || true
 source_lib "completeness_utils.sh" || true
 source_lib "decision_utils.sh" || true
 source_lib "handoff_utils.sh" || true
+source_lib "uws_ui.sh" || true    # uws_hint: how to spell the next command
 
 # Color codes
 GREEN='\033[0;32m'
@@ -110,7 +111,7 @@ show_usage() {
 if ! validate_workflow_initialized 2>/dev/null; then
     if [[ ! -d "${WORKFLOW_DIR}" ]]; then
         echo -e "${RED}Error: Workflow not initialized in $(dirname "${WORKFLOW_DIR}")${NC}"
-        echo -e "  Run: ${CYAN}~/Documents/universal-workflow-system/scripts/init_workflow.sh${NC}"
+        echo -e "  Run: ${CYAN}$(uws_hint init)${NC}"
         exit 1
     fi
 fi
