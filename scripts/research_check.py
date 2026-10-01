@@ -13,7 +13,8 @@ Commands (increment 1):
     bib                 bib_sources/ provenance and references.bib equality
     quotes              recorded quotes are verbatim substrings of the cached source text
     numbers             number provenance: output hash, pointer value, rounding, macros,
-                        hand-typed decimals; formulas over other numbers; evaluation split
+                        hand-typed decimals and numbers with units in result regions, and
+                        values at a row's `where`; formulas over other numbers; evaluation split
     slop                S1 S2 S4 S6 (prose) and C1 C3 C5 C6 (code / disclosure)
     gate <phase>        the evidence gate for one research phase
     role-exit           SubagentStop hook check (reads the hook JSON on stdin)
@@ -35,6 +36,18 @@ Commands (increment 2):
                         refreshes research/sources/retractions.jsonl, gates stay offline
     manuscript-hash     the hash a red-team review must name (`Manuscript: sha256:...`)
     macros              write the generated macro file from the number ledger
+Commands and options (field-test fixes, design section 11b):
+    claims              the claim ledger's rules (as `ledger`)
+    numbers add '<json>' | claims add '<json>'
+                        append one validated row (id, rev, supersedes filled in; numbers
+                        also output_sha256, raw and printed); existing lines never change
+    run --code <file>   a script the command runs: code, versioned by the run's commit
+    run --output <glob> a timestamped output name; the file the command wrote is recorded
+    run --env-lock <f>  a lock file to record by hash (default: research/env/*.lock and
+                        the common lock files that exist)
+    data add --split '{"train": <path>, "test": <path>, "group_key": <field>}'
+                        (or {"column": <split column>, "group_key": <field>}): a split
+                        the leakage check (DATA-LEAK) can test
 Internal (called by scripts/research_bib.sh):
     bib-ingest          validate a downloaded BibTeX body and store it with .meta.json
     bib-build           write references.bib from bib_sources/ only
@@ -46,8 +59,10 @@ Only `run`, `repro` and `retraction --online` execute commands or use the networ
 
 import argparse
 import ast
+import bisect
 import csv
 import datetime
+import glob
 import hashlib
 import io
 import json
@@ -127,10 +142,14 @@ DEFAULT_CONFIG = {
 # --------------------------------------------------------------------------- findings
 
 class Finding(object):
-    __slots__ = ("path", "line", "rule", "msg", "level")
+    """One finding. `printed` marks a finding about the value a number row records as printed
+    (NUM-ROUND, NUM-FORMULA disagreements): an audit ledger must record a misprinted number as
+    printed, so `numbers add` appends such a row and reports the finding instead of refusing it."""
+    __slots__ = ("path", "line", "rule", "msg", "level", "printed")
 
-    def __init__(self, path, line, rule, msg, level="block"):
+    def __init__(self, path, line, rule, msg, level="block", printed=False):
         self.path, self.line, self.rule, self.msg, self.level = path, line, rule, msg, level
+        self.printed = printed
 
     def render(self):
         tag = " [warn]" if self.level == "warn" else ""
@@ -139,6 +158,18 @@ class Finding(object):
     def as_dict(self):
         return {"file": self.path, "line": self.line, "rule": self.rule,
                 "level": self.level, "message": self.msg}
+
+
+def dedupe(findings):
+    """Drop repeats (a gate runs overlapping checks, e.g. ledger and numbers both check the
+    number-row schema), keeping the first of each."""
+    seen, out = set(), []
+    for f in findings:
+        key = (f.path, f.line, f.rule, f.msg, f.level)
+        if key not in seen:
+            seen.add(key)
+            out.append(f)
+    return out
 
 
 class EnvError(Exception):
@@ -169,6 +200,26 @@ class Project(object):
         self._manifest = None
         self._runs = None
         self._plans = None
+        self._docs = {}
+        self._links = None
+
+    def doc(self, path):
+        """A parsed prose file, read once per check run."""
+        key = os.path.abspath(path)
+        if key not in self._docs:
+            self._docs[key] = Doc(self, key)
+        return self._docs[key]
+
+    def links(self):
+        """Ledger rows located in the manuscript by their `where` field (see WhereLinks)."""
+        if self._links is None:
+            self._links = WhereLinks(self)
+        return self._links
+
+    def macro_index(self):
+        """Macro name of each current number row -> its N-ID."""
+        return {row["macro"]: nid for nid, (_l, row) in sorted(self.numbers().latest.items())
+                if isinstance(row.get("macro"), str) and row.get("macro")}
 
     def path(self, rel):
         return os.path.join(self.root, rel)
@@ -334,6 +385,25 @@ class Ledger(object):
                         self.latest[rid] = (lineno, obj)
 
 
+    def appended(self, obj):
+        """(a copy of this ledger with `obj` appended in memory, the line it would take)."""
+        new = Ledger.__new__(Ledger)
+        new.project, new.rel, new.prefix, new.path = self.project, self.rel, self.prefix, self.path
+        new.exists, new.parse_errors = True, list(self.parse_errors)
+        new.rows, new.latest = list(self.rows), dict(self.latest)
+        lineno = 1
+        if os.path.isfile(self.path):
+            with open(self.path, encoding="utf-8") as fh:
+                lineno = sum(1 for _ in fh) + 1
+        new.rows.append((lineno, obj))
+        rid = obj.get("id")
+        if isinstance(rid, str):
+            prev = new.latest.get(rid)
+            if prev is None or _rev(obj) >= _rev(prev[1]):
+                new.latest[rid] = (lineno, obj)
+        return new, lineno
+
+
 def _rev(obj):
     r = obj.get("rev", 1)
     return r if isinstance(r, int) and not isinstance(r, bool) else 1
@@ -412,6 +482,12 @@ def _check_claim(project, claims, numbers, lineno, row):
     origin = row.get("data_origin")
     if origin is not None and origin not in DATA_ORIGINS:
         bad("LEDGER-SCHEMA", "data_origin %r is not one of %s" % (origin, ", ".join(DATA_ORIGINS)))
+    # Where the claim's labels come from (optional); "generator-rule" makes C6 block on any
+    # sentence the claim is attached to.
+    if row.get("labels") is not None and row.get("labels") not in LABEL_ORIGINS:
+        bad("LEDGER-SCHEMA", "labels %r is not one of %s" % (row.get("labels"), ", ".join(LABEL_ORIGINS)))
+    if row.get("where") is not None and not isinstance(row.get("where"), str):
+        bad("LEDGER-SCHEMA", "where must be a string such as \"paper/main.tex:12\"")
 
     verified_by = row.get("verified_by")
     # The core rule: the author of a claim can never be the one who verifies it (AT1).
@@ -482,39 +558,64 @@ def _check_claim(project, claims, numbers, lineno, row):
     return out
 
 
+NUMBER_REQUIRED = ("macro", "printed", "raw", "rounding", "metric", "output", "pointer",
+                   "output_sha256", "data_origin")
+
+
 def _check_number_shapes(numbers):
+    """Schema of the current revision of every number row, plus macro names used twice."""
     out = []
-    required = ("macro", "printed", "raw", "rounding", "metric", "output", "pointer",
-                "output_sha256", "data_origin")
+    owners = {}
     for nid in sorted(numbers.latest):
         lineno, row = numbers.latest[nid]
-        for key in required:
-            if row.get(key) in (None, ""):
-                out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: missing '%s'" % (nid, key)))
-        if row.get("data_origin") not in (None, "") and row.get("data_origin") not in DATA_ORIGINS:
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: data_origin %r is not one of %s"
-                               % (nid, row.get("data_origin"), ", ".join(DATA_ORIGINS))))
-        macro = row.get("macro")
-        if macro and not re.match(r"^\\[A-Za-z]+$", str(macro)):
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: macro must look like \\\\Name" % nid))
-        # Optional fields (increment 2); their values are checked when present.
-        ev = row.get("evaluation")
-        if ev is not None and ev not in EVALUATIONS:
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: evaluation %r is not one of %s"
-                               % (nid, ev, ", ".join(EVALUATIONS))))
-        exp = row.get("exp")
-        if exp is not None and exp != EXPLORATORY and not EXP_RE.match(str(exp)):
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: exp must be EXP-<name> or %r (got %r)"
-                               % (nid, EXPLORATORY, exp)))
-        inputs = row.get("inputs")
-        if inputs is not None and (not isinstance(inputs, list) or not all(isinstance(i, str) for i in inputs)):
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: inputs must be a list of project paths" % nid))
-        if row.get("formula") is not None and not isinstance(row.get("formula"), str):
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: formula must be a string such as "
-                               "\"N-0002/(N-0002+N-0003)\"" % nid))
-        tol_err = tolerance_error(row.get("tolerance"))
-        if tol_err:
-            out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: %s" % (nid, tol_err)))
+        out.extend(_number_shape(numbers.rel, nid, lineno, row))
+        if isinstance(row.get("macro"), str) and row.get("macro"):
+            owners.setdefault(row["macro"], []).append((nid, lineno))
+    for macro, rows in sorted(owners.items()):
+        if len(rows) > 1:
+            for nid, lineno in rows[1:]:
+                out.append(Finding(numbers.rel, lineno, "NUM-SCHEMA", "%s: macro %s is also used by %s; each number "
+                                   "needs its own macro" % (nid, macro, rows[0][0])))
+    return out
+
+
+def _number_shape(rel, nid, lineno, row):
+    """Schema of one number row (design 6.4, increment 2 and the field-test fields)."""
+    out = []
+
+    def bad(msg):
+        out.append(Finding(rel, lineno, "NUM-SCHEMA", "%s: %s" % (nid, msg)))
+
+    for key in NUMBER_REQUIRED:
+        if row.get(key) in (None, ""):
+            bad("missing '%s'" % key)
+    if row.get("data_origin") not in (None, "") and row.get("data_origin") not in DATA_ORIGINS:
+        bad("data_origin %r is not one of %s" % (row.get("data_origin"), ", ".join(DATA_ORIGINS)))
+    macro = row.get("macro")
+    if macro and not re.match(r"^\\[A-Za-z]+$", str(macro)):
+        bad("macro must look like \\\\Name")
+    # Optional fields; their values are checked when present.
+    ev = row.get("evaluation")
+    if ev is not None and ev not in EVALUATIONS:
+        bad("evaluation %r is not one of %s" % (ev, ", ".join(EVALUATIONS)))
+    exp = row.get("exp")
+    if exp is not None and exp != EXPLORATORY and not EXP_RE.match(str(exp)):
+        bad("exp must be EXP-<name> or %r (got %r)" % (EXPLORATORY, exp))
+    inputs = row.get("inputs")
+    if inputs is not None and (not isinstance(inputs, list) or not all(isinstance(i, str) for i in inputs)):
+        bad("inputs must be a list of project paths")
+    if row.get("formula") is not None and not isinstance(row.get("formula"), str):
+        bad("formula must be a string such as \"N-0002/(N-0002+N-0003)\"")
+    tol_err = tolerance_error(row.get("tolerance"))
+    if tol_err:
+        bad(tol_err)
+    where = row.get("where")
+    if where is not None and not isinstance(where, str):
+        bad("where must be a string such as \"paper/main.tex:12; paper/results.tex#tab:auc\"")
+    unr = row.get("unrounded")
+    if unr is not None and (not isinstance(unr, dict) or not all(isinstance(unr.get(k), str) and unr.get(k)
+                                                                 for k in ("run", "output", "pointer"))):
+        bad("unrounded must be {\"run\": RUN-ID, \"output\": path, \"pointer\": \"/json/pointer\"}")
     return out
 
 
@@ -863,26 +964,78 @@ def expected_references(project):
     return "\n".join(chunks)
 
 
+# A LaTeX citation command: \cite and every command with "cite" in its name (natbib
+# \citep, \citet, \Citet, \citeauthor; biblatex \parencite, \textcite, \autocite,
+# \footcite, \Parencite; a user's \mycite). Two natbib commands take no keys.
+CITE_CMD_RE = re.compile(r"\\([A-Za-z]*[Cc]ite[A-Za-z]*)\*?")
+CITE_NOT_KEYS = ("citetext", "citestyle")
+
+
+def tex_citations(text):
+    """[(key, offset of the key)] for every citation key in comment-stripped LaTeX `text`.
+
+    Reads optional [pre][post] notes, whitespace (a newline too) before an argument, key
+    lists that continue on the next line, and biblatex multicite commands (\\cites,
+    \\parencites ...), whose (global notes) and several {keys} groups are all read."""
+    out, n = [], len(text)
+    for m in CITE_CMD_RE.finditer(text):
+        name = m.group(1)
+        if name.lower() in CITE_NOT_KEYS:
+            continue
+        multi = name.lower().endswith("cites")
+        pos = m.end()
+        while True:
+            j = pos
+            for opener, closer, limit in ((("(", ")", 2) if multi else (None, None, 0)), ("[", "]", 2)):
+                count = 0
+                while opener and count < limit:
+                    while j < n and text[j].isspace():
+                        j += 1
+                    if j < n and text[j] == opener:
+                        k = text.find(closer, j + 1)
+                        if k < 0:
+                            break
+                        j, count = k + 1, count + 1
+                    else:
+                        break
+            while j < n and text[j].isspace():
+                j += 1
+            if j >= n or text[j] != "{":
+                break
+            k = text.find("}", j + 1)
+            if k < 0:
+                break
+            for km in re.finditer(r"[^,\s]+", text[j + 1:k]):
+                if km.group(0) != "*":
+                    out.append((km.group(0), j + 1 + km.start()))
+            pos = k + 1
+            if not multi:
+                break
+    return out
+
+
 def cited_keys(project):
-    """Citekeys used in .tex (\\cite variants) and Markdown ([@key]) with their locations."""
+    """Citekeys used in .tex (\\cite variants, see tex_citations) and Markdown ([@key]) with
+    their locations. A .tex file is read as a whole (comments removed), so a key list that
+    continues on the next line is read too; each key is reported on its own line."""
     out = []
     files = set(project.tex_files()) | set(project.prose_files())
     if os.path.isdir(project.path("research")):
         files |= set(project.walk("research", (".md",)))
-    cite_re = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{([^}]*)\}")
     md_re = re.compile(r"\[(-?@[^\]]+)\]")
     for path in sorted(files):
         rel = project.rel(path)
-        for lineno, raw in enumerate(read_text(path).splitlines(), 1):
-            code = split_tex_comment(raw)[0] if path.endswith(".tex") else raw
-            if path.endswith(".tex"):
-                for m in cite_re.finditer(code):
-                    for key in m.group(1).split(","):
-                        key = key.strip()
-                        if key and key != "*":
-                            out.append((rel, lineno, key))
-            else:
-                for m in md_re.finditer(code):
+        lines = read_text(path).splitlines()
+        if path.endswith(".tex"):
+            starts, text = [], ""
+            for raw in lines:
+                starts.append(len(text))
+                text += split_tex_comment(raw)[0] + "\n"
+            for key, off in tex_citations(text):
+                out.append((rel, bisect.bisect_right(starts, off), key))
+        else:
+            for lineno, raw in enumerate(lines, 1):
+                for m in md_re.finditer(raw):
                     for key in re.findall(r"-?@([\w:./-]+[\w])", m.group(1)):
                         out.append((rel, lineno, key))
     return out
@@ -947,9 +1100,23 @@ def check_bib(project):
         findings.append(Finding(project.rel(refs) if refs else "references.bib", 1, "BIB-REFS",
                                 "references.bib is missing; build it with `uws research bib build`"))
 
+    # A key that references.bib does not define prints as [?]: that is a different problem
+    # (a citation to nothing) from a defined entry that was not fetched (BIB-MISSING).
+    ref_keys = None
+    if refs and os.path.isfile(refs):
+        try:
+            ref_keys = set(e.key for e in parse_bib(read_text(refs))[0] if e.key)
+        except BibError:
+            ref_keys = None   # BIB-REFS reports the parse error
+    refs_rel = project.rel(refs) if refs else "references.bib"
     for rel, lineno, key in cites:
-        if key not in stems:
+        if key in stems:
+            continue
+        if ref_keys is not None and key in ref_keys:
             findings.append(Finding(rel, lineno, "BIB-MISSING", "\\cite{%s} has no bib_sources/%s.bib" % (key, key)))
+        else:
+            findings.append(Finding(rel, lineno, "BIB-UNDEFINED", "\\cite{%s} is not defined in %s and has no "
+                                    "bib_sources/%s.bib: it cites nothing and prints as [?]" % (key, refs_rel, key)))
     claims = project.claims()
     for cid in sorted(claims.latest):
         lineno, row = claims.latest[cid]
@@ -1241,6 +1408,71 @@ def tex_closure(project, main_rel):
     return sorted(seen), missing
 
 
+# A period after one of these does not end a sentence (LaTeX writers often omit `\ `).
+_ABBREV_RE = re.compile(r"(?:^|[\s(~{])(?:e\.g|i\.e|cf|vs|et al|Figs?|Secs?|Tabs?|Eqs?|No|approx|resp|viz)\.$", re.I)
+_CLOSERS = "})]'\""
+
+
+def sentence_spans(text):
+    """(start, end) of each sentence of `text`; together they cover all of it.
+
+    A sentence ends at `.`, `!` or `?` (repeated, and followed by closing braces, brackets
+    or quotes) when whitespace or the end of the text comes next. So the dots in
+    `recover\\_context.sh`, `0.912`, `Fig.~3` and `et al.\\ ` end nothing (LaTeX's own rule:
+    `.~` and `.\\ ` are not sentence ends), `\\.` is an accent, and a period after a common
+    abbreviation (e.g., i.e., Fig., et al.) does not end the sentence either. No text is
+    ever dropped: the part after the last stop is a sentence of its own."""
+    spans = []
+    n, start, i = len(text), 0, 0
+    while i < n:
+        c = text[i]
+        if c not in ".!?" or (i > 0 and text[i - 1] == "\\"):
+            i += 1
+            continue
+        j = i
+        while j < n and text[j] in ".!?":
+            j += 1
+        k = j
+        while k < n and text[k] in _CLOSERS:
+            k += 1
+        if k >= n or text[k].isspace():
+            abbrev = c == "." and j == i + 1 and _ABBREV_RE.search(text[max(0, i - 12):i + 1])
+            if not abbrev:
+                spans.append((start, k))
+                start = k
+        i = k
+    if start < n:
+        spans.append((start, n))
+    return spans
+
+
+class Sentence(object):
+    """One sentence of a Doc: its text, first line, attached C-IDs, and where each character
+    came from (`line_of(offset)`; `offset_of(lineno, col)` for a column of a code line)."""
+    __slots__ = ("start", "text", "cids", "lines", "_a", "_spans")
+
+    def __init__(self, text, start_offset, spans):
+        self.text, self._a, self._spans, self.cids = text, start_offset, spans, set()
+        end = start_offset + len(text)
+        self.lines = [ln for (st, en, ln) in spans if st < end and en > start_offset]
+        self.start = self.lines[0] if self.lines else spans[0][2]
+
+    def line_of(self, off):
+        pos = self._a + off
+        for st, en, ln in self._spans:
+            if st <= pos < en:
+                return ln
+        return self._spans[-1][2]
+
+    def offset_of(self, lineno, col):
+        """Offset in `text` of column `col` of line `lineno`, or None when it is not in it."""
+        for st, _en, ln in self._spans:
+            if ln == lineno:
+                off = st + col - self._a
+                return off if 0 <= off < len(self.text) else None
+        return None
+
+
 class Doc(object):
     """A prose file as paragraphs of sentences, with per-line context."""
 
@@ -1253,17 +1485,21 @@ class Doc(object):
         self.comment = []
         self.cids = []       # C-IDs attached to each line
         self.env = []        # innermost float environment id per line (or None)
+        self.float_lines = {}  # float env id -> [first line, last line]
         self.in_abstract = []
         self.in_tabular = []
-        self.section = []    # current \section title per line
+        self.section = []    # current \section, \subsection ... title per line
+        self.top_section = []  # current top-level \section title per line
         self.captions = {}   # float env id -> caption text
+        self.labels = {}     # \label name -> line
+        self._sentences = None
         self._scan()
 
     def _scan(self):
         stack, float_id, floats = [], 0, []
-        section = ""
+        section = top = ""
         in_md_comment = False
-        for raw in self.lines:
+        for lineno, raw in enumerate(self.lines, 1):
             if self.is_tex:
                 code, comment = split_tex_comment(raw)
             else:
@@ -1291,23 +1527,39 @@ class Doc(object):
                             rest = rest[start + 4:]
                             in_md_comment = True
                 code = "".join(pieces)
+            ended = []
             for m in re.finditer(r"\\(begin|end)\{([^}]+)\}", code):
                 kind, name = m.group(1), m.group(2).rstrip("*")
                 if kind == "begin":
                     if name in ("table", "figure"):
                         float_id += 1
                         floats.append(float_id)
+                        self.float_lines[float_id] = [lineno, lineno]
                     stack.append(name)
                 elif stack and stack[-1].rstrip("*") == name:
                     stack.pop()
                     if name in ("table", "figure") and floats:
-                        floats.pop()
-            sm = re.search(r"\\(?:sub)*section\*?\{([^}]*)\}", code) if self.is_tex else re.match(r"^#+\s+(.*)", code)
-            if sm:
-                section = sm.group(1)
-            cur_float = floats[-1] if floats else None
+                        ended.append(floats.pop())
+            if self.is_tex:
+                sm = re.search(r"\\(sub)*section\*?\{([^}]*)\}", code)
+                if sm:
+                    section = sm.group(2)
+                    if not sm.group(1):
+                        top = section
+            else:
+                sm = re.match(r"^(#+)\s+(.*)", code)
+                if sm:
+                    section = sm.group(2)
+                    if len(sm.group(1)) <= 2:
+                        top = section
+            # The line that closes a float still belongs to it.
+            cur_float = floats[-1] if floats else (ended[-1] if ended else None)
+            for fid in floats + ended:
+                self.float_lines[fid][1] = lineno
             if cur_float is not None and "\\caption" in code:
                 self.captions[cur_float] = self.captions.get(cur_float, "") + " " + code
+            for m in re.finditer(r"\\label\{([^}]+)\}", code):
+                self.labels.setdefault(m.group(1).strip(), lineno)
             self.code.append(code)
             self.comment.append(comment)
             self.cids.append(set(CID_RE.findall(comment)))
@@ -1315,45 +1567,46 @@ class Doc(object):
             self.in_abstract.append("abstract" in stack or bool(re.search(r"\\begin\{abstract\}", code)))
             self.in_tabular.append(any(s.startswith(("tabular", "longtable", "array")) for s in stack))
             self.section.append(section)
+            self.top_section.append(top)
         # a caption may appear after the content it describes; extend per float
         if self.captions:
             for fid in list(self.captions):
                 self.captions[fid] = self.captions[fid].strip()
 
-    def sentences(self):
-        """Yield (start_line, text, cids, line_of(offset)) for each sentence."""
-        para, offsets = [], []
-        results = []
+    def paragraph_lines(self, lineno):
+        """First and last line of the paragraph (run of non-blank lines) around `lineno`."""
+        lo = hi = lineno
+        while lo > 1 and self.code[lo - 2].strip():
+            lo -= 1
+        while hi < len(self.code) and self.code[hi].strip():
+            hi += 1
+        return lo, hi
+
+    def sentence_list(self):
+        """Every sentence of the file as a Sentence (computed once)."""
+        if self._sentences is not None:
+            return self._sentences
+        para, results = [], []
 
         def flush():
             if not para:
                 return
-            text = ""
-            spans = []
+            text, spans = "", []
             for lineno, code in para:
                 start = len(text)
                 text += code + " "
                 spans.append((start, len(text), lineno))
-            for m in re.finditer(r"[^.!?]*(?:[.!?]+(?=\s|$)|$)", text):
-                s = m.group(0)
-                if not s.strip():
+            for a0, b in sentence_spans(text):
+                raw = text[a0:b]
+                s = raw.strip()
+                if not s:
                     continue
-                a, b = m.start() + (len(s) - len(s.lstrip())), m.end()
-                s = s.strip()
-                lines = [ln for (st, en, ln) in spans if st < b and en > a]
-                if not lines:
+                sent = Sentence(s, a0 + (len(raw) - len(raw.lstrip())), spans)
+                if not sent.lines:
                     continue
-                cids = set()
-                for ln in lines:
-                    cids |= self.cids[ln - 1]
-
-                def line_of(off, _a=a, _spans=spans):
-                    pos = _a + off
-                    for st, en, ln in _spans:
-                        if st <= pos < en:
-                            return ln
-                    return _spans[-1][2]
-                results.append((lines[0], s, cids, line_of))
+                for ln in sent.lines:
+                    sent.cids |= self.cids[ln - 1]
+                results.append(sent)
             del para[:]
 
         structural = re.compile(r"^\s*\\(?:begin|end|(?:sub)*section|paragraph|chapter|item|caption|label)\b")
@@ -1367,7 +1620,12 @@ class Doc(object):
                 flush()
             para.append((lineno, code))
         flush()
+        self._sentences = results
         return results
+
+    def sentences(self):
+        """(start_line, text, cids, line_of(offset)) for each sentence."""
+        return [(x.start, x.text, x.cids, x.line_of) for x in self.sentence_list()]
 
 
 # --------------------------------------------------------------------------- numbers
@@ -1452,28 +1710,224 @@ def read_number_macros(project):
 
 
 NUM_STRIP_RE = re.compile(
-    r"\\(?:cite\w*|citep|citet|ref|eqref|autoref|cref|Cref|label|url|href|includegraphics|input|include|"
+    r"\\(?:[A-Za-z]*[Cc]ite\w*|ref|eqref|autoref|cref|Cref|label|url|href|includegraphics|input|include|"
     r"vspace|hspace|setlength|addtolength|resizebox|scalebox|rule|cmidrule|renewcommand|newcommand|"
     r"definecolor|begin|end|usepackage|documentclass|bibliography\w*|arraystretch|multicolumn|multirow|"
     r"fontsize|linespread|setcounter|pgfplots\w*)\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})*")
-# A decimal such as 0.913 (a sentence-ending period may follow); version strings such as
-# 3.2.1 and identifiers such as v1.2 are not matched.
-DECIMAL_RE = re.compile(r"(?<![\w.\\-])-?\d+\.\d+(?:x|×)?(?!\w|\.\w)")
+# A number in prose: a decimal such as 0.913, or any number with a unit attached, such as
+# 1.1ms, 1.1\,ms, 30\% or 3x (a sentence-ending period may follow). Version strings such
+# as 3.2.1, identifiers such as v1.2 or F1, and the second number of a range (0--90) are
+# not matched.
+_UNIT_WORDS = r"\\%|%|ms|[µu]s|ns|secs?|seconds?|mins?|minutes?|hours?|hrs?|s|h|[kKMGT]i?B"
+NUMBER_RE = re.compile(
+    r"(?<![\w.\\-])(?P<num>-?\d+(?:\.\d+)?)"
+    r"(?P<unit>(?:\\[,;:! ]|~|\s)?(?:" + _UNIT_WORDS + r")|\s?(?:\\times|×)|x)?"
+    r"(?!\w|\.\d)")
+# A bare integer is usually a count, a year or an identifier, so an integer is reported
+# only with a unit; `s` and `h` after an integer are not units ("the 1990s", "24h").
+_INT_NOT_UNITS = ("s", "h")
 NUM_PREFIX_EXEMPT = re.compile(
     r"(?:Section|Sec\.|Sections|§|Table|Tab\.|Fig\.|Figure|Eq\.|Equation|Algorithm|Alg\.|Appendix|"
     r"Chapter|Theorem|Lemma|Definition|v|version|Version|Python|release|RFC|ISO|IEEE)\s*~?\s*$")
-NUM_SUFFIX_EXEMPT = re.compile(r"^\s*\\?(?:textwidth|linewidth|columnwidth|textheight|cm|mm|pt|em|ex|in|bp|pc)\b")
+# A TeX length after a number is not a result: 0.45\textwidth, 0.5 cm, 2 pt. `in` (inches)
+# counts only attached to the number, because the English word follows numbers in prose
+# ("0.912 in cross-validation", "2.5ms in the worst case").
+NUM_SUFFIX_EXEMPT = re.compile(r"^(?:\s*\\(?:textwidth|linewidth|columnwidth|textheight)|\s*(?:cm|mm|pt|em|ex|bp|pc)|in)\b")
 LITERAL_RE = re.compile(r"uws:literal\b(.*)")
 
+# Where results are reported (design 6.4 d): the abstract, tables and figures, and files or
+# top-level sections named introduction, results, evaluation, experiments, discussion or
+# conclusion. A subsection title counts only for the narrower list (so "Evaluation Metrics"
+# inside a method section is not in scope).
+_SCOPE_RE = re.compile(r"(abstract|intro|result|evaluation|experiments\b|discussion|conclusion)", re.I)
+_SCOPE_SUB_RE = re.compile(r"(abstract|intro|result|conclusion)", re.I)
 
-def _decimal_scope(doc, idx):
+
+def number_tokens(code):
+    """Numbers in one comment-stripped line: [(start, end, text, number, reportable)].
+
+    Commands whose arguments are not prose (\\cite, \\ref, \\label, lengths ...) are blanked
+    first, keeping columns. `reportable` is true for a decimal, or an integer with a unit."""
+    stripped = NUM_STRIP_RE.sub(lambda m: " " * len(m.group(0)), code)
+    out = []
+    for m in NUMBER_RE.finditer(stripped):
+        if NUM_PREFIX_EXEMPT.search(stripped[:m.start()]) or NUM_SUFFIX_EXEMPT.match(stripped[m.end():]):
+            continue
+        num, unit = m.group("num"), m.group("unit") or ""
+        word = re.sub(r"^(?:\\[,;:! ]|~|\s)+", "", unit)
+        reportable = "." in num or bool(word and word not in _INT_NOT_UNITS)
+        out.append((m.start(), m.end(), m.group(0), num, reportable))
+    return out
+
+
+def _number_scope(doc, idx):
     rel = doc.rel.lower()
-    name = os.path.basename(rel)
     if doc.in_abstract[idx] or doc.in_tabular[idx] or doc.env[idx] is not None:
         return True
-    if re.search(r"(abstract|result|conclusion)", name) or "/tables/" in "/" + rel:
+    if _SCOPE_RE.search(os.path.basename(rel)) or "/tables/" in "/" + rel:
         return True
-    return bool(re.search(r"(result|conclusion|abstract)", doc.section[idx], re.I))
+    return bool(_SCOPE_RE.search(doc.top_section[idx]) or _SCOPE_SUB_RE.search(doc.section[idx]))
+
+
+# `where` of a ledger row: places in the manuscript, separated by ';' (free text between
+# them is ignored): file:line, file:first-last, file:l1,l2 or file#label. Text in
+# parentheses is a note, never a place: the PROMISE ledger wrote "audit/recovered/x.tex:108
+# (the section paper/main-promise.tex:106 inputs; ...)", and main-promise.tex:106 is where the
+# missing section is input, not where the number is printed. A file name may contain spaces
+# ("paper/sec one.tex:2") when it names one of the manuscript files.
+WHERE_LOC_RE = re.compile(r"(\.(?:tex|md))(?::(\d+(?:\s*[-,]\s*\d+)*)|#([^\s;,()]+))")
+WHERE_TOKEN_RE = re.compile(r"[\w./-]+$")
+PAREN_NOTE_RE = re.compile(r"\([^()]*\)")
+
+
+def parse_where(text, known=()):
+    """[(path, spec, [(first, last), ...] or None, label or None)] of a `where` field.
+
+    The path of a place is the longest text before its `.tex`/`.md` in the same
+    `;`-separated segment, starting at a word, that names one of the `known` manuscript
+    files (project-relative), so a name with spaces is read whole; otherwise it is the run
+    of path characters ([\\w./-]) just before the extension."""
+    out = []
+    text, prev = str(text or ""), None
+    while prev != text:   # innermost parentheses first, so nested notes go too
+        prev, text = text, PAREN_NOTE_RE.sub(" ", text)
+    for segment in text.split(";"):
+        start = 0
+        for m in WHERE_LOC_RE.finditer(segment):
+            ext, spec, label = m.group(1), m.group(2), m.group(3)
+            before, path = segment[start:m.start()], None
+            start = m.end()
+            for i in range(len(before)):
+                if i and not before[i - 1].isspace():
+                    continue
+                cand = before[i:].strip()
+                if cand and os.path.normpath(cand + ext).replace(os.sep, "/") in known:
+                    path = cand + ext
+                    break
+            if path is None:
+                tok = WHERE_TOKEN_RE.search(before)
+                if not tok:
+                    continue
+                path = tok.group(0) + ext
+            if spec:
+                locs = []
+                for part in re.split(r"\s*,\s*", spec):
+                    ends = [int(x) for x in re.split(r"\s*-\s*", part)]
+                    locs.append((min(ends), max(ends)))
+                out.append((path, spec, locs, None))
+            else:
+                out.append((path, "#" + label, None, label))
+    return out
+
+
+class WhereLinks(object):
+    """Ledger rows located in the manuscript by their `where` field.
+
+    Numbers: a hand-typed value on a named line that equals the row's printed value is that
+    row's occurrence. NUM-LITERAL names the row, and NUM-SPLIT, C3 and C6 judge the value as
+    they judge a macro use, so typing a number by hand (with or without `uws:literal`) no
+    longer hides it from them. A named place that does not show the value is a NUM-WHERE
+    warning (line numbers drift when the manuscript is edited).
+    Claims: the C-ID counts as attached to the named lines for C6 only, so a claim row that
+    records its sentence as resting on generator data can make C6 block; a `where` link
+    never clears a finding."""
+
+    def __init__(self, project):
+        self.numbers = {}   # abs path -> {lineno: [(start, end, text, nid)]}
+        self.claims = {}    # abs path -> {lineno: set of C-IDs}
+        self.findings = []
+        prose = set(os.path.abspath(f) for f in project.prose_files())
+        self.known = set(project.rel(f).replace(os.sep, "/") for f in prose)
+        numbers = project.numbers()
+        for nid in sorted(numbers.latest):
+            lineno, row = numbers.latest[nid]
+            if not row.get("where") or row.get("printed") is None:
+                continue
+            try:
+                want = Decimal(str(row["printed"]).strip())
+            except InvalidOperation:
+                continue
+            for label, doc, locs in self._places(project, prose, numbers.rel, lineno, nid, row["where"], True):
+                for lo, hi in locs:
+                    self._link_number(numbers.rel, lineno, nid, row, want, label, doc, lo, hi)
+        claims = project.claims()
+        for cid in sorted(claims.latest):
+            lineno, row = claims.latest[cid]
+            if not row.get("where"):
+                continue
+            for _label, doc, locs in self._places(project, prose, claims.rel, lineno, cid, row["where"], False):
+                for lo, hi in locs:
+                    for ln in range(lo, hi + 1):
+                        self.claims.setdefault(doc.path, {}).setdefault(ln, set()).add(cid)
+
+    def _places(self, project, prose, rel, lineno, rid, where, report):
+        for path, spec, locs, label in parse_where(where, self.known):
+            place = "%s%s" % (path, spec if label else ":" + spec)
+            full = os.path.abspath(project.path(path))
+            if full not in prose:
+                if report:
+                    why = "is not among the checked manuscript files" if os.path.isfile(full) else "does not exist"
+                    self.findings.append(Finding(rel, lineno, "NUM-WHERE", "%s: where names %s, which %s, so the number "
+                                                 "printed there is not checked" % (rid, path, why), "warn"))
+                continue
+            doc = project.doc(full)
+            if label:
+                ln = doc.labels.get(label)
+                if ln is None:
+                    if report:
+                        self.findings.append(Finding(rel, lineno, "NUM-WHERE", "%s: where names %s, but %s has no "
+                                                     "\\label{%s}" % (rid, place, path, label), "warn"))
+                    continue
+                fid = doc.env[ln - 1]
+                locs = [tuple(doc.float_lines[fid])] if fid is not None else [doc.paragraph_lines(ln)]
+            if len(locs) > 1:
+                for lo, hi in locs:
+                    yield ("%s:%d" % (path, lo) if lo == hi else "%s:%d-%d" % (path, lo, hi)), doc, [(lo, hi)]
+            else:
+                yield place, doc, locs
+
+    def _link_number(self, rel, lineno, nid, row, want, place, doc, lo, hi):
+        hits, seen, macro_there = [], [], False
+        macro = row.get("macro")
+        for ln in range(max(lo, 1), min(hi, len(doc.code)) + 1):
+            code = doc.code[ln - 1]
+            if macro and re.search(re.escape(macro) + r"(?![A-Za-z])", code):
+                macro_there = True
+            for st, en, text, num, _rep in number_tokens(code):
+                seen.append(text)
+                try:
+                    equal = Decimal(num) == want
+                except InvalidOperation:
+                    equal = False
+                if equal:
+                    hits.append((ln, st, en, text))
+        for ln, st, en, text in hits:
+            self.numbers.setdefault(doc.path, {}).setdefault(ln, []).append((st, en, text, nid))
+        if not hits and not macro_there:
+            shown = " (it shows %s)" % ", ".join(sorted(set(seen))) if seen else ""
+            self.findings.append(Finding(rel, lineno, "NUM-WHERE", "%s: where names %s, but its printed value %s is not "
+                                         "there%s; if the line moved, append a revision with the new place"
+                                         % (nid, place, row.get("printed"), shown), "warn"))
+
+
+def number_occurrences(project, doc, sent):
+    """Ledger numbers in a sentence: [(offset, label, N-ID, row)] for uses of ledger macros
+    (never other LaTeX commands) and for hand-typed values located by a row's `where`."""
+    numbers = project.numbers()
+    by_macro = project.macro_index()
+    out = []
+    for mm in MACRO_USE_RE.finditer(sent.text):
+        nid = by_macro.get("\\" + mm.group(1))
+        if nid:
+            out.append((mm.start(), "\\" + mm.group(1), nid, numbers.latest[nid][1]))
+    linked = project.links().numbers.get(doc.path, {})
+    for ln in sent.lines:
+        for st, _en, text, nid in linked.get(ln, []):
+            off = sent.offset_of(ln, st)
+            if off is not None:
+                out.append((off, "hand-typed " + text, nid, numbers.latest[nid][1]))
+    out.sort(key=lambda t: (t[0], t[2]))
+    return out
 
 
 def check_numbers(project, only_ids=None):
@@ -1513,15 +1967,7 @@ def check_numbers(project, only_ids=None):
                         if not _values_equal(value, row.get("raw")):
                             where("value at %s is %r, ledger raw is %r" % (row["pointer"], value, row.get("raw")), "NUM-VALUE")
         if row.get("rounding") and row.get("raw") is not None and row.get("printed") is not None:
-            try:
-                want = apply_rounding(row["raw"], row["rounding"], row.get("scale"))
-            except (ValueError, InvalidOperation) as exc:
-                where(str(exc), "NUM-ROUND")
-            else:
-                pm = re.match(r"^\s*(-?\d+(?:\.\d+)?)", str(row["printed"]))
-                if not pm or pm.group(1) != want:
-                    where("printed %r is not %s applied to raw %r (expected %s)"
-                          % (row["printed"], row["rounding"], row["raw"], want), "NUM-ROUND")
+            findings.extend(_check_rounding(project, numbers.rel, lineno, nid, row))
         run = row.get("run")
         if run:
             findings.extend(_check_run(project, numbers.rel, lineno, nid, run, row))
@@ -1542,9 +1988,118 @@ def check_numbers(project, only_ids=None):
         findings.append(Finding(macro_rel, 1, "NUM-MACRO", "generated macro file is missing; the ledger's macros are not defined"))
 
     if not only_ids:
-        findings.extend(_hand_typed_decimals(project, macro_rel))
+        findings.extend(project.links().findings)
+        findings.extend(_hand_typed_numbers(project, macro_rel))
         findings.extend(_split_disclosure(project, macro_rel))
     return findings
+
+
+def _printed_number(printed):
+    pm = re.match(r"^\s*(-?\d+(?:\.\d+)?)", str(printed))
+    return pm.group(1) if pm else None
+
+
+def _decimals(value):
+    """Decimal places of a value as written (0.9125 -> 4, 3 -> 0)."""
+    exp = Decimal(str(value)).as_tuple().exponent
+    return -exp if isinstance(exp, int) and exp < 0 else 0
+
+
+def _rounds_to(value, stored):
+    """True when `stored` is `value` rounded to the places `stored` has, under any common
+    convention (half up, half even, down, floor, or Python's binary round())."""
+    d, s = Decimal(str(value)), Decimal(str(stored))
+    q = Decimal(1).scaleb(-_decimals(stored))
+    for mode in (ROUND_HALF_UP, ROUND_HALF_EVEN, ROUND_DOWN, ROUND_FLOOR, ROUND_CEILING):
+        if d.quantize(q, rounding=mode) == s:
+            return True
+    try:
+        return Decimal(str(round(float(value), _decimals(stored)))) == s
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _unrounded_value(project, spec):
+    """The full-precision value that a wrapper run wrote: (value, description) or raises ValueError."""
+    if not isinstance(spec, dict):
+        raise ValueError("unrounded must be {\"run\": RUN-ID, \"output\": path, \"pointer\": /json/pointer}")
+    run_id, pointer = str(spec.get("run") or ""), str(spec.get("pointer") or "")
+    out_rel = safe_rel(project, spec.get("output"))
+    if not RUN_RE.match(run_id) or not out_rel or not pointer.startswith("/"):
+        raise ValueError("unrounded needs run (RUN-ID), output (a project path) and pointer (/...)")
+    rel, rec, err = project.runs().get(run_id, (None, None, "research/runs/%s/run.json does not exist" % run_id))
+    if rec is None:
+        raise ValueError("%s: %s" % (run_id, err))
+    if rec.get("exit_code") != 0:
+        raise ValueError("%s exited %r, so it does not provide a value" % (run_id, rec.get("exit_code")))
+    produced = {o.get("path"): o.get("sha256") for o in rec.get("outputs") or [] if isinstance(o, dict)}
+    if out_rel not in produced:
+        raise ValueError("%s does not list %s among its outputs" % (run_id, out_rel))
+    path = project.path(out_rel)
+    if not os.path.isfile(path):
+        raise ValueError("%s does not exist" % out_rel)
+    if sha256_file(path) != produced[out_rel]:
+        raise ValueError("%s changed after %s wrote it" % (out_rel, run_id))
+    try:
+        value = resolve_pointer(path, pointer)
+        Decimal(str(value))
+    except (ValueError, IndexError, KeyError, OSError, InvalidOperation) as exc:
+        raise ValueError("%s %s: %s" % (out_rel, pointer, exc))
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError("%s %s is not a number" % (out_rel, pointer))
+    return value, "%s %s %s" % (run_id, out_rel, pointer)
+
+
+def _check_rounding(project, rel, lineno, nid, row):
+    """NUM-ROUND: printed equals the rounding rule applied to the value (design 6.4 c).
+
+    An output that stores a value already rounded (0.9125 for a true 0.9124502) cannot show
+    whether the printed digits are right, because the rule can give different answers for the
+    values that store the same way. Then:
+    - with `unrounded` (a run output holding the full-precision value), judge against it;
+    - otherwise report "pre-rounded, cannot judge" as a warning. A printed value that no
+      stored-equivalent value could produce is still blocked."""
+    rule, raw, printed, scale = row["rounding"], row["raw"], row["printed"], row.get("scale")
+
+    def bad(msg, level="block", printed=False):
+        return [Finding(rel, lineno, "NUM-ROUND", "%s: %s" % (nid, msg), level, printed)]
+
+    try:
+        want = apply_rounding(raw, rule, scale)
+    except (ValueError, InvalidOperation) as exc:
+        return bad(str(exc))
+    got = _printed_number(printed)
+    if row.get("unrounded") is not None:
+        try:
+            value, source = _unrounded_value(project, row["unrounded"])
+        except ValueError as exc:
+            return bad("unrounded: %s" % exc)
+        if not _rounds_to(value, raw):
+            return bad("the unrounded value %s (%s) does not round to raw %r: it is not the quantity the output "
+                       "stores" % (value, source, raw))
+        want_u = apply_rounding(value, rule, scale)
+        if got != want_u:
+            return bad("printed %r is not %s applied to the unrounded value %s (expected %s; %s)"
+                       % (printed, rule, value, want_u, source), printed=True)
+        return []
+    if got == want:
+        return []
+    if isinstance(raw, (int, str)) and not isinstance(raw, bool) and "." not in str(raw):
+        return bad("printed %r is not %s applied to raw %r (expected %s)" % (printed, rule, raw, want), printed=True)
+    k = _decimals(raw)
+    half = Decimal(5).scaleb(-(k + 1))
+    lo = apply_rounding(Decimal(str(raw)) - half, rule, scale)
+    hi = apply_rounding(Decimal(str(raw)) + half, rule, scale)
+    try:
+        possible = got is not None and _decimals(got) == _decimals(want) and Decimal(lo) <= Decimal(got) <= Decimal(hi)
+    except InvalidOperation:
+        possible = False
+    if possible:
+        return bad("printed %r is not %s applied to raw %r (expected %s), but the output file is pre-rounded: raw has "
+                   "%d decimals, and the true values it may stand for print as %s to %s, so the rounding cannot be "
+                   "judged. Add `unrounded` {run, output, pointer} from a run that writes the full-precision value"
+                   % (printed, rule, raw, want, k, lo, hi), "warn", printed=True)
+    return bad("printed %r is not %s applied to raw %r (expected %s)" % (printed, rule, raw, want), printed=True)
 
 
 def _check_run(project, rel, lineno, nid, run, row=None):
@@ -1664,7 +2219,7 @@ def _check_formula(numbers, nid, lineno, row):
     if row.get("raw") is not None and not within_tolerance(computed, row["raw"], row.get("tolerance"), default_rel="1e-9"):
         out.append(Finding(rel, lineno, "NUM-FORMULA",
                            "%s: formula %s = %s (%s), but raw is %r; the metric does not follow its definition"
-                           % (nid, formula, _fmt_decimal(computed), shown, row["raw"])))
+                           % (nid, formula, _fmt_decimal(computed), shown, row["raw"]), printed=True))
     if row.get("rounding") and row.get("printed") is not None:
         try:
             want = apply_rounding(computed, row["rounding"], row.get("scale"))
@@ -1674,7 +2229,7 @@ def _check_formula(numbers, nid, lineno, row):
         if want is not None and (not pm or pm.group(1) != want):
             out.append(Finding(rel, lineno, "NUM-FORMULA",
                                "%s: printed %r, but %s applied to the formula's value gives %s"
-                               % (nid, row["printed"], row["rounding"], want)))
+                               % (nid, row["printed"], row["rounding"], want), printed=True))
     return out
 
 
@@ -1711,67 +2266,86 @@ def _check_evaluation(rel, nid, lineno, row):
 
 
 def _split_disclosure(project, macro_rel):
-    """A macro whose value is a CV, training or validation value must say so where it is used."""
+    """A CV, training or validation value must say so where it is used: through its macro,
+    or typed by hand at a place its row's `where` names."""
     out = []
-    by_macro = {}
-    for nid, (_ln, row) in project.numbers().latest.items():
-        if row.get("macro") and row.get("evaluation") in SPLIT_WORDS:
-            by_macro[row["macro"]] = (nid, row["evaluation"])
-    if not by_macro:
+    if not any(r.get("evaluation") in SPLIT_WORDS for _l, r in project.numbers().latest.values()):
         return out
     for path in project.tex_files():
-        doc = Doc(project, path)
+        doc = project.doc(path)
         if doc.rel == macro_rel:
             continue
-        for start, sent, _cids, line_of in doc.sentences():
-            fid = doc.env[start - 1]
-            context = sent + " " + (doc.captions.get(fid, "") if fid is not None else "")
-            for mm in MACRO_USE_RE.finditer(sent):
-                info = by_macro.get("\\" + mm.group(1))
-                if not info:
+        for sent in doc.sentence_list():
+            fid = doc.env[sent.start - 1]
+            context = sent.text + " " + (doc.captions.get(fid, "") if fid is not None else "")
+            for off, label, nid, row in number_occurrences(project, doc, sent):
+                ev = row.get("evaluation")
+                if ev not in SPLIT_WORDS:
                     continue
-                nid, ev = info
                 if not SPLIT_WORDS[ev].search(context):
-                    out.append(Finding(doc.rel, line_of(mm.start()), "NUM-SPLIT",
-                                       "\\%s (%s) is a %s value, but the sentence/caption does not say so; "
-                                       "a reader will take it for a held-out result" % (mm.group(1), nid, ev)))
-                elif HELDOUT_WORD_RE.search(sent):
-                    out.append(Finding(doc.rel, line_of(mm.start()), "NUM-SPLIT",
-                                       "\\%s (%s) is a %s value in a sentence that also says %r; check that it is "
-                                       "not presented as held-out" % (mm.group(1), nid, ev,
-                                                                       HELDOUT_WORD_RE.search(sent).group(0)), "warn"))
+                    out.append(Finding(doc.rel, sent.line_of(off), "NUM-SPLIT",
+                                       "%s (%s) is a %s value, but the sentence/caption does not say so; "
+                                       "a reader will take it for a held-out result" % (label, nid, ev)))
+                elif HELDOUT_WORD_RE.search(sent.text):
+                    out.append(Finding(doc.rel, sent.line_of(off), "NUM-SPLIT",
+                                       "%s (%s) is a %s value in a sentence that also says %r; check that it is "
+                                       "not presented as held-out" % (label, nid, ev,
+                                                                       HELDOUT_WORD_RE.search(sent.text).group(0)), "warn"))
     return out
 
 
-def _hand_typed_decimals(project, macro_rel):
+def _hand_typed_numbers(project, macro_rel):
+    """NUM-LITERAL (design 6.4 d): hand-typed numbers where results are reported, and every
+    hand-typed value that a row's `where` locates, wherever it is."""
     out = []
+    numbers = project.numbers()
+    links = project.links()
     for path in project.tex_files():
         rel = project.rel(path)
         if rel == macro_rel:
             continue
-        doc = Doc(project, path)
+        doc = project.doc(path)
+        linked = links.numbers.get(doc.path, {})
         for idx, code in enumerate(doc.code):
             lit = LITERAL_RE.search(doc.comment[idx])
             if lit:
                 if not lit.group(1).strip():
                     out.append(Finding(rel, idx + 1, "NUM-LITERAL", "uws:literal needs a reason"))
                 continue
-            if not _decimal_scope(doc, idx):
-                continue
-            stripped = NUM_STRIP_RE.sub(" ", code)
-            for m in DECIMAL_RE.finditer(stripped):
-                if NUM_PREFIX_EXEMPT.search(stripped[:m.start()]) or NUM_SUFFIX_EXEMPT.match(stripped[m.end():]):
-                    continue
-                out.append(Finding(rel, idx + 1, "NUM-LITERAL",
-                                   "hand-typed number %s: use a generated macro from the number ledger, "
-                                   "or mark the line `%% uws:literal <reason>`" % m.group(0)))
+            here = dict(((st, en), nid) for st, en, _t, nid in linked.get(idx + 1, []))
+            in_scope = _number_scope(doc, idx)
+            for st, en, text, _num, reportable in number_tokens(code):
+                nid = here.get((st, en))
+                if nid:
+                    macro = numbers.latest[nid][1].get("macro")
+                    out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                       "hand-typed number %s is %s: use its macro %s, or mark the line "
+                                       "`%% uws:literal <reason>`" % (text, nid, macro or "(it has none yet)")))
+                elif in_scope and reportable:
+                    out.append(Finding(rel, idx + 1, "NUM-LITERAL",
+                                       "hand-typed number %s: use a generated macro from the number ledger, "
+                                       "or mark the line `%% uws:literal <reason>`" % text))
     return out
 
 
 # --------------------------------------------------------------------------- slop
 
+# "First" without an article is a novelty claim when it heads a contribution noun, as in the
+# PROMISE contribution list's "\textbf{First predictive models} for ..." (design section 10,
+# F10); an ordinal "first" ("First, we ...", "First we train models", "the first fold") is
+# not matched by that branch: up to two words may stand between, never a pronoun, article or
+# preposition.
+S1_FIRST_NOUN = (r"first(?:\s+(?!(?:we|i|you|they|it|the|a|an|our|their|its|this|these|those|to|of|in|on|"
+                 r"for|with|by|and|or|then)\b)[A-Za-z-]+){0,2}?\s+(?:models?|approach(?:es)?|methods?|frameworks?|benchmarks?|"
+                 r"datasets?|stud(?:y|ies)|systems?|tools?|techniques?|algorithms?|attempts?|implementations?|"
+                 r"evaluations?|analys[ie]s|investigations?|predictors?)")
 S1_RE = re.compile(r"\b(novel(?:ty)?|state[- ]of[- ]the[- ]art|breakthroughs?|unprecedented|"
-                   r"outperform(?:s|ed|ing)?|best|(?:the|a) first|first to|first time)\b", re.I)
+                   r"outperform(?:s|ed|ing)?|best|(?:the|a) first|first to|first time|" + S1_FIRST_NOUN + r")\b", re.I)
+# Fixed idioms in which "best" makes no claim about the work itself. The list is narrow on
+# purpose and matched as whole phrases, never as a broad pattern that could hide a claim;
+# "to the best of our knowledge" is NOT on it, because it usually introduces a novelty
+# claim that needs a verified C-ID.
+S1_IDIOM_RE = re.compile(r"\b(best[- ]practices?|best[- ]effort|best[- ]case|at best)\b", re.I)
 S2_RE = re.compile(r"\b(studies (?:have )?(?:show|shown|suggest|found|demonstrate)\w*|research (?:has )?(?:show|shown)\w*|"
                    r"it is (?:well[- ]known|widely (?:known|accepted|believed|recognized))|"
                    r"researchers have (?:found|shown|argued)|experts (?:agree|say|believe)|"
@@ -1780,7 +2354,8 @@ S4_TEXT_RE = re.compile(r"\b(TODO|TBD|FIXME|XXX)\b|lorem ipsum|\[citation needed
 S4_TAG_RE = re.compile(r"\b(TODO|TBD|FIXME|XXX)\b")
 S6_PROOF_RE = re.compile(r"\b(prove[sdn]?|proving|proof that)\b", re.I)
 S6_CAUSAL_RE = re.compile(r"\b(caus(?:e|es|ed|ing|al|ally|ation)|enables? causal)\b", re.I)
-CITE_RE = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{|\[-?@\w")
+CITE_RE = re.compile(r"\\(?![A-Za-z]*[Cc]ite(?:text|style)(?![A-Za-z]))[A-Za-z]*[Cc]ite[A-Za-z]*\*?\s*"
+                     r"(?:\([^)]*\)\s*){0,2}(?:\[[^\]]*\]\s*){0,2}\{|\[-?@\w")
 DISCLOSURE_RE = re.compile(r"\b(simulat\w*|synthetic\w*|generated|modell?ed|artificial)\b", re.I)
 GROUND_TRUTH_RE = re.compile(r"\b(ground[- ]truth|gold[- ]standard|gold labels?|human[- ]annotated|annotated|"
                              r"manually (?:labell?ed|annotated)|expert[- ]labell?ed)\b", re.I)
@@ -1807,9 +2382,12 @@ def check_slop(project, files=None, prose=True, code=True):
             _f, missing = tex_closure(project, tex_main)
             for origin, oline, target in missing:
                 findings.append(Finding(origin, oline, "S4", "\\input target %s does not exist (the manuscript does not build)" % target))
-        prose_files = [f for f in (files or project.prose_files()) if f.endswith((".tex", ".md"))]
+        # The generated macro file is the ledger printed as LaTeX, not prose.
+        macro_file = os.path.abspath(project.path(project.config.get("numbers_tex") or "paper/generated/numbers.tex"))
+        prose_files = [f for f in (files or project.prose_files())
+                       if f.endswith((".tex", ".md")) and os.path.abspath(f) != macro_file]
         for path in prose_files:
-            findings.extend(_slop_prose(project, Doc(project, path)))
+            findings.extend(_slop_prose(project, project.doc(path)))
         if not files:
             findings.extend(_slop_latex_logs(project))
     if code:
@@ -1820,13 +2398,18 @@ def check_slop(project, files=None, prose=True, code=True):
     return findings
 
 
+def s1_match(text):
+    """The first novelty or superlative word of `text` that is not part of an allowed idiom."""
+    idioms = [m.span() for m in S1_IDIOM_RE.finditer(text)]
+    for m in S1_RE.finditer(text):
+        if not any(a <= m.start() and m.end() <= b for a, b in idioms):
+            return m
+    return None
+
+
 def _slop_prose(project, doc):
     out = []
-    numbers = project.numbers()
-    macro_origin = {}
-    for nid, (_ln, row) in numbers.latest.items():
-        if row.get("macro"):
-            macro_origin[row["macro"]] = (nid, row.get("data_origin"))
+    links = project.links().claims.get(doc.path, {})
 
     # S4 placeholders: line level, including comments for the TODO family.
     for idx, code in enumerate(doc.code):
@@ -1836,10 +2419,11 @@ def _slop_prose(project, doc):
             out.append(Finding(doc.rel, idx + 1, "S4", "placeholder %r in a comment" % m.group(0)))
     out.extend(_empty_cells(doc))
 
-    for start, sent, cids, line_of in doc.sentences():
+    for sentence in doc.sentence_list():
+        start, sent, cids, line_of = sentence.start, sentence.text, sentence.cids, sentence.line_of
         rows = [(c, _claim_row(project, c)) for c in sorted(cids)]
         # S1 novelty or superlative words need a verified, non-hypothesis claim.
-        m = S1_RE.search(sent)
+        m = s1_match(sent)
         if m and "candidate contribution" not in sent.lower():
             ok = [c for c, r in rows if r and r.get("status") == "verified" and r.get("category") != "hypothesis"]
             if not ok:
@@ -1860,6 +2444,8 @@ def _slop_prose(project, doc):
                 out.append(Finding(doc.rel, line_of(m.start()), "S6",
                                    "%r claims %s-level evidence, but no C-ID on the sentence has strength >= %s"
                                    % (m.group(0), need, need)))
+        # Ledger numbers in the sentence: macro uses and hand-typed values located by `where`.
+        occurrences = number_occurrences(project, doc, sentence)
         # C3 disclosure: non-measured numbers or claims need a disclosure word nearby.
         disclosed = bool(DISCLOSURE_RE.search(sent))
         if not disclosed:
@@ -1867,24 +2453,29 @@ def _slop_prose(project, doc):
             if fid is not None and DISCLOSURE_RE.search(doc.captions.get(fid, "")):
                 disclosed = True
         if not disclosed:
-            for mm in MACRO_USE_RE.finditer(sent):
-                info = macro_origin.get("\\" + mm.group(1))
-                if info and info[1] in NON_MEASURED:
-                    out.append(Finding(doc.rel, line_of(mm.start()), "C3",
-                                       "\\%s (%s) is %s data but the sentence/caption does not say so"
-                                       % (mm.group(1), info[0], info[1])))
+            for off, label, nid, row in occurrences:
+                if row.get("data_origin") in NON_MEASURED:
+                    out.append(Finding(doc.rel, line_of(off), "C3", "%s (%s) is %s data but the sentence/caption "
+                                       "does not say so" % (label, nid, row.get("data_origin"))))
             for c, r in rows:
                 if r and r.get("data_origin") in NON_MEASURED:
                     out.append(Finding(doc.rel, start, "C3",
                                        "%s rests on %s data but the sentence does not say so" % (c, r.get("data_origin"))))
-        # C6: labels a generator assigned are not ground truth (PROMISE audit).
+        # C6: labels a generator assigned are not ground truth (PROMISE audit). Evidence
+        # tied to the sentence (a C-ID on it, a claim row whose `where` names its line, or a
+        # ledger number in it) blocks; without such a link the only evidence is that some
+        # registered data has generator-rule labels, so it warns.
         m = GROUND_TRUTH_RE.search(sent)
         if m and not GEN_LABEL_DISCLOSURE_RE.search(sent):
-            why = _generated_label_trace(project, sent, rows)
+            linked = set()
+            for ln in sentence.lines:
+                linked |= links.get(ln, set())
+            traced = rows + [(c, _claim_row(project, c)) for c in sorted(linked - set(cids))]
+            why = _generated_label_trace(project, traced, occurrences)
             if why:
                 out.append(Finding(doc.rel, line_of(m.start()), "C6",
                                    "%r, but %s; call them generator-assigned labels" % (m.group(0), why)))
-            elif not rows and not MACRO_USE_RE.search(sent) and _manifest_has_generator_labels(project):
+            elif not traced and not occurrences and _manifest_has_generator_labels(project):
                 out.append(Finding(doc.rel, line_of(m.start()), "C6",
                                    "%r in a sentence with no C-ID or number macro, while the data manifest has "
                                    "generator-rule labels; trace the sentence or qualify the wording" % m.group(0), "warn"))
@@ -1895,19 +2486,20 @@ def _manifest_has_generator_labels(project):
     return any(r.get("labels") == "generator-rule" for _l, r in project.manifest().latest.values())
 
 
-def _generated_label_trace(project, sent, rows):
-    """Why the data behind a sentence is not ground truth, or None."""
+def _generated_label_trace(project, rows, occurrences):
+    """Why the data behind a sentence is not ground truth, or None. `rows` are the claims
+    traced to the sentence, `occurrences` the ledger numbers in it."""
     numbers = project.numbers()
     nids = set()
     for c, r in rows:
+        if r and r.get("labels") == "generator-rule":
+            return "%s records generator-rule labels" % c
         if r and r.get("data_origin") in NON_MEASURED:
             return "%s rests on %s data" % (c, r.get("data_origin"))
         for nid in (r or {}).get("numbers") or []:
             nids.add(nid)
-    macro_to_nid = {row.get("macro"): nid for nid, (_l, row) in numbers.latest.items() if row.get("macro")}
-    for mm in MACRO_USE_RE.finditer(sent):
-        if "\\" + mm.group(1) in macro_to_nid:
-            nids.add(macro_to_nid["\\" + mm.group(1)])
+    for _off, _label, nid, _row in occurrences:
+        nids.add(nid)
     man = project.manifest()
     for nid in sorted(nids):
         item = numbers.latest.get(nid)
@@ -2059,12 +2651,15 @@ def _c3_measured_random(project):
         if run_path and os.path.isfile(run_path):
             try:
                 with open(run_path, encoding="utf-8") as fh:
-                    cmd = json.load(fh).get("command") or ""
+                    rec = json.load(fh)
             except (OSError, ValueError):
-                cmd = ""
+                rec = {}
+            rec = rec if isinstance(rec, dict) else {}
+            cmd = rec.get("command") or ""
             if isinstance(cmd, list):
                 cmd = " ".join(cmd)
             scripts.extend(re.findall(r"[\w./-]+\.py\b", str(cmd)))
+            scripts.extend(p for p in run_code_paths(rec) if p.endswith(".py") and p not in scripts)
         for script in scripts:
             spath = project.path(script)
             if not os.path.isfile(spath):
@@ -2356,37 +2951,170 @@ def _plan_order(project, plans, results, decisions, known):
             out.append(Finding(plans.rel, plans.by_exp[exp][0][0], "PLAN-ORDER",
                                "%s: not a git repository, so the freeze cannot be shown to precede its results" % exp))
         return out
-    numbers_rel = project.numbers().rel
-    num_first = first_appearance(project, numbers_rel,
+    numbers = project.numbers()
+    runs = project.runs()
+    num_first = first_appearance(project, numbers.rel,
                                  lambda t: {o["id"] for o in _jsonl_objects(t) if isinstance(o.get("id"), str)})
     # Keyed on the frozen hash too: a freeze row edited in place counts from the commit
     # that introduced the edit, not from the commit of the original row.
     plan_first = first_appearance(project, plans.rel,
                                   lambda t: {_freeze_key(o) for o in _jsonl_objects(t)})
+    path_first, blob_first = {}, {}
 
-    def result_commit(kind, key):
+    def first_commit_of(rel):
+        """The oldest commit in HEAD's history that has `rel` (by name; `--follow` is not
+        used because it takes an unrelated file with the same content for a rename)."""
+        if rel not in path_first:
+            log = _git(project, ["log", "--format=%H", "--", rel])
+            commits = (log or "").split()
+            path_first[rel] = commits[-1] if commits else None
+        return path_first[rel]
+
+    def first_commit_with_content(rel, sha256):
+        """The oldest commit in HEAD's history that holds the content of `rel` under any
+        name, when that content is the recorded version (`sha256`). This covers a result
+        committed under another name, or renamed, before the freeze."""
+        path = project.path(rel)
+        if not sha256 or not os.path.isfile(path) or sha256_file(path) != sha256:
+            return None
+        if rel not in blob_first:
+            blob = (_git(project, ["hash-object", "--", rel]) or "").strip()
+            log = _git(project, ["log", "--format=%H", "--find-object=%s" % blob]) if blob else None
+            commits = (log or "").split()
+            blob_first[rel] = commits[-1] if commits else None
+        return blob_first[rel]
+
+    # (path, sha256) -> the RUN-IDs whose record lists that file version as an output.
+    producers = {}
+    for rid, (_rel, rec, _err) in sorted(runs.items()):
+        for o in (rec or {}).get("outputs") or []:
+            o_rel = safe_rel(project, o.get("path")) if isinstance(o, dict) else None
+            if o_rel and o.get("sha256"):
+                producers.setdefault((o_rel, o["sha256"]), []).append(rid)
+
+    def data_inputs(row, rec):
+        """(path, sha256) of the data a number row or run record names as input (code is
+        versioned by the run's commit, not followed). A row's bare path is taken at the
+        version the manifest registers, else at its current content."""
+        out = []
+        man = project.manifest()
+        for p in (row or {}).get("inputs") or []:
+            p_rel = safe_rel(project, p) if isinstance(p, str) else None
+            if not p_rel or is_code_path(p_rel):
+                continue
+            entry = man.latest.get(p_rel)
+            sha = entry[1].get("sha256") if entry else None
+            if not sha and os.path.isfile(project.path(p_rel)):
+                sha = sha256_file(project.path(p_rel))
+            out.append((p_rel, sha))
+        for inp in (rec or {}).get("inputs") or []:
+            p_rel = safe_rel(project, inp.get("path")) if isinstance(inp, dict) else None
+            if p_rel and not is_code_path(p_rel):
+                out.append((p_rel, inp.get("sha256")))
+        return out
+
+    def evidence(kind, key, label):
+        """When the result existed: (items, runs).
+
+        items: [(before, commit, after)], each saying what was first committed in `commit`;
+        runs: [(RUN-ID, commit it executed on, how it relates to the result)]. A result
+        exists from the earliest of: the ledger row (or run record), the first commit of the
+        output file it names and of that content under any name, the first commit of its run
+        record, and the commit the run executed on. Adding the ledger row after a fresh
+        freeze therefore cannot hide results committed earlier.
+
+        Provenance is followed: an input that a recorded run wrote (same path and sha256)
+        brings that run's record, commit and outputs, recursively. So a value computed before
+        the freeze and only reformatted by a run after it is still a result from before the
+        freeze. Data that no recorded run wrote (raw data) is not a result and is not followed."""
+        items, run_list, queue, seen, outputs_seen = [], [], [], set(), set()
+
+        def add_run(run_id, how, via_input):
+            if run_id in seen or run_id not in runs:
+                return
+            seen.add(run_id)
+            rel, rec, _err = runs[run_id]
+            rec = rec or {}
+            run_list.append((run_id, rec.get("git_commit"), how))
+            if via_input is None:
+                record = "%s was committed in " % label if kind == "run" else \
+                    "%s: its run record %s was first committed in " % (label, rel)
+                items.append((record, first_commit_of(rel), ""))
+            for o in rec.get("outputs") or []:
+                o_rel = safe_rel(project, o.get("path")) if isinstance(o, dict) else None
+                if o_rel and o_rel not in outputs_seen:
+                    add_output(o_rel, o.get("sha256"), None if via_input is None else run_id)
+            if via_input is not None:
+                items.append(("%s: the record of %s (which wrote its input %s) was first committed in "
+                              % (label, run_id, via_input), first_commit_of(rel), ""))
+            queue.append(rec)
+
+        def add_output(o_rel, sha, producer):
+            outputs_seen.add(o_rel)
+            what = "its output %s" % o_rel if producer is None else "%s (written by %s, an input)" % (o_rel, producer)
+            items.append(("%s: %s was first committed in " % (label, what), first_commit_of(o_rel), ""))
+            items.append(("%s: the content of %s was first committed in " % (label, what),
+                          first_commit_with_content(o_rel, sha), " (under this or another name)"))
+
+        def add_producers(inputs, of):
+            for p_rel, sha in inputs:
+                for rid in producers.get((p_rel, sha), []):
+                    add_run(rid, "writes %s, an input of %s" % (p_rel, of), p_rel)
+
         if kind == "number":
-            return num_first.get(key)
-        log = _git(project, ["log", "--topo-order", "--reverse", "--diff-filter=A", "--format=%H", "--", key])
-        commits = (log or "").split()
-        return commits[0] if commits else None
+            row = numbers.latest[key][1]
+            items.append(("%s was committed in " % label, num_first.get(key), ""))
+            out_rel = safe_rel(project, row.get("output"))
+            if out_rel:
+                add_output(out_rel, row.get("output_sha256"), None)
+            if row.get("run") and str(row["run"]) in runs:
+                add_run(str(row["run"]), label, None)
+            add_producers(data_inputs(row, None), label)
+        else:
+            add_run(key, None, None)
+        while queue:
+            add_producers(data_inputs(None, queue.pop(0)), label)
+        return items, run_list
 
+    checked_runs = set()
     for exp in todo:
         rows = plans.by_exp[exp]
-        res = [(label, result_commit(kind, key)) for label, kind, key in results[exp]]
+        res = [(label, kind) + evidence(kind, key, label) for label, kind, key in results[exp]]
         first_line, first_row = rows[0]
         f1 = plan_first.get(_freeze_key(first_row))
         if f1 is None:
             out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
                                "%s: the freeze is not committed, but results exist (%s); commit the freeze first"
-                               % (exp, ", ".join(label for label, _c in res[:3]))))
+                               % (exp, ", ".join(r[0] for r in res[:3]))))
         else:
-            for label, c in res:
-                if c is not None and (c == f1 or not is_ancestor(project, f1, c)):
+            for label, kind, items, run_list in res:
+                reported = set()
+                for before, c, after in items:
+                    if c is None or c in reported or (c != f1 and is_ancestor(project, f1, c)):
+                        continue
+                    reported.add(c)
                     out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
-                                       "%s: %s was committed in %s, not after the plan was frozen (%s); a plan "
-                                       "written after its results is not a pre-registration"
-                                       % (exp, label, c[:12], f1[:12])))
+                                       "%s: %s%s%s, not after the plan was frozen (%s); a plan written after its "
+                                       "results is not a pre-registration" % (exp, before, c[:12], after, f1[:12])))
+                for run_id, run_commit, how in run_list:
+                    if not run_commit or (exp, run_id) in checked_runs:
+                        continue
+                    checked_runs.add((exp, run_id))
+                    who = run_id if how is None else "%s (%s)" % (run_id, how)
+                    if _git_rc(project, ["cat-file", "-e", "%s^{commit}" % run_commit]) != 0:
+                        # A squash merge, rebase or shallow clone drops the commit: the order
+                        # cannot be shown either way, so it is never asserted.
+                        out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
+                                           "%s: %s ran on commit %s, which is not in this repository (a squash merge, "
+                                           "rebase or shallow clone drops commits), so it cannot be shown to have run "
+                                           "after the plan was frozen (%s); record the run again on a commit of this "
+                                           "history" % (exp, who, str(run_commit)[:12], f1[:12])))
+                    elif not is_ancestor(project, f1, str(run_commit)):
+                        out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
+                                           "%s: %s ran on commit %s, which does not contain the freeze (%s): the run "
+                                           "happened before the plan was frozen" % (exp, who, str(run_commit)[:12], f1[:12])))
+        res = [(label, c) for label, _k, items, run_list in res
+               for c in [i[1] for i in items] + [r[1] for r in run_list] if c]
         dev_path = project.path("%s/%s/deviations.md" % (EXPERIMENTS_REL, exp))
         dev_text = read_text(dev_path) if os.path.isfile(dev_path) else ""
         for lineno, row in rows[1:]:
@@ -2572,12 +3300,233 @@ def number_inputs(project, row):
                 paths.append((safe_rel(project, inp["path"]) or inp["path"], inp.get("sha256")))
             elif isinstance(inp, str):
                 paths.append((safe_rel(project, inp) or inp, None))
-    # One entry per path; a recorded hash (from the run) wins over a bare path.
+    # One entry per path; a recorded hash (from the run) wins over a bare path. Code is not
+    # data: a run's commit versions it (run records written before `--code` existed list
+    # scripts among their inputs, so code is recognised by its extension too).
     merged = {}
     for p, sha in paths:
+        if is_code_path(p):
+            continue
         if p not in merged or (sha and not merged[p]):
             merged[p] = sha
     return sorted(merged.items())
+
+
+def run_code_paths(rec):
+    """Code files of a run record: its `code` list, plus code-extension paths among its
+    inputs (records written before `--code` existed)."""
+    out = []
+    for item, declared in [(i, True) for i in rec.get("code") or []] + [(i, False) for i in rec.get("inputs") or []]:
+        p = item.get("path") if isinstance(item, dict) else item
+        if isinstance(p, str) and p and (declared or is_code_path(p)) and p not in out:
+            out.append(p)
+    return out
+
+
+# A data manifest row's `split` is free text, or a structure the checker can test for
+# leakage (independent units on both sides of a split; design 5 experiment_design row,
+# Kapoor & Narayanan 2022 [src S15], scikit-learn grouped CV [src S16]):
+#   {"train": <path>, "validation": <path>, "test": <path>, "group_key": "<column>"}
+#       (at least two of train/validation/test, each a registered data file), or
+#   {"column": "<split column>", "group_key": "<column>"}   (one file with a split column).
+SPLIT_PARTS = ("train", "validation", "test")
+SPLIT_KEYS = SPLIT_PARTS + ("group_key", "column")
+# Free-text values that say the file is not split; they need no leakage warning.
+NO_SPLIT = ("none", "n/a", "na", "no split", "not split", "unsplit", "-")
+_MISSING = object()
+
+
+def parse_split(value):
+    """(structure or None, error or None) for a manifest `split` value."""
+    if isinstance(value, dict):
+        return value, None
+    if isinstance(value, str) and value.strip().startswith("{"):
+        try:
+            obj = json.loads(value)
+        except ValueError as exc:
+            return None, "looks like JSON but does not parse: %s" % exc
+        if not isinstance(obj, dict):
+            return None, "must be a JSON object"
+        return obj, None
+    return None, None
+
+
+def split_errors(project, split):
+    """Structural problems of a declared split, as messages; empty when it can be checked."""
+    errs = []
+    unknown = sorted(set(split) - set(SPLIT_KEYS))
+    if unknown:
+        errs.append("unknown key(s) %s (allowed: %s)" % (", ".join(unknown), ", ".join(SPLIT_KEYS)))
+    gk = split.get("group_key")
+    if not isinstance(gk, str) or not gk.strip():
+        errs.append("group_key must name the field that identifies an independent unit (e.g. scenario_id)")
+    parts = [k for k in SPLIT_PARTS if k in split]
+    if "column" in split:
+        if parts:
+            errs.append("give either column (one file with a split column) or train/validation/test files, not both")
+        if not isinstance(split["column"], str) or not split["column"].strip():
+            errs.append("column must name the split column")
+    else:
+        if len(parts) < 2:
+            errs.append("name at least two of train, validation and test (or a split column)")
+        for k in parts:
+            rel = safe_rel(project, split[k]) if isinstance(split[k], str) else None
+            if not rel or not os.path.isfile(project.path(rel)):
+                errs.append("%s file %s is not a file inside the project" % (k, split[k]))
+    return errs
+
+
+def read_records(path):
+    """Rows of a CSV/TSV, JSON Lines or JSON file (a list of objects, or an object whose
+    only list of objects is the rows)."""
+    # utf-8-sig: a byte-order mark (Excel's "CSV UTF-8" writes one) would otherwise become
+    # part of the first header or make the first JSON line unreadable.
+    if path.endswith((".csv", ".tsv")):
+        with open(path, encoding="utf-8-sig", newline="") as fh:
+            return list(csv.DictReader(fh, delimiter="\t" if path.endswith(".tsv") else ","))
+    if path.endswith(".jsonl"):
+        rows = []
+        with open(path, encoding="utf-8-sig") as fh:
+            for lineno, raw in enumerate(fh, 1):
+                if not raw.strip():
+                    continue
+                try:
+                    obj = json.loads(raw)
+                except ValueError as exc:
+                    raise ValueError("line %d is not valid JSON: %s" % (lineno, exc))
+                if not isinstance(obj, dict):
+                    raise ValueError("line %d is not a JSON object" % lineno)
+                rows.append(obj)
+        return rows
+    if path.endswith(".json"):
+        with open(path, encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+        if isinstance(data, list):
+            return [r for r in data if isinstance(r, dict)]
+        if isinstance(data, dict):
+            lists = [v for v in data.values() if isinstance(v, list) and v and all(isinstance(r, dict) for r in v)]
+            if len(lists) == 1:
+                return lists[0]
+            raise ValueError("%d lists of records in the JSON object; cannot tell which holds the rows" % len(lists))
+    raise ValueError("cannot read rows from %s (use CSV, TSV, JSON Lines or JSON)" % os.path.basename(path))
+
+
+def _field(rec, key):
+    """The value of `key` (or a dotted path) in a record; _MISSING when it is absent, null or
+    empty (a CSV row with an empty cell or too few cells), since such a row names no unit."""
+    if key in rec:
+        node = rec[key]
+    else:
+        node = rec
+        for part in key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return _MISSING
+            node = node[part]
+    if node is None or (isinstance(node, str) and not node.strip()):
+        return _MISSING
+    return node
+
+
+def _unit(value):
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value)
+
+
+def check_split_leak(project, p, split):
+    """DATA-SPLIT / DATA-LEAK findings for one manifest row with a structured split."""
+    man = project.manifest()
+    lineno = man.latest[p][0]
+    gk = split["group_key"]
+    groups, order = {}, []
+    try:
+        if "column" in split:
+            col = split["column"]
+            for i, rec in enumerate(read_records(project.path(p)), 1):
+                name, g = _field(rec, col), _field(rec, gk)
+                if name is _MISSING or g is _MISSING:
+                    return [Finding(man.rel, lineno, "DATA-SPLIT", "%s: %s has no %s (row %d)"
+                                    % (p, p, col if name is _MISSING else gk, i))]
+                if _unit(name) not in groups:
+                    order.append(_unit(name))
+                groups.setdefault(_unit(name), set()).add(_unit(g))
+        else:
+            for part in SPLIT_PARTS:
+                if part not in split:
+                    continue
+                f = safe_rel(project, split[part])
+                if f not in man.latest:
+                    return [Finding(man.rel, lineno, "DATA-SPLIT", "%s: the %s file %s is not registered in %s, so its "
+                                    "content is not pinned" % (p, part, f, man.rel))]
+                order.append(part)
+                groups[part] = set()
+                for i, rec in enumerate(read_records(project.path(f)), 1):
+                    g = _field(rec, gk)
+                    if g is _MISSING:
+                        return [Finding(man.rel, lineno, "DATA-SPLIT", "%s: %s has no %s (row %d)" % (p, f, gk, i))]
+                    groups[part].add(_unit(g))
+    except (OSError, ValueError, csv.Error) as exc:
+        return [Finding(man.rel, lineno, "DATA-SPLIT", "%s: cannot read the split: %s" % (p, exc))]
+    out = []
+    for i, a in enumerate(order):
+        for b in order[i + 1:]:
+            both = groups[a] & groups[b]
+            if both:
+                shown = sorted(both, key=lambda v: (len(v), v))
+                out.append(Finding(man.rel, lineno, "DATA-LEAK", "%s: %d %s value(s) appear in both %s and %s (%s%s); "
+                                   "the same unit on both sides of a split leaks into the evaluation"
+                                   % (p, len(both), gk, a, b, ", ".join(shown[:5]), ", ..." if len(shown) > 5 else "")))
+    return out
+
+
+# What a manifest row declares about a file, beyond its content. The checks depend on it
+# (split: DATA-LEAK; labels: C6; origin, generator, seed: C3, DATA-GEN, DATA-SEED), so a new
+# row that changes it for unchanged content is a re-declaration, never a silent edit.
+DECLARATION_FIELDS = ("split", "origin", "labels", "generator", "seed")
+
+
+def _declared(row, key):
+    value = row.get(key)
+    if key == "split":
+        struct, _err = parse_split(value)
+        if struct is not None:
+            return json.dumps(struct, sort_keys=True)
+        return value.strip() if isinstance(value, str) else value
+    return value
+
+
+def redeclaration_problems(prev, row, decisions):
+    """(changed fields, problems) of a manifest row that registers unchanged content again.
+
+    A changed declaration needs a reason; replacing a structured split (which the leakage
+    check tests) by free text or 'none' turns that check off, so it needs a PI decision too."""
+    changed = [k for k in DECLARATION_FIELDS if _declared(prev, k) != _declared(row, k)]
+    problems = []
+    if not changed:
+        return changed, problems
+    if not row.get("reason"):
+        problems.append("reason")
+    old_split, _e1 = parse_split(prev.get("split"))
+    new_split, new_err = parse_split(row.get("split"))
+    if old_split is not None and new_split is None and not new_err:
+        did = str(row.get("pi_decision") or "")
+        if not DID_RE.fullmatch(did) or did not in decisions:
+            problems.append("pi_decision")
+    return changed, problems
+
+
+def _redeclaration_findings(rel, lineno, p, prev, row, decisions):
+    changed, problems = redeclaration_problems(prev, row, decisions)
+    out = []
+    if "reason" in problems:
+        out.append(Finding(rel, lineno, "DATA-REPLACE", "%s: the row changes %s of a file whose content did not "
+                           "change (sha256 %s); a new declaration needs a reason"
+                           % (p, ", ".join(changed), _short(row.get("sha256")))))
+    if "pi_decision" in problems:
+        out.append(Finding(rel, lineno, "DATA-REPLACE", "%s: the row replaces a structured split, which the leakage "
+                           "check tests, with %r, so the check no longer runs; that needs a PI decision ID recorded "
+                           "in research/pi/decisions.md" % (p, row.get("split"))))
+    return out
 
 
 def check_data(project):
@@ -2607,6 +3556,8 @@ def check_data(project):
         if row.get("labels") is not None and row["labels"] not in LABEL_ORIGINS:
             out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "%s: labels %r is not one of %s" % (p, row["labels"], ", ".join(LABEL_ORIGINS))))
         prev = history.get(p)
+        if prev is not None and prev.get("sha256") == row.get("sha256"):
+            out.extend(_redeclaration_findings(man.rel, lineno, p, prev, row, decisions))
         if prev is not None and prev.get("sha256") != row.get("sha256"):
             # A new version of a registered file: say which version it replaces and why.
             if row.get("supersedes_sha256") != prev.get("sha256") or not row.get("reason"):
@@ -2659,6 +3610,21 @@ def check_data(project):
                     out.append(Finding(man.rel, lineno, "DATA-SEED", "%s: its generator %s draws random values (%s() at line %d) "
                                        "but never sets a seed" % (p, gen_rel, draws[0][1], draws[0][0])))
 
+        # Leakage between splits: checked when the split is declared as a structure.
+        split, split_err = parse_split(row.get("split"))
+        if split_err:
+            out.append(Finding(man.rel, lineno, "DATA-SPLIT", "%s: split %s" % (p, split_err)))
+        elif split is not None:
+            errs = split_errors(project, split)
+            for err in errs:
+                out.append(Finding(man.rel, lineno, "DATA-SPLIT", "%s: split: %s" % (p, err)))
+            if not errs and os.path.isfile(path):
+                out.extend(check_split_leak(project, p, split))
+        elif isinstance(row.get("split"), str) and row["split"].strip().lower() not in NO_SPLIT:
+            out.append(Finding(man.rel, lineno, "DATA-LEAK", "%s: the split is free text, so leakage between splits "
+                               "cannot be checked; declare it as {\"train\": <path>, \"test\": <path>, \"group_key\": "
+                               "<unit field>} or {\"column\": <split column>, \"group_key\": <unit field>}" % p, "warn"))
+
     # Raw data must be registered.
     raw_dir = project.path(RAW_DATA_REL)
     if os.path.isdir(raw_dir):
@@ -2692,6 +3658,7 @@ def check_data(project):
                                    "now registers %s" % (nid, row.get("run"), p, _short(used_sha), _short(entry[1].get("sha256")))))
 
     # Run records are complete.
+    git_ok = in_git(project)
     for run_id, (rel, rec, err) in sorted(project.runs().items()):
         if err:
             out.append(Finding(rel, 1, "RUN-SCHEMA", err))
@@ -2699,11 +3666,31 @@ def check_data(project):
         for key in RUN_REQUIRED:
             if key not in rec:
                 out.append(Finding(rel, 1, "RUN-SCHEMA", "%s: missing '%s' (record runs with `uws research check run`)" % (run_id, key)))
-        for key in ("inputs", "outputs"):
+        for key in ("inputs", "outputs", "code"):
             items = rec.get(key)
             if key in rec and (not isinstance(items, list) or
                                not all(isinstance(i, dict) and i.get("path") and "sha256" in i for i in items)):
                 out.append(Finding(rel, 1, "RUN-SCHEMA", "%s: %s must be a list of {path, sha256}" % (run_id, key)))
+        # The code a run executed must be in the commit it records, or no re-run can use it.
+        # A commit this repository does not have (a squash merge, rebase or shallow clone
+        # drops it; a hand-edited record) or no commit at all shows nothing about the code.
+        commit = rec.get("git_commit")
+        if not git_ok or "git_commit" not in rec:
+            continue   # outside git there is no commit to check; RUN-SCHEMA reports a missing key
+        if not commit:
+            out.append(Finding(rel, 1, "RUN-CODE", "%s: the record names no git_commit, so the code it ran is in no "
+                               "commit; commit the code and record the run again" % run_id))
+        elif _git_rc(project, ["cat-file", "-e", "%s^{commit}" % commit]) != 0:
+            out.append(Finding(rel, 1, "RUN-CODE", "%s: its commit %s is not in this repository, so the code it ran "
+                               "cannot be shown to exist (a squash merge, rebase or shallow clone drops commits); record "
+                               "the run again on a commit of this history" % (run_id, str(commit)[:12])))
+        else:
+            for p in run_code_paths(rec):
+                p_rel = safe_rel(project, p)
+                if p_rel and _git_rc(project, ["cat-file", "-e", "%s:./%s" % (commit, p_rel)]) != 0:
+                    out.append(Finding(rel, 1, "RUN-CODE", "%s: code %s is not in commit %s (the run's git_commit), "
+                                       "so a re-run cannot use it; commit it and record the run again"
+                                       % (run_id, p_rel, str(commit)[:12])))
     return out
 
 
@@ -2718,6 +3705,16 @@ def data_add(project, args):
     for flag, value in (("--source", args.source), ("--version", args.version), ("--split", args.split)):
         if not value or not value.strip():
             print("refused: %s is required" % flag, file=sys.stderr)
+            return EXIT_FINDINGS
+    split, split_err = parse_split(args.split)
+    if split_err:
+        print("refused: --split %s" % split_err, file=sys.stderr)
+        return EXIT_FINDINGS
+    if split is not None:
+        errs = split_errors(project, split)
+        if errs:
+            for err in errs:
+                print("refused: --split: %s" % err, file=sys.stderr)
             return EXIT_FINDINGS
     generated = args.origin in NON_MEASURED or bool(args.generator)
     if generated:
@@ -2739,11 +3736,9 @@ def data_add(project, args):
     sha, size = sha256_file(path), os.path.getsize(path)
     man = project.manifest()
     prev = man.latest.get(rel)
-    if prev and prev[1].get("sha256") == sha:
-        print("%s is already registered at sha256 %s; nothing to do" % (rel, _short(sha)))
-        return EXIT_OK
     row = {"path": rel, "sha256": sha, "size": size, "source": args.source, "version": args.version,
-           "split": args.split, "origin": args.origin, "registered_at": utc_now(), "registered_by": args.by or "engineer"}
+           "split": split if split is not None else args.split, "origin": args.origin, "registered_at": utc_now(),
+           "registered_by": args.by or "engineer"}
     if args.license:
         row["license"] = args.license
     if args.labels is not None:
@@ -2751,6 +3746,28 @@ def data_add(project, args):
     if generated:
         row["generator"] = gen_rel
         row["seed"] = args.seed
+    if prev and prev[1].get("sha256") == sha:
+        # The same content again: a new declaration (split, origin, labels, generator,
+        # seed) is recorded with its reason; anything else changes nothing.
+        if args.reason:
+            row["reason"] = args.reason
+        if args.pi_decision:
+            row["pi_decision"] = args.pi_decision
+        changed, problems = redeclaration_problems(prev[1], row, pi_decision_ids(project))
+        if not changed:
+            print("%s is already registered at sha256 %s; nothing to do" % (rel, _short(sha)))
+            return EXIT_OK
+        if "reason" in problems:
+            print("refused: %s is registered at sha256 %s with a different %s; a new declaration needs --reason"
+                  % (rel, _short(sha), ", ".join(changed)), file=sys.stderr)
+            return EXIT_FINDINGS
+        if "pi_decision" in problems:
+            print("refused: replacing the structured split of %s with %r turns the leakage check off; that needs "
+                  "--pi-decision D-<n> recorded in research/pi/decisions.md" % (rel, row["split"]), file=sys.stderr)
+            return EXIT_FINDINGS
+        _append_jsonl(man.path, row)
+        print("registered a new declaration of %s (%s changed; sha256 %s unchanged)" % (rel, ", ".join(changed), _short(sha)))
+        return EXIT_OK
     if prev:
         if not args.reason:
             print("refused: %s is registered at sha256 %s; a new version needs --reason" % (rel, _short(prev[1].get("sha256"))),
@@ -2795,13 +3812,163 @@ def _project_rel_arg(project, value, must_exist=True):
     return None
 
 
+# Files that are code, not data: a run's `--input` with one of these extensions is recorded
+# under `code` (it is versioned by the run's git commit, not by the data manifest).
+CODE_EXTS = (".py", ".pyw", ".ipynb", ".sh", ".bash", ".zsh", ".R", ".r", ".Rmd", ".jl", ".m", ".js", ".mjs",
+             ".ts", ".java", ".scala", ".c", ".cc", ".cpp", ".h", ".hpp", ".go", ".rs", ".pl", ".rb", ".lua",
+             ".do", ".sas")
+# Environment locks recorded by hash when present (design 6.1: research/env/requirements.lock).
+ENV_LOCK_CANDIDATES = ("research/env/requirements.lock", "requirements.lock", "poetry.lock", "Pipfile.lock",
+                       "uv.lock", "pdm.lock", "conda-lock.yml", "environment.lock.yml", "renv.lock", "Manifest.toml")
+GLOB_CHARS = ("*", "?", "[")
+_PY_PROBE = ("import json, platform, sys; print(json.dumps({'version': platform.python_version(), "
+             "'implementation': platform.python_implementation(), 'executable': sys.executable, "
+             "'prefix': sys.prefix, 'base_prefix': getattr(sys, 'base_prefix', sys.prefix)}))")
+# Interpreters asked for `--version`; any other program is recorded by path only, because
+# running an unknown program with `--version` could do anything.
+_VERSION_INTERPRETERS = ("Rscript", "R", "julia", "node", "perl", "ruby", "bash", "sh", "zsh")
+
+
+def is_code_path(path):
+    return str(path).endswith(CODE_EXTS)
+
+
+def _which(name, env):
+    if os.sep in name or (os.altsep and os.altsep in name):
+        return None
+    return shutil.which(name, path=env.get("PATH"))
+
+
+def command_interpreter(project, cmd, env):
+    """The interpreter a recorded command runs under (design 8: the environment of a run).
+
+    The first word of the command is resolved the way the shell would (a path is taken from
+    the project root, where the command runs; a name is looked up on PATH; `env A=B prog`
+    is skipped over). A script with a `#!` line is followed to its interpreter. Python is
+    asked for its version, executable and prefix (a venv shows up there); a few other known
+    interpreters are asked for `--version`; anything else is recorded by path only.
+
+    The probe runs the interpreter the command invokes (`invoked`), not its resolved file
+    (`path`): a venv's bin/python is a symlink to the base interpreter, and only when run
+    through the link does Python report the venv as its prefix."""
+    words = list(cmd)
+    if words and os.path.basename(words[0]) == "env":
+        words = words[1:]
+        while words and (words[0].startswith("-") or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])):
+            words = words[1:]
+    if not words:
+        return {"command": None, "error": "no command"}
+    first = words[0]
+    rec = {"command": first}
+    path = os.path.join(project.root, first) if os.sep in first else _which(first, env)
+    if not path or not os.path.isfile(path):
+        rec["error"] = "not found"
+        return rec
+    invoked = os.path.abspath(path)
+    path = os.path.realpath(path)
+    rec["invoked"], rec["path"] = invoked, path
+
+    def kind_name(link, target):
+        """The interpreter name of a file, by the name it resolves to or is called by."""
+        for n in (os.path.basename(target), os.path.basename(link)):
+            if re.match(r"^(python|pypy)", n, re.I) or n in _VERSION_INTERPRETERS:
+                return n
+        return os.path.basename(target)
+
+    name = kind_name(invoked, path)
+    if not re.match(r"^(python|pypy)", name, re.I) and name not in _VERSION_INTERPRETERS:
+        try:
+            with open(path, "rb") as fh:
+                head = fh.readline(256).decode("utf-8", "replace")
+        except OSError:
+            head = ""
+        if head.startswith("#!"):
+            parts = head[2:].split()
+            if parts and os.path.basename(parts[0]) == "env" and len(parts) > 1:
+                parts = [p for p in parts[1:] if not p.startswith("-")]
+                interp = _which(parts[0], env) if parts else None
+            else:
+                interp = parts[0] if parts else None
+            if interp and os.path.isfile(interp):
+                rec["script"] = path
+                invoked, path = os.path.abspath(interp), os.path.realpath(interp)
+                rec["invoked"], rec["path"] = invoked, path
+                name = kind_name(invoked, path)
+    if re.match(r"^(python|pypy)", name, re.I):
+        rec["kind"] = "python"
+        try:
+            proc = subprocess.run([invoked, "-c", _PY_PROBE], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  env=env, timeout=30)
+            info = json.loads(proc.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
+            rec.update(info)
+        except (OSError, subprocess.TimeoutExpired, ValueError, IndexError) as exc:
+            rec["error"] = "could not ask the interpreter for its version: %s" % exc
+    elif name in _VERSION_INTERPRETERS:
+        rec["kind"] = name
+        try:
+            proc = subprocess.run([invoked, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  env=env, timeout=30)
+            lines = proc.stdout.decode("utf-8", "replace").strip().splitlines()
+            rec["version"] = lines[0] if lines else ""
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            rec["error"] = "could not ask for --version: %s" % exc
+    else:
+        rec["kind"] = "program"
+    return rec
+
+
+def env_locks(project, named):
+    """[{path, sha256}] of the environment lock files: the ones named with --env-lock, else
+    the usual lock files that exist in the project."""
+    cands = named or [c for c in ENV_LOCK_CANDIDATES if os.path.isfile(project.path(c))]
+    if not named:
+        env_dir = project.path("research/env")
+        if os.path.isdir(env_dir):
+            for f in sorted(os.listdir(env_dir)):
+                rel = "research/env/%s" % f
+                if f.endswith(".lock") and rel not in cands:
+                    cands.append(rel)
+    out = []
+    for c in cands:
+        rel = _project_rel_arg(project, c)
+        if not rel:
+            raise EnvError("--env-lock %s is not a file inside the project" % c)
+        out.append({"path": rel, "sha256": sha256_file(project.path(rel))})
+    return sorted(out, key=lambda x: x["path"])
+
+
+def _stat_key(path):
+    st = os.stat(path)
+    return (st.st_mtime_ns, st.st_size)
+
+
+def _glob_rel(project, pattern):
+    """Project paths of the files a glob pattern (relative to the project root) matches."""
+    out = []
+    # The root is escaped: a project at ".../proj [v2]" must not turn into a character class.
+    for f in sorted(glob.glob(os.path.join(glob.escape(project.root), pattern), recursive=True)):
+        rel = safe_rel(project, os.path.relpath(f, project.root))
+        if rel and os.path.isfile(f):
+            out.append(rel)
+    return out
+
+
+def _git_tracked_clean(project, rel):
+    """None when `rel` is committed unchanged at HEAD, else why not."""
+    if _git_rc(project, ["ls-files", "--error-unmatch", "--", rel]) != 0:
+        return "is not committed (git does not track it)"
+    if _git_rc(project, ["diff", "--quiet", "HEAD", "--", rel]) != 0:
+        return "has uncommitted changes"
+    return None
+
+
 def cmd_run(project, args):
     """Run a command from the project root and write research/runs/<RUN-ID>/run.json (section 8)."""
     cmd = list(args.command or [])
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
     if not cmd:
-        raise EnvError("usage: run [--exp EXP-ID|exploratory] [--input P]... [--output P]... -- <command> [args]")
+        raise EnvError("usage: run [--exp EXP-ID|exploratory] [--input P]... [--code P]... [--output P|GLOB]... -- <command> [args]")
     runs_dir = project.path("research/runs")
     run_id = args.id
     if not run_id:
@@ -2827,22 +3994,30 @@ def cmd_run(project, args):
         if in_git(project) and (_git(project, ["status", "--porcelain", "--", PLANS_REL]) or "").strip():
             print("warning: %s has uncommitted changes; commit the freeze before recording results, "
                   "or the plan check reports PLAN-ORDER" % PLANS_REL, file=sys.stderr)
-    inputs = []
-    for p in args.input or []:
+    inputs, code = [], []
+    for p, as_code in [(p, False) for p in args.input or []] + [(p, True) for p in args.code or []]:
         rel = _project_rel_arg(project, p)
         if not rel or not os.path.isfile(project.path(rel)):
-            print("refused: input %s is not a file inside the project" % p, file=sys.stderr)
+            print("refused: %s %s is not a file inside the project" % ("code" if as_code else "input", p), file=sys.stderr)
             return EXIT_FINDINGS
-        inputs.append({"path": rel, "sha256": sha256_file(project.path(rel)), "size": os.path.getsize(project.path(rel))})
-    outputs = []
+        item = {"path": rel, "sha256": sha256_file(project.path(rel)), "size": os.path.getsize(project.path(rel))}
+        if as_code or is_code_path(rel):
+            if not as_code:
+                print("note: %s is code (by its extension), recorded under `code`, not as data; use --code for code "
+                      "and --input for data" % rel, file=sys.stderr)
+            code.append(item)
+        else:
+            inputs.append(item)
+    outputs, patterns = [], []
     for p in args.output or []:
         # Outputs may not exist yet; the command runs in the project root, so a relative
-        # output path is relative to it.
+        # output path is relative to it. A glob (for names with a timestamp) is resolved
+        # after the run to the files the command wrote.
         rel = _project_rel_arg(project, p, must_exist=False)
         if not rel:
             print("refused: output %s is not inside the project" % p, file=sys.stderr)
             return EXIT_FINDINGS
-        outputs.append(rel)
+        (patterns if any(ch in rel for ch in GLOB_CHARS) else outputs).append(rel)
     env_vars = {}
     for item in args.env or []:
         if "=" not in item or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", item):
@@ -2856,6 +4031,7 @@ def cmd_run(project, args):
         if not v:
             k, v = "seed", item
         seeds[k] = v
+    locks = env_locks(project, args.env_lock or [])
 
     commit = git_head(project) if in_git(project) else None
     dirty = None
@@ -2865,6 +4041,12 @@ def cmd_run(project, args):
         if dirty:
             print("warning: the working tree has uncommitted changes; this run cannot be reproduced from commit %s "
                   "and `repro` will report it" % commit[:12], file=sys.stderr)
+        for item in code:
+            why = _git_tracked_clean(project, item["path"])
+            if why:
+                print("warning: code %s %s, so a re-run from commit %s cannot use it; commit it and run again"
+                      % (item["path"], why.replace("is not committed (git does not track it)", "is not committed"),
+                         commit[:12]), file=sys.stderr)
     else:
         print("warning: not a git repository; the run cannot be tied to a commit", file=sys.stderr)
     man = project.manifest()
@@ -2872,11 +4054,16 @@ def cmd_run(project, args):
     for rel in outputs:
         path = project.path(rel)
         if os.path.isfile(path):
-            st = os.stat(path)
-            before[rel] = (st.st_mtime_ns, st.st_size)
+            before[rel] = _stat_key(path)
+    before_glob = {}
+    for pat in patterns:
+        before_glob[pat] = dict((rel, _stat_key(project.path(rel))) for rel in _glob_rel(project, pat))
+        if os.path.isfile(project.path(pat)):
+            before[pat] = _stat_key(project.path(pat))
     os.makedirs(run_dir)
     env = dict(os.environ)
     env.update(env_vars)
+    interpreter = command_interpreter(project, cmd, env)
     started = utc_now()
     out_path, err_path = os.path.join(run_dir, "stdout.txt"), os.path.join(run_dir, "stderr.txt")
     rc = None
@@ -2891,13 +4078,16 @@ def cmd_run(project, args):
     except subprocess.TimeoutExpired:
         rc, note = 124, "timed out after %s s" % args.timeout
     ended = utc_now()
-    out_records, missing, untouched = [], [], []
+    out_records, missing, untouched, unmatched = [], [], [], []
+    # A path with glob characters that names a file the command wrote (or that exists) is
+    # that file, not a pattern: `artifacts/res[1].json` is recorded as itself.
+    outputs = outputs + [pat for pat in patterns if os.path.isfile(project.path(pat))]
+    patterns = [pat for pat in patterns if pat not in outputs]
     for rel in outputs:
         path = project.path(rel)
         if os.path.isfile(path):
             item = {"path": rel, "sha256": sha256_file(path), "size": os.path.getsize(path)}
-            st = os.stat(path)
-            if before.get(rel) == (st.st_mtime_ns, st.st_size):
+            if before.get(rel) == _stat_key(path):
                 # The file existed and was not rewritten: the command may not produce it.
                 item["written_by_run"] = False
                 untouched.append(rel)
@@ -2905,13 +4095,26 @@ def cmd_run(project, args):
         else:
             out_records.append({"path": rel, "sha256": None, "size": None})
             missing.append(rel)
+    for pat in patterns:
+        written = [rel for rel in _glob_rel(project, pat)
+                   if before_glob[pat].get(rel) != _stat_key(project.path(rel))]
+        if not written:
+            unmatched.append(pat)
+            missing.append("%s matched no file the command wrote" % pat)
+        for rel in written:
+            out_records.append({"path": rel, "pattern": pat, "sha256": sha256_file(project.path(rel)),
+                                "size": os.path.getsize(project.path(rel))})
     rec = {
         "id": run_id, "exp": exp, "command": cmd, "cwd": ".",
         "git_commit": commit, "git_dirty": dirty,
         "started_at": started, "ended_at": ended, "exit_code": rc,
-        "inputs": inputs, "outputs": out_records, "seeds": seeds, "env_vars": env_vars,
+        "inputs": inputs, "code": code, "outputs": out_records, "seeds": seeds, "env_vars": env_vars,
+        # `environment` is the machine; `interpreter` is what the command ran under (the
+        # recorder's own Python can differ, e.g. when the command names a venv).
         "environment": {"python": platform.python_version(), "platform": platform.platform(),
                         "machine": platform.machine(), "cpu_count": os.cpu_count()},
+        "interpreter": interpreter,
+        "env_lock": locks,
         "manifest_sha256": sha256_file(man.path) if os.path.isfile(man.path) else None,
         "stdout": {"path": project.rel(out_path).replace(os.sep, "/"), "sha256": sha256_file(out_path)},
         "stderr": {"path": project.rel(err_path).replace(os.sep, "/"), "sha256": sha256_file(err_path)},
@@ -2919,9 +4122,16 @@ def cmd_run(project, args):
     }
     if note:
         rec["note"] = note
+    if unmatched:
+        rec["unmatched_output_patterns"] = unmatched
     _atomic_write(os.path.join(run_dir, "run.json"), json.dumps(rec, indent=2, sort_keys=True) + "\n")
-    print("research/runs/%s/run.json: exit %s, %d input(s), %d output(s)%s"
-          % (run_id, rc, len(inputs), len(out_records), " (%s)" % note if note else ""))
+    print("research/runs/%s/run.json: exit %s, %d input(s), %d code file(s), %d output(s)%s"
+          % (run_id, rc, len(inputs), len(code), len([o for o in out_records if o.get("path")]),
+             " (%s)" % note if note else ""))
+    if not locks:
+        print("note: no environment lock found (--env-lock <file>, else research/env/*.lock and the common lock "
+              "files %s); the run records no environment hash" % ", ".join(c for c in ENV_LOCK_CANDIDATES
+                                                                           if "/" not in c), file=sys.stderr)
     if untouched:
         print("warning: output(s) existed before the run and were not rewritten: %s; `repro` deletes outputs "
               "before re-running, so a command that does not write them fails there" % ", ".join(untouched),
@@ -3053,7 +4263,7 @@ def cmd_repro(project, args):
             results[nid].update(status="fail", message="the re-run changed files in the original project (%s); "
                                 "restore them from git" % ", ".join(mutated[:5]))
     report = {
-        "created_at": utc_now(), "tool": "research_check.py repro", "git_head": git_head(project),
+        "created_at": utc_now(), "tool": REPRO_TOOL, "git_head": git_head(project),
         "environment": {"python": platform.python_version(), "platform": platform.platform()},
         "selection": wanted, "results": [results[nid] for nid in ids],
         "summary": {"pass": sum(1 for r in results.values() if r.get("status") == "pass"),
@@ -3095,12 +4305,21 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
             root = _extract_commit(project, rec["git_commit"], os.path.join(scratch, "src"))
         except ValueError as exc:
             return {nid: {"status": "fail", "message": str(exc)} for nid, _r in members}
+        # Code comes from the recorded commit only: a script that is not in it was never
+        # committed, and a re-run with the current copy would not be the recorded run.
+        for p in run_code_paths(rec):
+            p_rel = safe_rel(project, p)
+            if not p_rel or not os.path.isfile(os.path.join(root, p_rel)):
+                return {nid: {"status": "fail", "message": "code %s is not in commit %s, so it cannot be re-run"
+                              % (p, str(rec["git_commit"])[:12])} for nid, _r in members}
         # Inputs: the version the run recorded, from the commit or the project's archive.
         for inp in rec.get("inputs") or []:
             p = safe_rel(project, inp.get("path")) if isinstance(inp, dict) else None
             want = inp.get("sha256") if isinstance(inp, dict) else None
             if not p:
                 return {nid: {"status": "fail", "message": "%s has an invalid input entry %r" % (run_id, inp)} for nid, _r in members}
+            if is_code_path(p):
+                continue
             dest = os.path.join(root, p)
             if os.path.isfile(dest) and (want is None or sha256_file(dest) == want):
                 continue
@@ -3113,10 +4332,17 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
             shutil.copyfile(src, dest)
         # Outputs are deleted first, so a command that does not write them cannot pass on a
         # committed copy.
+        pattern_of = {}
         for out in rec.get("outputs") or []:
             p = safe_rel(project, out.get("path")) if isinstance(out, dict) else None
             if p and os.path.isfile(os.path.join(root, p)):
                 os.unlink(os.path.join(root, p))
+            if p and out.get("pattern"):
+                pattern_of[p] = str(out["pattern"])
+        # Outputs recorded through a glob (timestamped names): the re-run writes new names,
+        # found as the files matching the pattern that the re-run created or rewrote.
+        before = dict((pat, dict((r, _stat_key(os.path.join(root, r))) for r in _glob_under(root, pat)))
+                      for pat in set(pattern_of.values()))
         cmd = rec["command"] if isinstance(rec["command"], list) else shlex.split(str(rec["command"]))
         env = dict(os.environ)
         env.update({k: str(v) for k, v in (rec.get("env_vars") or {}).items()})
@@ -3132,9 +4358,20 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
         if proc.returncode != 0:
             return {nid: {"status": "fail", "message": "re-run of %s exited %d: %s" % (run_id, proc.returncode, " | ".join(tail))}
                     for nid, _r in members}
+        written = dict((pat, [r for r in _glob_under(root, pat) if before[pat].get(r) != _stat_key(os.path.join(root, r))])
+                       for pat in before)
         for nid, row in members:
             out_rel = safe_rel(project, row.get("output") or "")
             path = os.path.join(root, out_rel) if out_rel else None
+            pat = pattern_of.get(out_rel)
+            if pat:
+                recorded = sorted(r for r, q in pattern_of.items() if q == pat)
+                if len(written[pat]) != len(recorded):
+                    info[nid] = {"status": "fail", "message": "the re-run wrote %d file(s) matching %s; the recorded run "
+                                 "wrote %d" % (len(written[pat]), pat, len(recorded))}
+                    continue
+                # Files of one pattern pair up in name order (timestamps sort by time).
+                path = os.path.join(root, written[pat][recorded.index(out_rel)])
             if not path or not os.path.isfile(path):
                 info[nid] = {"status": "fail", "message": "the re-run did not write %s" % row.get("output")}
                 continue
@@ -3157,6 +4394,15 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
             _rmtree(scratch)
 
 
+def _glob_under(base, pattern):
+    """Paths relative to `base` of the files `pattern` matches under it."""
+    out = []
+    for f in sorted(glob.glob(os.path.join(glob.escape(base), pattern), recursive=True)):
+        if os.path.isfile(f):
+            out.append(os.path.relpath(f, base).replace(os.sep, "/"))
+    return out
+
+
 def _rmtree(path):
     """Remove a scratch tree, including read-only files a re-run may have created."""
     def retry(func, p, _exc):
@@ -3169,6 +4415,10 @@ def _rmtree(path):
         shutil.rmtree(path, onexc=retry)   # `onerror` is deprecated from 3.12
     else:
         shutil.rmtree(path, onerror=retry)
+
+
+# The `tool` field the repro job writes into each report.
+REPRO_TOOL = "research_check.py repro"
 
 
 def load_repro_reports(project):
@@ -3214,13 +4464,25 @@ def check_repro_current(project):
         for created, rel, rep in reports:
             for r in rep["results"]:
                 if isinstance(r, dict) and r.get("id") == nid:
-                    entry = (created, rel, r)
+                    entry = (created, rel, r, rep)
         if entry is None:
             out.append(Finding(numbers.rel, lineno, "REPRO", "%s has never been reproduced (`uws research check repro all`)" % nid))
             continue
-        created, rel, r = entry
+        created, rel, r, rep = entry
         if r.get("status") != "pass":
             out.append(Finding(rel, 1, "REPRO", "%s failed its latest repro: %s" % (nid, r.get("message"))))
+            continue
+        # A pass counts only when the repro job re-ran the number's recorded run. The job
+        # never passes a number without a run record, so such a pass was written by hand: a
+        # reproduction made some other way (an audit script, another machine) cannot be
+        # attested into a report. Record the command with `run` and let `repro` re-run it.
+        if rep.get("tool") != REPRO_TOOL or not row.get("run") or r.get("run") != row.get("run"):
+            why = ("the number has no run record" if not row.get("run") else
+                   "the entry names run %s, the row %s" % (r.get("run"), row.get("run")) if r.get("run") != row.get("run")
+                   else "the report was not written by `uws research check repro`")
+            out.append(Finding(rel, 1, "REPRO", "%s: the passing entry is not a re-run of its recorded run by the repro "
+                               "job (%s); a reproduction cannot be attested by hand: record the command with "
+                               "`uws research check run` and re-run `repro`" % (nid, why)))
             continue
         if r.get("row_sha256") != canonical_sha(row):
             out.append(Finding(numbers.rel, lineno, "REPRO", "%s changed after its latest repro (%s); re-run the repro job" % (nid, rel)))
@@ -3514,40 +4776,164 @@ def check_retractions(project):
                                    "claim against it" % (cid, key, rec["status"], notice), "warn"))
     retracted = {k for k, (_l, r) in bad.items() if r["status"] == "retracted"}
     if retracted:
-        cite_re = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?(?:\[[^\]]*\]){0,2}\{([^}]*)\}")
         for path in project.tex_files():
-            doc = Doc(project, path)
+            doc = project.doc(path)
             for _start, sent, _cids, line_of in doc.sentences():
-                for m in cite_re.finditer(sent):
-                    keys = {k.strip() for k in m.group(1).split(",")}
-                    for key in sorted(keys & retracted):
-                        if not RETRACT_WORD_RE.search(sent):
-                            out.append(Finding(doc.rel, line_of(m.start()), "RETRACTION",
-                                               "\\cite{%s}: Crossref lists this source as retracted, and the sentence "
-                                               "does not say so" % key))
+                if RETRACT_WORD_RE.search(sent):
+                    continue
+                for key, off in tex_citations(sent):
+                    if key in retracted:
+                        out.append(Finding(doc.rel, line_of(off), "RETRACTION",
+                                           "\\cite{%s}: Crossref lists this source as retracted, and the sentence "
+                                           "does not say so" % key))
     return out
+
+
+# --------------------------------------------------------------------------- ledger rows (add)
+
+def _fill_number(project, row):
+    """Fields the tool fills from the files instead of letting anyone type them: the output
+    hash, the raw value at the pointer, and the printed form under the rounding rule. A value
+    that was given is never replaced; the checks below then compare it with the file."""
+    filled = []
+    out_rel = safe_rel(project, row.get("output"))
+    path = project.path(out_rel) if out_rel else None
+    if path and os.path.isfile(path):
+        if not row.get("output_sha256"):
+            row["output_sha256"] = sha256_file(path)
+            filled.append("output_sha256")
+        if row.get("raw") is None and isinstance(row.get("pointer"), str) and row["pointer"]:
+            try:
+                value = resolve_pointer(path, row["pointer"])
+            except (ValueError, IndexError, KeyError, OSError):
+                value = None   # the pointer check reports it
+            if value is not None and not isinstance(value, (dict, list)):
+                row["raw"] = value
+                filled.append("raw")
+    if row.get("printed") in (None, "") and row.get("raw") is not None and row.get("rounding"):
+        try:
+            row["printed"] = apply_rounding(row["raw"], row["rounding"], row.get("scale"))
+            filled.append("printed")
+        except (ValueError, InvalidOperation):
+            pass   # the rounding check reports it
+    return filled
+
+
+def cmd_ledger_add(project, kind, text):
+    """`numbers add` / `claims add`: append one row after validating it; existing rows are
+    never touched. Missing id, rev and supersedes are filled (a new ID, or the next revision
+    of an existing one); number rows also get the output hash, raw value and printed form."""
+    led = project.numbers() if kind == "numbers" else project.claims()
+    if text == "-":
+        text = sys.stdin.read()
+    if not text or not text.strip():
+        raise EnvError("usage: %s add '<one JSON object>' (or - to read it from stdin)" % kind)
+    try:
+        row = json.loads(text)
+    except ValueError as exc:
+        print("refused: not valid JSON: %s" % exc, file=sys.stderr)
+        return EXIT_FINDINGS
+    if not isinstance(row, dict):
+        print("refused: the row must be one JSON object", file=sys.stderr)
+        return EXIT_FINDINGS
+    filled = []
+    if row.get("id") is None:
+        nums = [int(m.group(1)) for k in led.latest for m in [re.match(r"^%s-(\d+)$" % led.prefix, k)] if m]
+        row["id"] = "%s-%04d" % (led.prefix, max(nums) + 1 if nums else 1)
+        filled.append("id")
+    rid = row["id"]
+    prev = led.latest.get(rid) if isinstance(rid, str) else None
+    if "rev" not in row:
+        row["rev"] = _rev(prev[1]) + 1 if prev else 1
+        filled.append("rev")
+    if "supersedes" not in row and isinstance(row.get("rev"), int):
+        row["supersedes"] = "%s@%d" % (rid, row["rev"] - 1) if row["rev"] > 1 else None
+    if kind == "numbers":
+        filled.extend(_fill_number(project, row))
+    view, lineno = led.appended(row)
+    findings = [f for f in _check_revisions(view) if f.line == lineno]
+    project._links = None
+    if kind == "numbers":
+        project._numbers = view
+        run_rel = "research/runs/%s/run.json" % row.get("run") if row.get("run") else None
+        # A macro another current row uses. The ledger-wide check reports a duplicate on the
+        # ID that sorts later, which for a revision of a lower ID is the other row's line.
+        macro = row.get("macro")
+        others = sorted(nid for nid, (_l, r) in led.latest.items() if nid != rid and macro and r.get("macro") == macro)
+        if others:
+            findings.append(Finding(led.rel, lineno, "NUM-SCHEMA", "%s: macro %s is also used by %s; each number "
+                                    "needs its own macro" % (rid, macro, ", ".join(others))))
+        findings.extend(f for f in check_numbers(project, [rid]) if f.rule != "NUM-MACRO" and
+                        ((f.path == led.rel and f.line == lineno) or (run_rel and f.path == run_rel)))
+        if row.get("data_origin") != "literature":
+            exp = row.get("exp")
+            if exp is None:
+                findings.append(Finding(led.rel, lineno, "PLAN-LINK", "%s: set exp to the EXP-ID whose frozen plan it "
+                                        "answers, or to %r" % (rid, EXPLORATORY)))
+            elif exp != EXPLORATORY and exp not in experiment_ids(project):
+                findings.append(Finding(led.rel, lineno, "PLAN-LINK", "%s: exp %s has no %s/%s/plan.md"
+                                        % (rid, exp, EXPERIMENTS_REL, exp)))
+            if not row.get("run") and row.get("inputs") is None:
+                findings.append(Finding(led.rel, lineno, "DATA-NOINPUT", "%s names no run and no inputs" % rid))
+    else:
+        project._claims = view
+        findings.extend(_check_claim(project, view, project.numbers(), lineno, row))
+    findings = dedupe(findings)
+    emit(findings, False)
+    # A row is refused for what is wrong with the row itself (schema, references, its value
+    # against the output file, links). A printed value that its evidence does not support is a
+    # finding about the manuscript: the row records it as printed and the gate keeps failing
+    # until the manuscript or a later revision corrects it (the PROMISE audit's F1 0.911).
+    if any(f.level == "block" and not f.printed for f in findings):
+        print("refused: the row was not appended to %s" % led.rel, file=sys.stderr)
+        return EXIT_FINDINGS
+    _append_jsonl(led.path, row)
+    print("appended %s rev %d to %s%s" % (rid, row["rev"], led.rel,
+                                          " (filled in by the tool: %s)" % ", ".join(filled) if filled else ""))
+    if any(f.level == "block" for f in findings):
+        print("note: the findings above are about its printed value, which the row records as printed; "
+              "the gate fails on them until the manuscript (or a new revision of the row) is corrected")
+    if kind == "numbers" and row.get("macro"):
+        print("next: `uws research check macros` defines %s in the generated macro file" % row["macro"])
+    return EXIT_OK
 
 
 # --------------------------------------------------------------------------- macros
 
 def cmd_macros(project, args):
+    """Write the macro file from the valid rows; report and skip the invalid ones (a row with
+    a schema error, or a macro name that another row also uses). Exit 1 when any is skipped,
+    so the gap is visible, but the valid macros are written either way."""
     rel = args.out or project.config.get("numbers_tex") or "paper/generated/numbers.tex"
     numbers = project.numbers()
-    problems = [f for f in numbers.parse_errors + _check_number_shapes(numbers) if f.level == "block"]
-    if problems:
-        emit(problems, False)
-        print("refused: fix the number ledger first (%s was not written)" % rel, file=sys.stderr)
-        return EXIT_FINDINGS
+    emit(numbers.parse_errors, False)
+    skipped = {}
+    for f in _check_number_shapes(numbers):
+        if f.level != "block":
+            continue
+        nid = f.msg.split(":", 1)[0]
+        skipped.setdefault(nid, []).append(f.msg.split(": ", 1)[1] if ": " in f.msg else f.msg)
+    owners = {}
+    for nid in sorted(numbers.latest):
+        macro = numbers.latest[nid][1].get("macro")
+        if isinstance(macro, str) and macro:
+            owners.setdefault(macro, []).append(nid)
+    for macro, nids in owners.items():
+        if len(nids) > 1:
+            for nid in nids:
+                skipped.setdefault(nid, []).append("macro %s is used by %s" % (macro, ", ".join(nids)))
     lines = ["% Generated from research/ledger/numbers.jsonl by `uws research check macros`. Do not edit by hand.\n"]
     for nid in sorted(numbers.latest):
         row = numbers.latest[nid][1]
-        if row.get("macro"):
+        if row.get("macro") and nid not in skipped:
             lines.append("\\newcommand{%s}{%s}\n" % (row["macro"], row.get("printed")))
     path = project.path(rel)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     _atomic_write(path, "".join(lines))
-    print("%s (%d macros)" % (rel, len(lines) - 1))
-    return EXIT_OK
+    for nid in sorted(skipped):
+        print("skipped %s: %s" % (nid, "; ".join(skipped[nid])))
+    print("%s (%d macros%s)" % (rel, len(lines) - 1, ", %d invalid row(s) skipped" % len(skipped) if skipped else ""))
+    return EXIT_FINDINGS if skipped or numbers.parse_errors else EXIT_OK
 
 
 # --------------------------------------------------------------------------- gate
@@ -3577,9 +4963,9 @@ def check_question(project):
     for canon, _names in QUESTION_FIELDS:
         if _empty_field(sections.get(canon)):
             out.append(Finding(rel, label_line.get(canon, 1), "GATE-QUESTION", "'%s' is missing or empty" % canon))
-    doc = Doc(project, path)
+    doc = project.doc(path)
     for _s, sent, _c, line_of in doc.sentences():
-        m = S1_RE.search(sent)
+        m = s1_match(sent)
         if m and "candidate contribution" not in sent.lower():
             out.append(Finding(rel, line_of(m.start()), "S1", "%r in the question: say 'candidate contribution' "
                                "until novelty is established (apocalypt.md P2)" % m.group(0)))
@@ -3661,25 +5047,37 @@ def check_pi_approval(project):
 
 
 def kb_note(project):
-    """Section 9: the KB is advisory. Report whether it can be consulted; never fail."""
+    """Section 9: the KB is advisory. Say what `uws kb stats` says (so the two never
+    disagree: it exits 0 and prints "No KB yet ..." when the project has no KB); never fail."""
     here = os.path.dirname(os.path.abspath(__file__))
     uws = os.path.join(os.path.dirname(here), "bin", "uws")
+    advisory = "(advisory; the gate does not depend on it)"
     if not os.path.isfile(os.path.join(here, "kb.sh")) or not os.path.isfile(uws):
-        return "KB unavailable (advisory; the gate does not depend on it)"
+        return "KB unavailable %s: the kb command is not installed next to this checker" % advisory
     try:
         proc = subprocess.run([uws, "kb", "stats"], cwd=project.root, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=15)
-    except (OSError, subprocess.TimeoutExpired):
-        return "KB unavailable (advisory; the gate does not depend on it)"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return "KB unavailable %s: `uws kb stats` did not run (%s)" % (advisory, exc)
+    first = (proc.stdout.decode("utf-8", "replace").strip().splitlines() or [""])[0].strip()
     if proc.returncode != 0:
-        return "KB unavailable (advisory; the gate does not depend on it)"
-    return "KB available (advisory): check `uws kb search <terms>` for disputed items and raise them as Q-IDs"
+        err = (proc.stderr.decode("utf-8", "replace").strip().splitlines() or [""])[0].strip()
+        return "KB unavailable %s: `uws kb stats` failed: %s" % (advisory, err or "exit %d" % proc.returncode)
+    if not first or first.lower().startswith("no kb"):
+        return "No KB yet %s: `uws kb stats` says: %s" % (advisory, first or "(nothing)")
+    return ("KB available (advisory): `uws kb stats` says: %s; check `uws kb search <terms>` for disputed items "
+            "and raise them as Q-IDs" % first)
 
 
-# Rules of design section 6.5 that no check implements yet. The gates say so instead of
-# passing silently.
-NOT_CHECKED = ("slop rules S3 (fabricated precision), S5 (padding), S7 ('significant' without a test), "
-               "C2 (untested path) and C4 (fragile paths); the research/INVENTORY.md report")
+# Checks of the design that no code implements yet (its status line), each with the first
+# phase whose gate would run it. The gates say so instead of passing silently.
+NOT_CHECKED = (
+    ("literature_review", "the BibTeX metadata cross-check (6.3 step 6) and `bib verify --online`"),
+    ("data_collection", "whether the environment lock pins every package (a run records the lock's hash only) "
+                        "and the Dockerfile check"),
+    ("analysis", "slop rules S3 (fabricated precision), S5 (padding), S7 ('significant' without a test), "
+                 "C2 (untested path) and C4 (fragile paths); the research/INVENTORY.md report"),
+)
 
 
 def run_gate(project, phase, allow_missing_cache=None):
@@ -3716,9 +5114,8 @@ def run_gate(project, phase, allow_missing_cache=None):
         findings.extend(check_review_hash(project))
     if phase == "publication":
         findings.extend(check_pi_approval(project))
-    notes = []
-    if idx >= PHASES.index("analysis"):
-        notes.append("not checked yet: " + NOT_CHECKED)
+    findings = dedupe(findings)
+    notes = ["not checked yet: " + text for first, text in reversed(NOT_CHECKED) if idx >= PHASES.index(first)]
     if phase in ("literature_review", "analysis"):
         notes.append(kb_note(project))
     return findings, notes
@@ -3854,6 +5251,15 @@ def cmd_init(project):
             with open(p, "w", encoding="utf-8") as fh:
                 fh.write(content)
             created.append(rel)
+    # git does not store empty directories: a .gitkeep lets the scaffold be committed
+    # (research/sources/cache is gitignored on purpose, so it gets none).
+    for d in ("research/lit", "research/pi", "research/reviews", "research/experiments", "research/data/raw",
+              "research/runs", "research/repro", "bib_sources"):
+        p = project.path(d)
+        if os.path.isdir(p) and not os.listdir(p):
+            with open(os.path.join(p, ".gitkeep"), "w", encoding="utf-8"):
+                pass
+            created.append(d + "/.gitkeep")
     gi = project.path(".gitignore")
     line = "research/sources/cache/"
     existing = read_text(gi).splitlines() if os.path.isfile(gi) else []
@@ -3903,8 +5309,14 @@ def build_parser():
     sub.add_parser("bib", help="bib_sources provenance and references.bib equality")
     s = sub.add_parser("quotes", help="quotes are verbatim in the cached source text")
     s.add_argument("--allow-missing-cache", action="store_true", help="report a missing cache as a warning (CI without caches)")
-    s = sub.add_parser("numbers", help="number provenance and hand-typed decimals")
+    s = sub.add_parser("numbers", help="number provenance and hand-typed numbers; `add '<json>'` appends a row")
+    s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
+    s.add_argument("row", nargs="?", help="for add: one JSON object (or - for stdin); id, rev, output_sha256, raw "
+                   "and printed are filled in when missing")
     s.add_argument("--id", action="append", help="check only these N-IDs (repeatable)")
+    s = sub.add_parser("claims", help="claim ledger rules (as `ledger`); `add '<json>'` appends a validated row")
+    s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
+    s.add_argument("row", nargs="?", help="for add: one JSON object (or - for stdin); id and rev are filled in")
     s = sub.add_parser("slop", help="S1 S2 S4 S6 C1 C3 C5 C6")
     s.add_argument("files", nargs="*", help="limit to these files")
     s = sub.add_parser("plan", help="pre-registration: check plans, or `new`/`freeze <EXP-ID>`")
@@ -3918,7 +5330,8 @@ def build_parser():
     s.add_argument("path", nargs="?", help="file to register (for add)")
     s.add_argument("--source", help="where the file came from (URL, instrument, or the generating command)")
     s.add_argument("--version", help="dataset version or release")
-    s.add_argument("--split", help="split definition: which rows are train/validation/test, or how splits are made")
+    s.add_argument("--split", help="split definition: free text, or JSON {\"train\": path, \"test\": path, "
+                   "\"group_key\": field} / {\"column\": field, \"group_key\": field} so leakage can be checked")
     s.add_argument("--origin", help="measured | simulated | synthetic-generated | literature")
     s.add_argument("--generator", help="script that generated the file (required for generated data)")
     s.add_argument("--seed", help="seed the generator used (required for generated data; 'unrecorded' if unknown)")
@@ -3930,8 +5343,14 @@ def build_parser():
     s = sub.add_parser("run", help="run a command and record research/runs/RUN-*/run.json")
     s.add_argument("--id", help="run ID (default: next RUN-<nnnn>)")
     s.add_argument("--exp", help="experiment the run belongs to (EXP-<name>, or exploratory)")
-    s.add_argument("--input", action="append", help="input file (repeatable; hashed before the run)")
-    s.add_argument("--output", action="append", help="output file (repeatable; hashed after the run)")
+    s.add_argument("--input", action="append", help="data file the command reads (repeatable; hashed before the "
+                   "run; code files given here are recorded as code)")
+    s.add_argument("--code", action="append", help="code file the command runs (repeatable; versioned by the "
+                   "run's commit, not by the data manifest)")
+    s.add_argument("--output", action="append", help="output file, or a glob such as 'out/results_*.json' for "
+                   "timestamped names (repeatable; resolved and hashed after the run)")
+    s.add_argument("--env-lock", action="append", help="environment lock file to record by hash (repeatable; "
+                   "default: research/env/*.lock and common lock files that exist)")
     s.add_argument("--seed", action="append", help="seed the command uses, NAME=VALUE (repeatable; recorded)")
     s.add_argument("--env", action="append", help="environment variable NAME=VALUE set for the run and its re-runs")
     s.add_argument("--timeout", type=int, help="seconds before the command is stopped")
@@ -4027,8 +5446,14 @@ def main(argv=None):
             return cmd_manuscript_hash(project, args)
         if args.cmd == "macros":
             return cmd_macros(project, args)
+        if args.cmd in ("numbers", "claims") and args.action == "add":
+            return cmd_ledger_add(project, args.cmd, args.row)
+        if args.cmd in ("numbers", "claims") and args.row:
+            raise EnvError("a row is only taken by `%s add`" % args.cmd)
         if args.cmd == "ledger":
             findings = check_ledger(project, args.base)
+        elif args.cmd == "claims":
+            findings = check_ledger(project)
         elif args.cmd == "bib":
             findings = check_bib(project)
         elif args.cmd == "quotes":
@@ -4059,6 +5484,7 @@ def main(argv=None):
     except (OSError, UnicodeDecodeError) as exc:
         print("research_check: error: %s" % exc, file=sys.stderr)
         return EXIT_ENV
+    findings = dedupe(findings)
     findings.sort(key=lambda f: (f.path, f.line, f.rule))
     emit(findings, args.json, notes)
     blocking = [f for f in findings if f.level == "block"]

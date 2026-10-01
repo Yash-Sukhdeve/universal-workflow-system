@@ -46,3 +46,13 @@ Used by `tests/integration/test_research_team.bats` (acceptance tests AT1-AT10 o
     (a `correction` and a `retraction`, both with `source: retraction-watch`);
   - `crossref_work_sandve2013.json` and `crossref_updates_sandve2013.json`, the same two
     requests for 10.1371/journal.pcbi.1003285 (no update notices).
+- `promise/` holds lines copied verbatim from the PROMISE 2026 paper
+  (`github.com/Yash-Sukhdeve/uws-promise-2026` at `778ab9a`) for the field-test regression
+  tests in `test_research_team_fieldtest.bats` (design section 11b):
+  - `abstract.tex`: `paper/main-promise.tex:63-70`;
+  - `intro-findings.tex`: `paper/sections/01-introduction-promise.tex:24-28`;
+  - `intro-contribution.tex`: `paper/sections/01-introduction-promise.tex:33`;
+  - `intro-first.tex`: `paper/sections/01-introduction-promise.tex:35`;
+  - `background-insight.tex`: `paper/sections/02-background.tex:62`;
+  - `approach-dataset.tex`: `paper/sections/03-approach.tex:24`;
+  - `approach-platform.tex`: `paper/sections/03-approach.tex:120`.

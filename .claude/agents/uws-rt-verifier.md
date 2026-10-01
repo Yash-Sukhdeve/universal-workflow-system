@@ -225,8 +225,10 @@ are not biased by the original reasoning (Dhuliawala et al., 2023, arXiv:2309.11
   hook will send you back.
 
 ## Output: one appended revision per claim
-Append a new line to `research/ledger/claims.jsonl` for the claim, with `rev` one higher
-than the latest, `supersedes: "C-xxxx@<previous rev>"`, the original `author` unchanged, and:
+Append a new revision of the claim with `uws research check claims add '<json>'`: the whole
+row with the claim's `id` (the tool fills `rev` one higher than the latest and
+`supersedes: "C-xxxx@<previous rev>"`, and refuses an invalid row), the original `author`
+unchanged, and:
 - `verified_by: "verifier"`, `verified_at`: UTC ISO time.
 - `verdict`: `supports` | `partial` | `does-not-support` | `contradicts` | `unverifiable-access`.
 - `status`: `verified` only when the verdict is `supports`; `disputed` for `partial` or

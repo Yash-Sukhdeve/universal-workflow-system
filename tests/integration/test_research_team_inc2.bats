@@ -24,65 +24,6 @@ teardown() {
     teardown_test_environment
 }
 
-# write_plan <EXP-ID>: a complete plan without C-ID references.
-write_plan() {
-    mkdir -p "$P/research/experiments/$1"
-    cat > "$P/research/experiments/$1/plan.md" << 'EOF'
-# Plan
-
-## Hypothesis
-Grouped splits lower the AUC.
-
-## Unit of evaluation
-Scenario.
-
-## Baseline
-Per-row cross-validation.
-
-## Metric
-ROC-AUC, mean over folds.
-
-## Controls
-Same model and seed.
-
-## Split and grouping
-GroupKFold(5) by scenario_id.
-
-## Sample size
-All scenarios; fixed dataset.
-
-## Decision rule
-Supported if the grouped AUC is lower by more than one fold SD.
-
-## Stopping condition
-One run per split scheme.
-EOF
-}
-
-# add_number '<json row>': append a number row; output_sha256 is computed from `output`, and
-# the row's macro is added to the generated macro file.
-add_number() {
-    python3 - "$P" "$1" << 'EOF'
-import hashlib, json, os, sys
-root, row = sys.argv[1], json.loads(sys.argv[2])
-row.setdefault("rev", 1)
-row.setdefault("supersedes", None)
-out = row.get("output")
-if out and "output_sha256" not in row and os.path.isfile(os.path.join(root, out)):
-    row["output_sha256"] = hashlib.sha256(open(os.path.join(root, out), "rb").read()).hexdigest()
-with open(os.path.join(root, "research/ledger/numbers.jsonl"), "a", encoding="utf-8") as fh:
-    fh.write(json.dumps(row) + "\n")
-if row.get("macro"):
-    with open(os.path.join(root, "paper/generated/numbers.tex"), "a", encoding="utf-8") as fh:
-        fh.write("\\newcommand{%s}{%s}\n" % (row["macro"], row["printed"]))
-EOF
-}
-
-commit_all() {
-    git -C "$P" add -A research artifacts paper bib_sources >/dev/null
-    git -C "$P" commit -q -m "$1" >/dev/null
-}
-
 # Stub curl for Crossref: picks the body by URL and logs every URL it was asked for.
 crossref_stub() {
     mkdir -p "$P/fakebin"
@@ -143,7 +84,7 @@ ingest_wakefield() {
         [[ "$output" != *"increment 2"* ]]
     done
     run check gate experiment_design
-    [[ "$output" != *"not checked yet"* ]]
+    [[ "$output" != *"not checked yet: slop"* ]]
     run check gate analysis
     [[ "$output" == *"not checked yet: slop rules S3"* ]]
 }

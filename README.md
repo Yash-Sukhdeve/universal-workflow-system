@@ -300,16 +300,21 @@ recorded in plain-text ledgers under `research/`, and a deterministic checker (P
 standard library) checks those ledgers at every phase gate:
 
 ```bash
-uws research check init              # scaffold research/ and bib_sources/
+uws research check init              # scaffold research/ and bib_sources/ (no .workflow needed;
+                                     # `uws init research` adds it for start/next)
 uws research bib fetch doi:10.1371/journal.pcbi.1003285 --key sandve2013
 uws research bib build               # references.bib only from bib_sources/
 uws research check retraction --online      # cache Crossref retraction notices
 uws research check plan new EXP-LEAK        # write the plan, then freeze and commit it
 uws research check plan freeze EXP-LEAK     #   before any data or run exists
 uws research check data add research/data/raw/x.csv --source ... --version 1 \
-    --split "..." --origin measured         # register every input (sha256, size)
+    --split '{"column": "split", "group_key": "scenario_id"}' \
+    --origin measured                       # register every input (sha256, size)
 uws research check run --exp EXP-LEAK --input research/data/raw/x.csv \
-    --output results.json -- python3 analysis.py   # recorded in research/runs/
+    --code analysis.py --output 'results_*.json' \
+    -- python3 analysis.py                  # recorded in research/runs/
+uws research check numbers add '{"macro": "\\AucCv", "output": "results_<stamp>.json",
+    "pointer": "/auc", "rounding": "round:3", ...}'  # also: claims add '<json>'
 uws research check repro all         # re-run in a scratch copy, compare each number
 uws research check gate literature_review   # file:line findings; exit 1 blocks
 uws research next                    # runs the gate; --force "<reason>" is logged,
@@ -322,13 +327,18 @@ the cached source, that every number in the paper comes from a generated macro t
 an output file and its hash, and a set of "slop" rules (unsupported novelty, vague
 attribution, placeholders, overclaimed causality, undisclosed simulated data, generator
 labels called ground truth). They also check that each experiment's plan was frozen and
-committed before its results (a later change needs a PI decision), that every input is in
+committed before its results, including any result a run's input was computed from (a
+later change needs a PI decision), that every input is in
 the data manifest with its hash and, when generated, its seed, that derived metrics match
 their declared formula (for example FP / (FP + TN)), that cross-validation values are not
 presented as held-out results, that every number reproduces from its recorded run, that the
 red team reviewed the current manuscript, and that no verified claim rests on a source
-Crossref lists as retracted (an unchecked source is a warning, never a pass). The plugin
-command is `/uws:research-check`. Design: `docs/design/research-team.md`.
+Crossref lists as retracted (an unchecked source is a warning, never a pass). Ledger rows
+are appended with `numbers add` / `claims add`, which validate them and never edit an
+existing line; a hand-typed number is tied to its row through the row's `where`, and a split
+declared as JSON is checked for one unit on both sides (leakage). The plugin command is
+`/uws:research-check`. Design: `docs/design/research-team.md` (section 11b: what the first
+field test, an audit of the PROMISE 2026 paper, changed).
 
 ---
 

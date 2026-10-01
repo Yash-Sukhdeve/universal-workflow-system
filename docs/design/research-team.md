@@ -1,9 +1,15 @@
 # Design: The UWS Research Team (Apocalypt)
 
-- **Status**: increments 1 and 2 implemented (section 11 and section 11a). Still not built:
-  slop rules S3, S5, S7, C2 and C4, the INVENTORY report, the BibTeX metadata cross-check
-  (6.3 step 6), `bib verify --online`, the environment-lock and Dockerfile checks, and the
-  KB promotion interface (section 9). The gates say which of these they do not check.
+- **Status**: increments 1 and 2 implemented (section 11 and section 11a), and the fixes
+  from the first field test, an audit of the PROMISE 2026 paper (section 11b). Still not
+  built: slop rules S3, S5, S7, C2 and C4, the INVENTORY report, the BibTeX metadata
+  cross-check (6.3 step 6), `bib verify --online`, a check that the environment lock pins
+  every package (runs record the lock's hash, nothing checks its content) and the Dockerfile
+  check, and the KB promotion interface (section 9). Each gate names the checks among these
+  that its phase would run (the BibTeX items from literature_review, the lock and Dockerfile
+  checks from data_collection, the slop rules and INVENTORY from analysis); the KB promotion
+  interface is not a gate check. Section 11b lists what the field test and the review of its
+  fixes found, and what was consciously not fixed.
 - **Date**: 2026-09-24
 - **Author role**: principal system architect (UWS subagent)
 - **Governing persona**: `docs/personas/apocalypt.md` (PI-supplied, verbatim). Every rule below cites the principle it enforces as P1-P11, which are the numbered principles in that file (P1 = line 21, P11 = line 101).
@@ -320,7 +326,10 @@ hash, seeds, hardware, exit code) → `MANIFEST.tsv` row. Checks:
   because the PROMISE audit found values that match only under truncation (Section 10).
 - (d) Hand-typed decimals in the abstract, results, conclusion and tables fail, unless the
   line carries `% uws:literal <reason>`. Years, section numbers and citations are excluded
-  by pattern.
+  by pattern. Since the field test (section 11b) this also covers the introduction,
+  evaluation, experiments and discussion, integers and decimals with a unit (`1.1ms`, `1.1\,ms`, `30\%`), and any
+  hand-typed value at a place a row's `where` names, which is judged like a use of the row's
+  macro (`NUM-SPLIT`, C3, C6), with or without `uws:literal`.
 - (e) `run.json` exit code is 0 and the run's commit is an ancestor of HEAD.
 
 ### 6.5 What "AI slop" means, as checkable rules
@@ -331,7 +340,7 @@ problem" [src S19]. So vocabulary-style signs only warn, and rules tied to evide
 
 | ID | Rule (concrete) | Level |
 |---|---|---|
-| S1 | Novelty or superlative words (first, novel, state-of-the-art, breakthrough, best, unprecedented, outperforms) in a sentence with no C-ID, or whose C-row is a hypothesis or unverified (P2 line 31) | block |
+| S1 | Novelty or superlative words (first, novel, state-of-the-art, breakthrough, best, unprecedented, outperforms) in a sentence with no C-ID, or whose C-row is a hypothesis or unverified (P2 line 31). "First" counts after an article ("the first") or before a contribution noun ("First predictive models"); four fixed idioms do not count: best practice(s), best effort, best case, at best (section 11b) | block |
 | S2 | Vague attribution ("studies show", "it is well known", "researchers have found", "experts agree") with no `\cite` in the same sentence (src S19 category "Vague attributions") | block |
 | S3 | Fabricated precision: printed decimals exceed what the ledger's uncertainty supports (more than one digit past the first significant digit of the CI half-width or SD). Also "100%" or "0%" claims without an N-ID. | block |
 | S4 | Placeholders: TODO, TBD, FIXME, XXX, `??` from undefined refs in the LaTeX log, "lorem", "[citation needed]", empty table cells | block |
@@ -708,6 +717,200 @@ data manifests, run records and the repro job (section 8), the red-team manuscri
 (default off), `UWS_RESEARCH_RETRACTION_MAX_AGE_DAYS` (warning, default 180),
 `UWS_RESEARCH_CURL` (curl binary for Crossref; tests use a stub), `UWS_RESEARCH_MAILTO`
 (optional contact in the User-Agent), `UWS_RESEARCH_CROSSREF_API` (base URL).
+
+## 11b. Field-test fixes (implemented 2026-09-30)
+
+**Field test:** the first real use of the checks was the audit of the PROMISE 2026 paper
+(section 10) at `778ab9a`: a local clone, branch `audit/research-ledger`, with 32 number
+rows, 8 claim rows, two wrapper runs and the gate output committed under
+`research/gate-output/`. Each fix below has at least one regression test in
+`tests/integration/test_research_team_fieldtest.bats` that fails on the code before the fix
+(commit `2b53533`, or the branch commit before it for the three re-run fixes); lines quoted
+from the paper are verbatim copies in `tests/fixtures/research/promise/`. An adversarial
+review of the fixes followed; its findings and their fixes are listed after the decisions.
+
+**What the field test found, and the fix:**
+
+| Finding [obs] | Fix | Rule |
+|---|---|---|
+| A result committed before its plan's freeze passed when its ledger row was added after a fresh freeze | the order is checked against when the result existed: the first commit of the output file, of its content under any name, of the run record, and the commit the run executed on | `PLAN-ORDER` |
+| "ground truth" at `01-introduction-promise.tex:33` and `03-approach.tex:120` was missed; the sentence splitter broke at the dot in `recover\_context.sh` and dropped the start of the sentence | LaTeX-aware sentences (a stop ends a sentence only before whitespace; `\_x.sh`, `0.912`, `Fig.~3`, `et al.\ ` and common abbreviations do not); only ledger macro names count as number uses, never `\textit` or `\paragraph` | C6 |
+| Hand-typed numbers escaped `NUM-SPLIT` and C3: only macro uses were judged | a row's `where` (`file:line; file:l1,l2; file#label`, text in parentheses is a note) links the hand-typed value on that line to the row; `NUM-LITERAL` names the row and its macro; a named place that does not show the value is a `NUM-WHERE` warning | `NUM-SPLIT`, `NUM-LITERAL`, C3, C6 |
+| `1.1ms`, `1.1\,ms`, `30\%` and every number in the introduction passed | integers and decimals with a unit are numbers; besides the abstract, results, conclusion and tables, the introduction, evaluation, experiments and discussion (by file name or top-level section) are result regions | `NUM-LITERAL` |
+| `printed 0.912` blocked against a stored, pre-rounded `0.9125` although the unrounded value 0.91245 prints as 0.912 | a row may name `unrounded` {run, output, pointer} of a wrapper run with the full precision, which must round to `raw` and then decides; without it a printed value that a stored-equivalent value could produce is a warning ("pre-rounded; cannot judge") | `NUM-ROUND` |
+| One number-ledger schema error printed once per check in a gate | the gate drops repeated findings | `NUM-SCHEMA` |
+| "version control best practices" was an unsupported superlative | a narrow idiom allowlist, matched as whole phrases: best practice(s), best effort, best case, at best ("to the best of our knowledge" is not on it) | S1 |
+| A script given as a run input was "unmanifested data" | `run --code <file>`: code is versioned by the run's commit, never registered as data (code extensions given as `--input`, also in older records, count as code); code missing from the recorded commit is `RUN-CODE` | `DATA-UNMANIFESTED`, `RUN-CODE` |
+| `\cite{autogen2023}` with no entry anywhere was reported like a missing download | a key that `references.bib` does not define and `bib_sources/` lacks cites nothing | `BIB-UNDEFINED` |
+| Timestamped output names (`model_results_20251122_072525.json`) could not be recorded | `--output` takes a glob, resolved after the run to the files the command wrote; the repro job finds the re-run's file by the same pattern; a glob that matches nothing is an error | `run`, `repro` |
+| A free-text split could not show the per-row split of 1,000 scenarios × 3 trials (F7) | the manifest `split` may be `{"train", "validation", "test", "group_key"}` (registered files) or `{"column", "group_key"}`; one group on both sides fails; a malformed declaration is `DATA-SPLIT`; free text is a warning | `DATA-LEAK`, `DATA-SPLIT` |
+| `research check init` needed `.workflow/state.yaml`, and from `uws` it found no project | the checks and `bib` run without workflow state, from `uws` and `research.sh`; a fallback to UWS's own `.workflow` is never used as the project's (`UWS_WORKFLOW_SOURCE`); phase actions say they need the state | `init` |
+| Ledger rows were appended by hand-written Python | `check numbers add '<json>'` / `check claims add '<json>'` fill `id`, `rev`, `supersedes` (numbers also `output_sha256`, `raw` at `pointer`, `printed`), validate the row and append it; existing lines are never touched | `numbers add`, `claims add` |
+| `macros` refused to write anything while one row was invalid | it writes the valid rows, reports each skipped row and exits 1 | `macros` |
+| `run.json` did not say which interpreter ran the command, nor which environment lock | the interpreter (resolved path, kind, version; Python is probed, other known interpreters are asked `--version`, unknown programs are recorded by path only) and `env_lock` [{path, sha256}] (`--env-lock`, else the usual lock files that exist) | `run` |
+| The gate said "KB available" where `uws kb stats` said "No KB yet" | the note quotes `uws kb stats` | gate note |
+| The scaffold could not be committed (git keeps no empty directory) | `init` writes `.gitkeep` into empty scaffold directories (not into the ignored source cache) | `init` |
+
+Re-running the gates on a copy of the audit (below) found three more, fixed the same way:
+"\textbf{First predictive models}" (`01-introduction-promise.tex:35`, the F10 example)
+passed S1, so "First" before a contribution noun now counts (never "First, we ..." or
+"First we train models"); a `where` note in parentheses produced a `NUM-WHERE` warning for
+the line that inputs the missing section; and `numbers add` refused to record the paper's
+F1 0.911 once `unrounded` showed it should print 0.912.
+
+**Decisions [decision]:**
+1. **C6 blocks only on evidence tied to the sentence**: a C-ID on it, a claim row whose
+   `where` names its line, or a ledger number in it, resting on generated data or on data
+   whose manifest `labels` is `generator-rule`. Without such a link the only evidence is that
+   some registered data has generator labels, which says nothing about this sentence, so C6
+   warns. A sentence that says the labels come from the generator passes.
+2. **S1 idioms are an explicit list**, matched as whole phrases. A pattern broad enough to
+   skip idioms would also skip claims; a missed idiom costs a C-ID or a rewording.
+3. **Pre-rounded outputs warn, never pass**: a stored value with fewer digits than the
+   printed rule needs cannot show the printed digits are right. `unrounded` names the run
+   output that can, and must round to `raw`, so it cannot point at another quantity.
+4. **A row records what the manuscript prints.** `numbers add` refuses a row for what is wrong
+   with the row (schema, references, the value at its pointer, links), but appends a row
+   whose printed value its evidence contradicts (`NUM-ROUND`, `NUM-FORMULA`), reports the
+   finding and exits 0: an audit must be able to record a misprint, and the gate keeps
+   failing until the manuscript or a later revision corrects it.
+5. **No external attestation of reproduction.** Timestamped outputs are handled by globs,
+   not by letting someone state that a number reproduced. A repro pass counts only when the
+   report was written by the repro job and its entry names the row's current run; the job
+   never passes a number without a run record, so a hand-written pass for such a number is
+   `REPRO`. The audit's own exact re-run of the training (`audit/scripts/repro_train.py`,
+   350/350 values) therefore does not clear the nine paper numbers: their command has to be
+   recorded with `run` and re-run with `repro`. A complete forged report (one naming a
+   recorded run) is not detected, because reports are not signed: review and git history are
+   the control. An L3 deny rule `Edit(/research/repro/**)` (6.7) would stop such edits
+   through Claude Code's tools, not through scripts.
+6. **Code is not data.** A script is pinned by the commit the run records; the data
+   manifest pins data by hash. Registering scripts as data would ask for a version, source
+   and split that a script does not have.
+7. **The split is declared, not inferred.** The checker tests the declared groups for
+   overlap; it does not guess which column is the independent unit. Free text stays allowed
+   (a warning), because a project may not have split files yet.
+
+**Review of the fixes [obs]:** each finding below survived an attempt to refute it. Every
+behavioural fix has a test that fails on the branch before it (`7dc9944`); a guarantee that
+no test pinned has a test that fails on a mutant removing it.
+
+| Finding | Fix | Rule |
+|---|---|---|
+| A value computed by a run before the freeze and reformatted by a run after it passed | provenance: every data input of the row and of its runs is followed to the run records that wrote that file version (same path and sha256), recursively; their records, outputs and commits are evidence | `PLAN-ORDER` |
+| After a squash merge the run's commit is gone, and `PLAN-ORDER` said the run "happened before the plan was frozen" | an unknown commit is reported as an order that cannot be shown (record the run again); each run is reported once per experiment | `PLAN-ORDER` |
+| `research check`/`bib` without a project `.workflow` created `.workflow/logs` in the current directory (uws then took it for a UWS project; the checker took it for the root, so a check from `paper/` exited 2) and wrote `decisions.log` into the installation | `research.sh` dispatches `check <name>`, `bib` and `help`, and refuses phase actions without state, before sourcing the libraries that create log directories; phase logs go to the project's `.workflow/logs` | `init` |
+| `BIB-UNDEFINED` missed `\cite{a,` + newline + `b}`, `\parencite`, `\textcite`, `\autocite`, `\footcite`, `\Citet`, `\cite {k}` and `\cites{a}{b}` | the comment-stripped file is read as a whole; every command with "cite" in its name counts except natbib's `\citetext` and `\citestyle`; the retraction check and S2 use the same reading | `BIB-UNDEFINED` |
+| A hand-appended manifest row with the same sha256 and `split: "none"` switched a blocking `DATA-LEAK` off with no trace | a row that changes the declaration (split, origin, labels, generator, seed) of unchanged content needs a reason; replacing a structured split by free text or "none" also needs a PI decision; `data add --reason` records it | `DATA-REPLACE` |
+| `numbers add` appended a revision of N-0001 that took N-0002's macro (the duplicate was reported on N-0002's line and filtered out) | the add checks the macro against every other current row | `NUM-SCHEMA` |
+| A run whose commit is not in the repository (or that names none) skipped `RUN-CODE` and passed the data_collection gate | both are blocking `RUN-CODE` findings | `RUN-CODE` |
+| `run.json` recorded a venv's base interpreter (realpath before the probe) | the probe runs the path the command invokes (`invoked`); `path` is the resolved file | `run` |
+| `--output 'artifacts/res[1].json'` was always a glob and failed; no output glob matched in a project at `.../proj [v2]` (run and repro) | a path that names an existing file is that file; glob roots are escaped | `run`, `repro` |
+| A `where` naming `paper/sec one.tex:2` was read as `one.tex:2` | a place's path is the longest text before `.tex`/`.md` in its `;` segment that names a manuscript file | `NUM-WHERE` |
+| A CSV with a UTF-8 byte-order mark (Excel "CSV UTF-8") failed a correct split as `DATA-SPLIT`; an empty unit value counted as the unit "" | CSV/TSV/JSON are read as utf-8-sig; an empty or null unit or split value is `DATA-SPLIT` | `DATA-SPLIT` |
+| "0.912 in cross-validation" and "2.5ms in the worst case" passed: "in" after a number was taken for the TeX inch | "in" is a length only attached to the number | `NUM-LITERAL` |
+| The status line said the gates name every unbuilt check; only the slop rules and INVENTORY were named | each gate names the unbuilt checks of its phases | gate notes |
+
+Guarantees that no test pinned now have one (each kills a mutant that left the suites
+green): the output-path evidence of `PLAN-ORDER`; the fallback clause that keeps phase
+actions off UWS's own `.workflow`; `uws research bib` as the first command without
+`.workflow`; the REPRO rejection of another tool's report and of an entry naming another
+run; C3 and C6 on hand-typed numbers linked by `where`; the column form of a split;
+abbreviations inside sentences; the KB note when a KB exists; the `supersedes` filled in by
+`numbers add`; and the narrowness of the S1 idiom list.
+
+Decisions of the review [decision]:
+8. **Provenance runs through run records only.** A file that a recorded run wrote is a
+   result of that run, wherever it is used next; data that no recorded run wrote (raw data,
+   a public dataset) is not a result and is not followed. Data preparation recorded with
+   `run` before the freeze therefore fails `PLAN-ORDER`, which matches the plan template
+   ("freeze ... before collecting data").
+9. **An order that cannot be shown fails, with the true reason.** A missing run commit is
+   neither "before" nor "after" the freeze; the gate fails closed and says the commit is not
+   in the repository, as `NUM-RUN`, `RUN-CODE` and the repro job already do.
+10. **A re-declaration is a recorded change.** The leak, label and disclosure checks read a
+   file's latest manifest row, so changing that row's declaration for unchanged content is a
+   change like a new version: it needs a reason, and turning the leak check off needs the PI.
+
+**Re-run of the gates on the audit** (a scratch clone of `audit/research-ledger` at
+`dfb8b1f`; every check plus the `analysis` and `publication` gates, the base checker of
+`2b53533` against this branch). Each finding was classified against the audit report
+(`audit/REPORT.md`) and the ledgers' notes: *true* (a defect the audit confirms, or a
+concrete violation of the rule), *process* (true under the tool's layout, but bookkeeping
+the audit project had not done: its pre-registration is in `audit/EXP-LEAK.md`, eight
+EXP-LEAK numbers were run outside the wrapper, no macro file, review or PI approval),
+*false*. Publication gate:
+
+| | before (`2b53533`) | after |
+|---|---|---|
+| findings (block / warn) | 138 / 3 | 173 / 13 |
+| true | 113 (110 / 3) | 159 (146 / 13) |
+| process | 20 | 20 |
+| false positives | 5, plus 3 repeated lines | 7 |
+| CV values presented as results (`NUM-SPLIT`, 10 places) | 0 | 10 |
+| "ground truth" for generator labels (4 places, C-0001) | 2 (warn) | 4 (one blocks) |
+| novelty claims without a verified claim (5 places) | 4 | 5 |
+| hand-typed result numbers (`NUM-LITERAL`) | 6 | 25 |
+| number tokens the audit found mismatched or untraceable (38 in the manuscript tree) | 0 flagged | 5 flagged |
+
+- False positives before: code as unmanifested data (3), "best practices" (1), and N-0003's
+  `0.912` (the unrounded value 0.91245 prints as 0.912). After: C3 on the 7 places that
+  print the recovery-time numbers N-0001 and N-0002. The ledger labels them
+  `synthetic-generated`, but the times are measured (on generated scenarios); see "Not
+  fixed".
+- N-0004 (`F1 0.911`, should be 0.912): before, a block that rested on the pre-rounded
+  0.9115 (the same logic produced the N-0003 false positive); after, a warning, until a
+  revision names `unrounded`. Appending the two revisions with `numbers add` turns N-0004
+  into a block and clears N-0003 (174 blocking, 11 warnings).
+- After the review fixes the re-run is unchanged: the same 173 blocking findings and 13
+  warnings in the publication gate (171 and 13 in analysis), and two more notes naming
+  unbuilt checks. The review's cases (multi-line or biblatex citations, "in" after a
+  number, squash-merged runs, venvs, bracketed paths) do not occur in the audit.
+- Still missed, before and after: statements that need reading, not patterns ("timeout
+  reduces success" is backwards; MAE at the noise level; KaVE figures from another paper;
+  DevGPT prompts called conversations; the Airflow citation names a different paper); wrong
+  years and a non-author in BibTeX entries, which BIB-REFS reports only as "not
+  downloaded"; and the evaluation section, which is missing (S4 reports it; its numbers are
+  checked only through ledger rows such as N-0007's `NUM-FORMULA`). Of the 38 number tokens
+  the audit found mismatched or untraceable, the 33 still missed are 12 numbers behind
+  `\cite` (they need the cited full texts), an uncited range (8K-128K tokens), 5 counts
+  "3,000 recovery scenarios" (1,000 scenarios × 3 trials; the number is right, its unit is
+  not), 12 numbers in the method section (generator and feature ranges, a threshold, 2,000
+  lines, and 93%/76% at `03-approach.tex:118`, which are caught in the introduction and
+  conclusion), an illustrative 30% in related work, and a table that only the
+  non-canonical `04-evaluation.tex` inputs.
+
+**Not fixed, and why:**
+1. **Measured outcomes under generated conditions.** `data_origin` describes a number as a
+   whole. The audit labelled the recovery times, measured on generated scenarios,
+   `synthetic-generated`, so C3 asks every sentence that prints them for a disclosure (the
+   7 false positives above; the abstract discloses the generation one sentence earlier).
+   Revisions labelling N-0001 and N-0002 `measured` remove exactly those 7 and nothing else
+   (re-run: 166 blocking, 13 warnings), but then no rule asks for the disclosure at all. A
+   label for "measured outcome, generated conditions" changes the vocabulary of A4
+   (section 3): a PI decision, not a checker fix.
+2. **Numbers in method sections.** `NUM-LITERAL` still covers result regions only (6.4 d).
+   Method sections are mostly design parameters; checking them needs parameter rows in the
+   ledger, which nothing produces yet. The 93%/76% at `03-approach.tex:118` stay missed
+   there; the same values are caught in the introduction and conclusion.
+3. **Statements that need reading.** Wrong directions, wrong units of a count, and citations
+   that support a different claim are the verifier's and red team's work (claim rows with
+   quotes); no pattern finds them reliably.
+4. **BibTeX metadata cross-check** (6.3 step 6) is still not built, so wrong years and
+   authors in a hand-written `references.bib` show up only as BIB-REFS.
+5. **Forged complete repro reports** are not detectable without signing reports; see
+   decision 5.
+6. **`numbers add` cannot record a number with no output file** (the paper's FPR 5.8% has
+   none): `output`, `pointer` and `output_sha256` stay required, so the audit's N-0007 can be
+   written only by hand. Making them optional would let a number enter the ledger without
+   provenance.
+7. **Provenance outside run records.** `PLAN-ORDER` cannot trace an intermediate result
+   written outside `run` (it looks like data); recording every step with `run` is the
+   remedy, not a heuristic that guesses which data files are results (decision 8).
+8. **User citation macros.** Any command with "cite" in its name counts as a citation, so
+   a user macro such as `\mycite{key}` is checked; a macro with "cite" in its name that takes
+   no keys (other than natbib's `\citetext` and `\citestyle`) would be read as citing its
+   argument. The .tex files of the PROMISE audit use no citation command but `\cite`.
 
 ## 12. Risks and failure modes
 

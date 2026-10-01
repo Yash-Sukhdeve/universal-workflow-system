@@ -37,8 +37,9 @@ find a quantitative evaluation of the rules in that paper."
    for PDFs), never typed or paraphrased. Append one row to `research/sources/index.jsonl`:
    `{"citekey":..., "text_sha256":<sha256 of the .txt>, "retrieved_at":<UTC ISO time>,
    "url":..., "access":"full"|"abstract"|"none"}`. Paywalled sources get `access: none`.
-5. Claim rows appended to `research/ledger/claims.jsonl`, one per claim the lead will rely
-   on (not every sentence of your notes), with `author: "scout"`, `status: "unverified"`,
+5. Claim rows appended to `research/ledger/claims.jsonl` with
+   `uws research check claims add '<json>'` (it fills `id` and `rev` and refuses an invalid
+   row), one per claim the lead will rely on (not every sentence of your notes), with `author: "scout"`, `status: "unverified"`,
    the category (`established_fact` or `reported_finding` for literature), and a proposed
    `sources` entry `{citekey, quote, locator}`. The quote is copied verbatim from the cached
    text (at least five words) and the locator names the page, section or table.
