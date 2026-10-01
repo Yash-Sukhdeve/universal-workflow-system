@@ -156,31 +156,19 @@ teardown() {
 # DIRECTORY STRUCTURE TESTS
 # ============================================================================
 
-@test "init_workflow.sh creates workspace directory" {
-    rm -rf "${TEST_TMP_DIR}/.workflow"
-    rm -rf "${TEST_TMP_DIR}/workspace"
+@test "init_workflow.sh creates no empty top-level directories in the project" {
+    # archive/, artifacts/ and phases/ were never used; workspace/<role>/ is created by
+    # orchestrate dispatch when a subagent needs it
+    rm -rf "${TEST_TMP_DIR}/.workflow" "${TEST_TMP_DIR}/workspace" "${TEST_TMP_DIR}/phases" "${TEST_TMP_DIR}/artifacts"
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
+    [ "$status" -eq 0 ]
 
-    [[ -d "${TEST_TMP_DIR}/workspace" ]] || false
-}
-
-@test "init_workflow.sh creates phases directory" {
-    rm -rf "${TEST_TMP_DIR}/.workflow"
-    rm -rf "${TEST_TMP_DIR}/phases"
-
-    run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
-
-    [[ -d "${TEST_TMP_DIR}/phases" ]] || false
-}
-
-@test "init_workflow.sh creates artifacts directory" {
-    rm -rf "${TEST_TMP_DIR}/.workflow"
-    rm -rf "${TEST_TMP_DIR}/artifacts"
-
-    run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
-
-    [[ -d "${TEST_TMP_DIR}/artifacts" ]] || false
+    local d
+    for d in archive artifacts phases workspace; do
+        [ ! -e "${TEST_TMP_DIR}/${d}" ]
+    done
+    [ -f "${TEST_TMP_DIR}/.workflow/state.yaml" ]
 }
 
 # ============================================================================

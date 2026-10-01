@@ -50,6 +50,7 @@ check_existing_workflow() {
         # so re-running init from an agent, CI or a hook is a safe no-op.
         if [[ ! -t 0 ]]; then
             if [[ "${UWS_FORCE_REINIT:-false}" != "true" ]]; then
+                upgrade_uws_hook
                 echo "UWS is already initialized here; leaving .workflow/ unchanged."
                 echo "To back it up and start over: UWS_FORCE_REINIT=true $0"
                 exit 0
@@ -63,6 +64,7 @@ check_existing_workflow() {
 
         read -p "Reinitialize (this will backup existing configuration)? [y/N]: " confirm
         if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            upgrade_uws_hook
             echo "Initialization cancelled."
             exit 0
         fi
@@ -150,11 +152,10 @@ create_workflow_structure() {
     echo ""
     echo "🏗️  Creating workflow structure..."
     
-    # Create directories
-    # The knowledge base is docs/kb/, created by the first `uws kb add`
+    # Create directories. Only .workflow/: nothing else goes into the project's top level
+    # (workspace/<role>/ is made by `uws orchestrate dispatch`; the knowledge base,
+    # docs/kb/, by the first `uws kb add`)
     mkdir -p .workflow/{agents,scripts,templates}
-    mkdir -p phases/{phase_1_planning,phase_2_implementation,phase_3_validation,phase_4_delivery,phase_5_maintenance}
-    mkdir -p {artifacts,workspace,archive}
     
     echo "  ✓ Directory structure created"
 }
@@ -287,6 +288,7 @@ setup_git_integration() {
 # Workflow system
 .workflow/agents/memory/*
 .workflow/*.tmp
+.workflow/checkpoints/snapshots/
 workspace/*
 !workspace/.gitkeep
 EOF
@@ -298,6 +300,7 @@ EOF
 .workflow/agents/memory/*
 .workflow/*.tmp
 .workflow/*.backup
+.workflow/checkpoints/snapshots/
 workspace/*
 !workspace/.gitkeep
 EOF
@@ -313,28 +316,47 @@ EOF
     fi
     mkdir -p "${hooks_dir}"
 
-    cat > "${hooks_dir}/pre-commit" << 'EOF'
-#!/bin/bash
-# Update workflow state before commit
+    write_uws_hook "${hooks_dir}"
+    echo "  ✓ Git hooks configured"
+}
 
-# Update timestamp in state.yaml
-if [ -f .workflow/state.yaml ]; then
-    TIMESTAMP="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
-    sed -i.bak "s/last_updated:.*/last_updated: \"${TIMESTAMP}\"/" .workflow/state.yaml
-    rm -f .workflow/state.yaml.bak
+# write_uws_hook <hooks dir>: the UWS pre-commit hook. It touches a commit only when
+# the commit already stages .workflow/state.yaml: it then refreshes last_updated in
+# that file. It never stages files the commit did not include and never writes
+# checkpoints.log. Delete .git/hooks/pre-commit to opt out.
+write_uws_hook() {
+    local hooks_dir="$1"
+    mkdir -p "${hooks_dir}"
+    cat > "${hooks_dir}/pre-commit" << 'EOF'
+#!/bin/sh
+# Update workflow state before commit (installed by UWS init, v2)
+# Only when this commit already stages .workflow/state.yaml and the file has no
+# unstaged changes: refresh its last_updated and re-stage it. Nothing else.
+if git diff --cached --name-only -- .workflow/state.yaml | grep -q . \
+    && git diff --quiet -- .workflow/state.yaml; then
+    TIMESTAMP="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)"
+    sed -i.uwsbak "s/^last_updated:.*/last_updated: \"${TIMESTAMP}\"/" .workflow/state.yaml
+    rm -f .workflow/state.yaml.uwsbak
     git add .workflow/state.yaml
 fi
-
-# Add checkpoint entry if workflow files changed
-if git diff --cached --name-only | grep -q ".workflow/"; then
-    TIMESTAMP="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S)"
-    echo "${TIMESTAMP} | AUTO | Pre-commit checkpoint" >> .workflow/checkpoints.log
-    git add .workflow/checkpoints.log
-fi
+exit 0
 EOF
-    
     chmod +x "${hooks_dir}/pre-commit"
-    echo "  ✓ Git hooks configured"
+}
+
+# The hook earlier versions installed staged .workflow/state.yaml into every commit and
+# appended "AUTO | Pre-commit checkpoint" to checkpoints.log. Re-running init replaces
+# it (only a UWS hook: its first comment line says so).
+upgrade_uws_hook() {
+    local hooks_dir hook
+    git rev-parse --git-dir > /dev/null 2>&1 || return 0
+    hooks_dir="$(git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)"
+    hook="${hooks_dir}/pre-commit"
+    [[ -f "$hook" ]] || return 0
+    grep -q "Update workflow state before commit" "$hook" 2>/dev/null || return 0
+    grep -q "installed by UWS init, v2" "$hook" 2>/dev/null && return 0
+    write_uws_hook "$hooks_dir"
+    echo "Updated the UWS pre-commit hook: it no longer stages .workflow/state.yaml into every commit."
 }
 
 # Validate workflow scripts
