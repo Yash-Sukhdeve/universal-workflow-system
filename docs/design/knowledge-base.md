@@ -756,7 +756,8 @@ Code: `scripts/kb.sh` (scope, `init`, `import`, `dispute`, R4 in `prune` and `le
 `scripts/kb_import.py` (read-only readers, Python standard library only), `scripts/orchestrate.sh`
 (`kb_brief_section`), `bin/uws` (global verbs outside a project), `tests/helpers/test_helper.bash`
 (guard). Tests: `tests/integration/test_kb_global.bats`, `test_kb_import.bats`,
-`test_kb_usage.bats`; fixture builder `tests/fixtures/kb/make_vector_db.py`. Where the build
+`test_kb_usage.bats`; fixture builder `tests/fixtures/kb/make_vector_db.py`; standard-library
+check `tests/helpers/stdlib_only.py`. Where the build
 differs from the sections above, this section wins.
 
 PI constraints for this increment: only the PI promotes (global items too) and imports create

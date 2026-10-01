@@ -63,9 +63,11 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
 - Test isolation: `tests/helpers/test_helper.bash` exports `UWS_KB_GUARD_ROOT` and a
   non-existent `UWS_GLOBAL_MEMORY_DIR`; while it is set, no KB write (items, outcomes, usage,
   caches) lands in the UWS checkout unless a test sets `UWS_KB_ALLOW_GUARDED_WRITE=1`
-- Tests: `tests/integration/test_kb_global.bats` (8), `test_kb_import.bats` (12) and
-  `test_kb_usage.bats` (14), on synthetic SQLite fixtures built with the vector-memory schema
-  (`tests/fixtures/kb/make_vector_db.py`)
+- Tests: `tests/integration/test_kb_global.bats` (15), `test_kb_import.bats` (19) and
+  `test_kb_usage.bats` (19), on synthetic SQLite fixtures built with the vector-memory schema
+  (`tests/fixtures/kb/make_vector_db.py`, which can also write custom rows and WAL databases);
+  `tests/helpers/stdlib_only.py` checks that the importer and the fixture builder import only
+  the Python standard library
 
 #### Changed
 - Approving an item retires every active item it contradicts as `disproven-by`, not only
