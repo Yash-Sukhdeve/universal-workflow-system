@@ -139,3 +139,37 @@ token() {
         [ ! -f "${PROJECT_ROOT}/.workflow/agents/sessions.yaml" ]
     fi
 }
+
+@test "start_dashboard.sh: starting one project's dashboard leaves another port's running" {
+    local p1 p2 other
+    p1="$(free_port)"; p2="$(free_port)"
+    other="$(mktemp -d)"
+    mkdir -p "$other/.workflow"
+    printf 'project_type: "software"\n' > "$other/.workflow/state.yaml"
+    # start_dashboard.sh execs the server, so $! is the server's PID; its per-port PID
+    # file goes to TMPDIR, here the test's own directory
+    cd "$PROJ"
+    TMPDIR="$PROJ" UWS_DASHBOARD_PORT="$p1" UWS_DASHBOARD_WS_PORT="$(free_port)" \
+        "${PROJECT_ROOT}/scripts/start_dashboard.sh" >/dev/null 2>&1 3>&- &
+    local first=$!
+    PIDS="$PIDS $first"
+    wait_http "$p1"
+    cd "$other"
+    TMPDIR="$PROJ" UWS_DASHBOARD_PORT="$p2" UWS_DASHBOARD_WS_PORT="$(free_port)" \
+        "${PROJECT_ROOT}/scripts/start_dashboard.sh" >/dev/null 2>&1 3>&- &
+    PIDS="$PIDS $!"
+    wait_http "$p2"
+    # the first project's dashboard was left running
+    kill -0 "$first"
+    wait_http "$p1"
+    # a restart on the same port replaces it
+    cd "$PROJ"
+    TMPDIR="$PROJ" UWS_DASHBOARD_PORT="$p1" UWS_DASHBOARD_WS_PORT="$(free_port)" \
+        "${PROJECT_ROOT}/scripts/start_dashboard.sh" >/dev/null 2>&1 3>&- &
+    PIDS="$PIDS $!"
+    sleep 1
+    wait_http "$p1"
+    run kill -0 "$first"
+    [ "$status" -ne 0 ]
+    rm -rf "$other"
+}

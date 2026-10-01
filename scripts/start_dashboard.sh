@@ -30,10 +30,23 @@ if [[ ! -f "${SCRIPT_DIR}/../dashboard/index.html" ]]; then
 fi
 
 PORT="${UWS_DASHBOARD_PORT:-8080}"
+export UWS_DASHBOARD_PORT="$PORT"
 echo "Starting UWS Dashboard for ${UWS_PROJECT_ROOT}..."
-echo "Access at: http://localhost:${PORT}"
+echo "Access at: http://localhost:${PORT} (WebSocket: port ${UWS_DASHBOARD_WS_PORT:-$((PORT + 1))})"
+echo "It runs in the foreground: press Ctrl+C to stop it."
 
-# Stop an earlier instance so the port is free
-pkill -f "${SCRIPT_DIR}/dashboard_server.py" 2>/dev/null || true
+# Stop an earlier dashboard on this port only: dashboards of other projects may be
+# running on other ports. Its PID is in a per-user, per-port file.
+PIDFILE="${TMPDIR:-/tmp}/uws-dashboard-$(id -u)-${PORT}.pid"
+old_pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+if [[ "$old_pid" =~ ^[0-9]+$ ]] && ps -p "$old_pid" -o args= 2>/dev/null | grep -q "dashboard_server.py"; then
+    kill "$old_pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 "$old_pid" 2>/dev/null || break
+        sleep 0.3
+    done
+fi
+echo "$$" > "$PIDFILE"
 
-exec python3 "${SCRIPT_DIR}/dashboard_server.py"
+# -u: unbuffered, so the server's banner and errors show up at once in logs too
+exec python3 -u "${SCRIPT_DIR}/dashboard_server.py"
