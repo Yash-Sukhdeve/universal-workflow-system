@@ -104,18 +104,18 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ "$(tail -1 "$USAGE")" = "2026-09-24T00:00:00Z	s2	-	search" ]
     # the log never dirties the tree; the session name is sanitised
     run env UWS_KB_SESSION='a b/c;d' "$UWS" kb search topic1
-    [[ "$(tail -1 "$USAGE")" == *"	a_b_c_d	K-20260101-000001	search" ]]
+    [[ "$(tail -1 "$USAGE")" == *"	a_b_c_d	K-20260101-000001	search" ]] || false
     [ -z "$(git status --porcelain)" ]
     run "$UWS" kb stats
-    [[ "$output" == *"usage on this machine: 3 retrieval(s) of 2 item(s) in 3 session(s)"* ]]
+    [[ "$output" == *"usage on this machine: 3 retrieval(s) of 2 item(s) in 3 session(s)"* ]] || false
 }
 
 @test "usage: without UWS_KB_SESSION a session is the Claude Code session, else the day" {
     seed K-20260101-000001 fact "Topic1 fact"
     run env -u UWS_KB_SESSION CLAUDE_CODE_SESSION_ID=abc-123 "$UWS" kb search topic1
-    [[ "$(tail -1 "$USAGE")" == *"	abc-123	K-20260101-000001	search" ]]
+    [[ "$(tail -1 "$USAGE")" == *"	abc-123	K-20260101-000001	search" ]] || false
     run env -u UWS_KB_SESSION -u CLAUDE_CODE_SESSION_ID "$UWS" kb search topic1
-    [[ "$(tail -1 "$USAGE")" == *"	day-2026-09-24	K-20260101-000001	search" ]]
+    [[ "$(tail -1 "$USAGE")" == *"	day-2026-09-24	K-20260101-000001	search" ]] || false
 }
 
 @test "search: function words are ignored and --min-terms asks for several matching words" {
@@ -125,10 +125,10 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ "$status" -eq 0 ]
     run "$UWS" kb search --min-terms 2 -- "Implement the login rate limiter"
     [ "$status" -eq 0 ]
-    [[ "$output" == "K-20260101-000001 "* ]]
-    [[ "$output" != *"K-20260101-000002"* ]]
+    [[ "$output" == "K-20260101-000001 "* ]] || false
+    [[ "$output" != *"K-20260101-000002"* ]] || false
     run "$UWS" kb search -- "Implement the login rate limiter"
-    [[ "$output" == *"K-20260101-000002"* ]]
+    [[ "$output" == *"K-20260101-000002"* ]] || false
     run "$UWS" kb search --min-terms x login
     [ "$status" -eq 2 ]
     # an option at the end without its value is a usage error (2), not "no match" (1)
@@ -171,13 +171,13 @@ session() {  # session <name> <words...>: one session that searches for <words>
     session s1 topic1
     session s2 topic1
     run "$UWS" kb prune
-    [[ "$output" == *"R4 (unused) not evaluated: 2 of 3 sessions of usage recorded on this machine."* ]]
+    [[ "$output" == *"R4 (unused) not evaluated: 2 of 3 sessions of usage recorded on this machine."* ]] || false
     session s3 topic1
     run "$UWS" kb prune
     [ "$status" -eq 0 ]
     local i
     for i in 2 3 4 5 6; do
-        [[ "$output" == *"R4: K-20260101-00000${i} was not retrieved in the last 3 sessions on this machine; retire it only if you agree: uws kb retire K-20260101-00000${i} unused"* ]]
+        [[ "$output" == *"R4: K-20260101-00000${i} was not retrieved in the last 3 sessions on this machine; retire it only if you agree: uws kb retire K-20260101-00000${i} unused"* ]] || false
     done
     [[ "$output" != *"K-20260101-000001 was not"* ]]   # retrieved
     [[ "$output" != *"K-20260101-0000d1"* ]]            # decisions are excluded
@@ -194,7 +194,7 @@ session() {  # session <name> <words...>: one session that searches for <words>
     # usage in any of the last 3 sessions saves an item
     session s4 topic3
     run "$UWS" kb prune
-    [[ "$output" != *"K-20260101-000003 was not"* ]]
+    [[ "$output" != *"K-20260101-000003 was not"* ]] || false
     run env UWS_KB_UNUSED_SESSIONS=0 "$UWS" kb prune
     [ "$status" -eq 2 ]
 }
@@ -206,11 +206,11 @@ session() {  # session <name> <words...>: one session that searches for <words>
     seed_six
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"r4-unused-share trusted-items: not measured yet (0 of 3 sessions of usage recorded on this machine)"* ]]
+    [[ "$output" == *"r4-unused-share trusted-items: not measured yet (0 of 3 sessions of usage recorded on this machine)"* ]] || false
     session s1 topic1; session s2 topic1; session s3 topic1
     run "$UWS" kb learn --dry-run
     [ "$status" -eq 0 ]
-    [[ "$output" == *"r4-unused-share trusted-items: 5 of 6 (83%) -> over the threshold"* ]]
+    [[ "$output" == *"r4-unused-share trusted-items: 5 of 6 (83%) -> over the threshold"* ]] || false
     [ "$(proposal_count)" -eq 0 ]
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
@@ -224,7 +224,7 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ "$(field "$p" metric_before)" = "0.83" ]
     [ "$(field "$p" target)" = "scripts/kb.sh" ]
     [ "$(field "$p" status)" = "candidate" ]
-    [[ "$(field "$p" claim)" == "Unused trusted items: 5 of 6 (83%) were not retrieved in the last 3 sessions on this machine, above 50%; proposal: halve the fact review window (180 -> 90 days)." ]]
+    [[ "$(field "$p" claim)" == "Unused trusted items: 5 of 6 (83%) were not retrieved in the last 3 sessions on this machine, above 50%; proposal: halve the fact review window (180 -> 90 days)." ]] || false
     grep -q '^source: \["file:docs/kb/.cache/usage.tsv"\]$' "$p"
     grep -q '^-        fact) echo 180 ;;$' "$p"
     grep -q '^+        fact) echo 90 ;;$' "$p"
@@ -234,7 +234,7 @@ session() {  # session <name> <words...>: one session that searches for <words>
     # the target file is untouched and a rerun proposes nothing new
     [ -z "$(git status --porcelain scripts)" ]
     run "$UWS" kb learn
-    [[ "$output" == *"r4-unused-share trusted-items: already proposed ($(basename "$p" .md))"* ]]
+    [[ "$output" == *"r4-unused-share trusted-items: already proposed ($(basename "$p" .md))"* ]] || false
     [ "$(proposal_count)" -eq 1 ]
     run env UWS_KB_LEARN_UNUSED_SHARE=1.5 "$UWS" kb learn
     [ "$status" -eq 2 ]
@@ -245,10 +245,10 @@ session() {  # session <name> <words...>: one session that searches for <words>
     seed_six
     session s1 topic1 topic2 topic3; session s2 topic4
     run "$UWS" kb learn
-    [[ "$output" == *"r4-unused-share trusted-items: 2 of 6 (33%) -> within the threshold"* ]]
+    [[ "$output" == *"r4-unused-share trusted-items: 2 of 6 (33%) -> within the threshold"* ]] || false
     rm -f "${KB}"/items/K-20260101-00000[3-6].md
     run "$UWS" kb learn
-    [[ "$output" == *"r4-unused-share trusted-items: 0 of 2 (0%) -> n < 5: no proposal"* ]]
+    [[ "$output" == *"r4-unused-share trusted-items: 0 of 2 (0%) -> n < 5: no proposal"* ]] || false
     [ "$(proposal_count)" -eq 0 ]
 }
 
@@ -261,25 +261,25 @@ session() {  # session <name> <words...>: one session that searches for <words>
     p="$(proposal_files)"; id="$(field "$p" id)"
     run "$UWS" kb approve "$id"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"measure r4-unused-share over the next 3 sessions on this machine"* ]]
+    [[ "$output" == *"measure r4-unused-share over the next 3 sessions on this machine"* ]] || false
     export UWS_KB_NOW="2026-09-25"
     session s4 topic1
     run "$UWS" kb learn
-    [[ "$output" == *"tracking ${id} (r4-unused-share, trusted-items): 1 of 3 sessions since approval"* ]]
+    [[ "$output" == *"tracking ${id} (r4-unused-share, trusted-items): 1 of 3 sessions since approval"* ]] || false
     session s5 topic1; session s6 topic1
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"${id}: did not improve (83% -> 83% over 3 sessions)"* ]]
+    [[ "$output" == *"${id}: did not improve (83% -> 83% over 3 sessions)"* ]] || false
     [ "$(proposal_count)" -eq 2 ]
     local r
     r="$(grep -l '^proposal_kind: revert$' "${KB}"/items/*.md)"
     [ "$(field "$r" reverts)" = "$id" ]
-    [[ "$(field "$r" claim)" == "Revert ${id}: r4-unused-share for trusted-items went 83% -> 83% over the 3 sessions after its approval (no improvement)." ]]
+    [[ "$(field "$r" claim)" == "Revert ${id}: r4-unused-share for trusted-items went 83% -> 83% over the 3 sessions after its approval (no improvement)." ]] || false
     grep -q '^-        fact) echo 90 ;;$' "$r"
     grep -q '^+        fact) echo 180 ;;$' "$r"
     [ "$(field "$p" followup)" = "revert-proposed:$(field "$r" id)" ]
     run "$UWS" kb learn
-    [[ "$output" == *"already proposed ($(field "$r" id))"* ]]
+    [[ "$output" == *"already proposed ($(field "$r" id))"* ]] || false
     [ "$(proposal_count)" -eq 2 ]
 }
 
@@ -295,11 +295,11 @@ session() {  # session <name> <words...>: one session that searches for <words>
     session s4 topic1 topic2 topic3; session s5 topic4 topic5; session s6 topic6
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"${id}: improved (83% -> 0% over 3 sessions); tracking closed"* ]]
+    [[ "$output" == *"${id}: improved (83% -> 0% over 3 sessions); tracking closed"* ]] || false
     [ "$(field "$p" followup)" = "improved 0.83 -> 0.00 over 3 sessions" ]
     [ "$(proposal_count)" -eq 1 ]
     run "$UWS" kb proposals
-    [[ "$output" != *"Adopted, being measured"* ]]
+    [[ "$output" != *"Adopted, being measured"* ]] || false
 }
 
 # ── TASK.md knowledge leads ─────────────────────────────────────────────────
@@ -339,11 +339,11 @@ session() {  # session <name> <words...>: one session that searches for <words>
     block="$(awk '/^```text$/ { f = 1; next } f && /^```$/ { exit } f' "$t")"
     [ "$(printf '%s\n' "$block" | wc -l | tr -d ' ')" -le 5 ]
     [ "$(printf '%s\n' "$block" | LC_ALL=C wc -c | tr -d ' ')" -le 1000 ]
-    [[ "$block" == *"|trusted|"* ]]
-    [[ "$block" != *"Candidate login"* ]]
-    [[ "$block" != *"Unrelated fact"* ]]
-    [[ "$block" != *"Only the login word"* ]]
-    [[ "$block" == *"global:K-20260101-0000a1 [lesson|trusted|reported|"* ]]
+    [[ "$block" == *"|trusted|"* ]] || false
+    [[ "$block" != *"Candidate login"* ]] || false
+    [[ "$block" != *"Unrelated fact"* ]] || false
+    [[ "$block" != *"Only the login word"* ]] || false
+    [[ "$block" == *"global:K-20260101-0000a1 [lesson|trusted|reported|"* ]] || false
     # the deliverables section and the output contract are still there, before the leads
     grep -q '^## Output Contract$' "$t"
     [ "$(grep -n '^## Output Contract$' "$t" | cut -d: -f1)" -lt "$(grep -n '^## Knowledge base leads' "$t" | cut -d: -f1)" ]
@@ -466,7 +466,7 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ "$status" -eq 0 ]
     run "$UWS" kb add --type fact --claim "Guarded" --evidence observed --source file:f:1
     [ "$status" -eq 2 ]
-    [[ "$output" == *"refusing to write the KB"*"UWS_KB_ALLOW_GUARDED_WRITE=1"* ]]
+    [[ "$output" == *"refusing to write the KB"*"UWS_KB_ALLOW_GUARDED_WRITE=1"* ]] || false
     run "$UWS" kb stats
     [ "$status" -eq 0 ]
     [ ! -e docs/kb/outcomes.tsv ]

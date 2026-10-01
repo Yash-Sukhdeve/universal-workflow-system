@@ -64,8 +64,8 @@ init_global() {
     before="$(src_state)"
     run "$UWS" kb import vector --db "${SRC}/local.db"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"added 5 candidate(s) (1 flagged suspected-fixture), 1 duplicate(s) collapsed (R7), 0 already retired, 1 skipped."* ]]
-    [[ "$output" == *"uws kb review --imported"* ]]
+    [[ "$output" == *"added 5 candidate(s) (1 flagged suspected-fixture), 1 duplicate(s) collapsed (R7), 0 already retired, 1 skipped."* ]] || false
+    [[ "$output" == *"uws kb review --imported"* ]] || false
     [ "$(src_state)" = "$before" ]
     [ "$(item_count "$KB")" -eq 5 ]
     local f
@@ -80,7 +80,7 @@ init_global() {
     # the prefix is not part of the claim; the category picks the type
     f="$(item_with "$KB" 'grep -c with')"
     [ "$(field "$f" type)" = "lesson" ]
-    [[ "$(field "$f" claim)" == "BUG: grep -c with"* ]]
+    [[ "$(field "$f" claim)" == "BUG: grep -c with"* ]] || false
     grep -q '^tags: \[import, vector-local, phase-2, implementation, tooling, bug\]$' "$f"
     [ "$(grep -c '	candidate	import:import:vector-local#' "$KB/events.tsv")" -eq 5 ]
     run "$UWS" kb lint
@@ -96,8 +96,8 @@ init_global() {
     events="$(cat "$KB/events.tsv")"
     run "$UWS" kb import vector --db "${SRC}/local.db"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"added 0 candidate(s)"* ]]
-    [[ "$output" == *"import:vector-local#4: same claim as $(id_of "$f") (R7); not imported"* ]]
+    [[ "$output" == *"added 0 candidate(s)"* ]] || false
+    [[ "$output" == *"import:vector-local#4: same claim as $(id_of "$f") (R7); not imported"* ]] || false
     [ "$(ls "$KB/items")" = "$listing" ]
     [ "$(cat "$KB/events.tsv")" = "$events" ]
 }
@@ -107,21 +107,21 @@ init_global() {
     local fx real
     fx="$(item_with "$KB" 'batch_size')"
     grep -q '^flags: \[suspected-fixture\]$' "$fx"
-    [[ "$(field "$fx" flag_detail)" == "names things absent from this project: deploy/Dockerfile, docker/compose.gpu.yml, configs/train_resnet.yaml, batch_size" ]]
+    [[ "$(field "$fx" flag_detail)" == "names things absent from this project: deploy/Dockerfile, docker/compose.gpu.yml, configs/train_resnet.yaml, batch_size" ]] || false
     # a row that names a file the project has is not flagged
     real="$(item_with "$KB" 'scripts/kb.sh')"
     run grep -q '^flags:' "$real"
     [ "$status" -eq 1 ]
     run "$UWS" kb review --imported
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$(id_of "$fx") [candidate|inferred|check:none|recommended:none|flags:suspected-fixture]"* ]]
-    [[ "$output" == *"from import:vector-local#5; names things absent from this project"* ]]
-    [[ "$output" == *"refute:"*"uws kb dispute <ID> --by <new ID>"* ]]
+    [[ "$output" == *"$(id_of "$fx") [candidate|inferred|check:none|recommended:none|flags:suspected-fixture]"* ]] || false
+    [[ "$output" == *"from import:vector-local#5; names things absent from this project"* ]] || false
+    [[ "$output" == *"refute:"*"uws kb dispute <ID> --by <new ID>"* ]] || false
     # R5 would retire a 30-day-old candidate; imports wait for the PI (decision D6)
     export UWS_KB_NOW="2026-12-24"
     run "$UWS" kb prune --apply
     [ "$status" -eq 0 ]
-    [[ "$output" == *"5 imported item(s) wait for the PI's triage"* ]]
+    [[ "$output" == *"5 imported item(s) wait for the PI's triage"* ]] || false
     [ -f "$fx" ]
     [ "$(item_count "$KB")" -eq 5 ]
 }
@@ -129,14 +129,14 @@ init_global() {
 @test "import vector: a row that looks like a secret is skipped; long rows are cut to 240 bytes" {
     run "$UWS" kb import vector --db "${SRC}/local.db"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"skip import:vector-local#6: text looks like a secret (aws-key)"* ]]
+    [[ "$output" == *"skip import:vector-local#6: text looks like a secret (aws-key)"* ]] || false
     run grep -rl 'AKIA' "$KB"
     [ "$status" -eq 1 ]
     local long claim
     long="$(item_with "$KB" 'A long lesson about checkpoints')"
     claim="$(field "$long" claim)"
     [ "$(printf '%s' "$claim" | LC_ALL=C wc -c | tr -d ' ')" -le 240 ]
-    [[ "$claim" == *"checkpoints." ]]
+    [[ "$claim" == *"checkpoints." ]] || false
     # the full text stays in the body
     [ "$(grep -o 'A long lesson about checkpoints' "$long" | wc -l | tr -d ' ')" -ge 13 ]
 }
@@ -144,9 +144,9 @@ init_global() {
 @test "import vector --dry-run writes nothing, not even the KB directory" {
     run "$UWS" kb import vector --db "${SRC}/local.db" --dry-run
     [ "$status" -eq 0 ]
-    [[ "$output" == *"would add K-20260924-"*"[fact|flag:suspected-fixture] from import:vector-local#5"* ]]
-    [[ "$output" == *"would be collapsed into it"* ]]
-    [[ "$output" == *"would add 5 candidate(s)"* ]]
+    [[ "$output" == *"would add K-20260924-"*"[fact|flag:suspected-fixture] from import:vector-local#5"* ]] || false
+    [[ "$output" == *"would be collapsed into it"* ]] || false
+    [[ "$output" == *"would add 5 candidate(s)"* ]] || false
     [ ! -e "$KB" ]
     [ -z "$(git status --porcelain)" ]
 }
@@ -213,7 +213,7 @@ init_global() {
     python3 -c 'import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); c.execute("create table t (x)"); c.commit()' "${TEST_TMP_DIR}/other.db"
     run "$UWS" kb import vector --db "${TEST_TMP_DIR}/other.db"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"not a vector-memory database"* ]]
+    [[ "$output" == *"not a vector-memory database"* ]] || false
     run "$UWS" kb import vectors --db "${SRC}/local.db"
     [ "$status" -eq 2 ]
     run "$UWS" kb import vector
@@ -226,12 +226,12 @@ init_global() {
 @test "import vector --scope global: needs the global KB repository; home paths are skipped" {
     run "$UWS" kb import vector --db "${SRC}/global.db" --scope global
     [ "$status" -eq 2 ]
-    [[ "$output" == *"not its own git repository"* ]]
+    [[ "$output" == *"not its own git repository"* ]] || false
     init_global
     run "$UWS" kb import vector --db "${SRC}/global.db" --scope global
     [ "$status" -eq 0 ]
-    [[ "$output" == *"skip import:vector-global#4: names a project or home path (/home/someone/project/notes.md)"* ]]
-    [[ "$output" == *"suspected-fixture rule not applied: a global import has no project to compare with"* ]]
+    [[ "$output" == *"skip import:vector-global#4: names a project or home path (/home/someone/project/notes.md)"* ]] || false
+    [[ "$output" == *"suspected-fixture rule not applied: a global import has no project to compare with"* ]] || false
     [ "$(item_count "$GKB")" -eq 3 ]
     local f
     f="$(item_with "$GKB" 'git stash pop')"
@@ -251,7 +251,7 @@ init_global() {
     bash_row="$(id_of "$(item_with "$GKB" 'macOS ships bash 3.2')")"
     run "$UWS" kb approve "global:${stash}"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"rests on an import (import:vector-global#1)"*"--supersedes global:${stash}"* ]]
+    [[ "$output" == *"rests on an import (import:vector-global#1)"*"--supersedes global:${stash}"* ]] || false
     # refute: counter-evidence with a verbatim quote from the git manual
     c="$("$UWS" kb add --global --type fact --claim "A git stash pop that hits conflicts keeps the stash entry" \
         --evidence reported --source url:https://git-scm.com/docs/git-stash \
@@ -264,7 +264,7 @@ init_global() {
     [ "$status" -eq 0 ]
     [ "$(field "${GKB}/items/${stash}.md" status)" = "disputed" ]
     run "$UWS" kb search --scope global --status disputed stash
-    [[ "$output" == "global:${stash} [lesson|disputed|inferred|"*"{contradicts ${c}}" ]]
+    [[ "$output" == "global:${stash} [lesson|disputed|inferred|"*"{contradicts ${c}}" ]] || false
     run "$UWS" kb approve "global:${c}"
     [ "$status" -eq 0 ]
     [ "$(field "${GKB}/retired/${stash}.md" retired_reason)" = "disproven-by:${c}" ]
@@ -284,12 +284,12 @@ init_global() {
     [ "$status" -eq 0 ]
     [ "$(field "${GKB}/retired/${bash_row}.md" retired_reason)" = "rejected:a lint enforces it already" ]
     run "$UWS" kb review --imported --global
-    [[ "$output" == *"No imported items wait for triage."* ]]
+    [[ "$output" == *"No imported items wait for triage."* ]] || false
     # a re-import does not bring triaged rows back
     run "$UWS" kb import vector --db "${SRC}/global.db" --scope global
     [ "$status" -eq 0 ]
-    [[ "$output" == *"added 0 candidate(s)"*"3 already retired"* ]]
-    [[ "$output" == *"already retired as global:${stash} (disproven-by:${c})"* ]]
+    [[ "$output" == *"added 0 candidate(s)"*"3 already retired"* ]] || false
+    [[ "$output" == *"already retired as global:${stash} (disproven-by:${c})"* ]] || false
     run "$UWS" kb lint --global
     [ "$status" -eq 0 ]
     # nothing was committed for the PI
@@ -383,12 +383,12 @@ init_global() {
     b="$("$UWS" kb add --type fact --claim "The build uses a shell script only" --evidence observed --source file:f:1 --no-conflict 2>/dev/null)"
     run "$UWS" kb dispute "$a" --by "$b"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"only a trusted item disputes it"* ]]
+    [[ "$output" == *"only a trusted item disputes it"* ]] || false
     [ "$(field "${KB}/items/${a}.md" status)" = "trusted" ]
     q="$("$UWS" kb add --type fact --claim "Reasoned from the build item" --evidence inferred --source "item:${b}" 2>/dev/null)"
     run "$UWS" kb dispute "$b" --by "$q"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"must be verified, observed or reported"* ]]
+    [[ "$output" == *"must be verified, observed or reported"* ]] || false
     run "$UWS" kb dispute "$b" --by "$b"
     [ "$status" -eq 2 ]
     run "$UWS" kb dispute "$b"
@@ -465,11 +465,11 @@ EOF
     run "$UWS" kb import automemory --dir "$mem"
     [ "$status" -eq 0 ]
     [ "$(cd "$mem" && ls -lA && cat ./*.md | git hash-object --stdin)" = "$before" ]
-    [[ "$output" == *"skip automemory#MEMORY.md: the auto-memory index: not read (--include-index imports its entries; UWS never edits it)"* ]]
-    [[ "$output" == *"skip automemory#prefers-short.md: a user memory (preference or correction): it stays in auto-memory"* ]]
-    [[ "$output" == *"skip automemory#no-emoji.md: a feedback memory"* ]]
-    [[ "$output" == *"skip automemory#loose.md: no front matter"* ]]
-    [[ "$output" == *"added 2 candidate(s) (1 flagged suspected-fixture)"* ]]
+    [[ "$output" == *"skip automemory#MEMORY.md: the auto-memory index: not read (--include-index imports its entries; UWS never edits it)"* ]] || false
+    [[ "$output" == *"skip automemory#prefers-short.md: a user memory (preference or correction): it stays in auto-memory"* ]] || false
+    [[ "$output" == *"skip automemory#no-emoji.md: a feedback memory"* ]] || false
+    [[ "$output" == *"skip automemory#loose.md: no front matter"* ]] || false
+    [[ "$output" == *"added 2 candidate(s) (1 flagged suspected-fixture)"* ]] || false
     local p r
     p="$(item_with "$KB" 'release job runs')"
     [ "$(field "$p" claim)" = "The release job runs scripts/kb.sh lint before tagging" ]
@@ -525,16 +525,16 @@ EOF
     # a dry run lists the entries and writes nothing
     run "$UWS" kb import automemory --dir "$mem" --include-index --dry-run
     [ "$status" -eq 0 ]
-    [[ "$output" == *"would add K-20260924-"*"[fact] from import:automemory#MEMORY.md:L3: RELEASE PROCESS (2026-09-01): The release job runs"* ]]
+    [[ "$output" == *"would add K-20260924-"*"[fact] from import:automemory#MEMORY.md:L3: RELEASE PROCESS (2026-09-01): The release job runs"* ]] || false
     [ ! -e "$KB" ]
     run "$UWS" kb import automemory --dir "$mem" --include-index
     [ "$status" -eq 0 ]
     [ "$(cd "$mem" && ls -lA && cat ./*.md | git hash-object --stdin)" = "$before" ]
-    [[ "$output" == *"skip automemory#MEMORY.md:L7: an index line pointing to the topic file deploy-notes.md"* ]]
-    [[ "$output" == *"skip automemory#MEMORY.md:L8: too short to be a fact"* ]]
-    [[ "$output" == *"skip import:automemory#MEMORY.md:L12: text looks like a secret (assignment)"* ]]
-    [[ "$output" == *"import:automemory#deploy-notes.md: same claim as "*" (R7); collapsed into it (source added)"* ]]
-    [[ "$output" == *"Summary: 6 record(s); added 4 candidate(s) (1 flagged suspected-fixture), 1 duplicate(s) collapsed (R7), 0 already retired, 3 skipped."* ]]
+    [[ "$output" == *"skip automemory#MEMORY.md:L7: an index line pointing to the topic file deploy-notes.md"* ]] || false
+    [[ "$output" == *"skip automemory#MEMORY.md:L8: too short to be a fact"* ]] || false
+    [[ "$output" == *"skip import:automemory#MEMORY.md:L12: text looks like a secret (assignment)"* ]] || false
+    [[ "$output" == *"import:automemory#deploy-notes.md: same claim as "*" (R7); collapsed into it (source added)"* ]] || false
+    [[ "$output" == *"Summary: 6 record(s); added 4 candidate(s) (1 flagged suspected-fixture), 1 duplicate(s) collapsed (R7), 0 already retired, 3 skipped."* ]] || false
     run grep -rl 'Zq7xYp3Lm9Rt2Wv8Ab' "$KB"
     [ "$status" -eq 1 ]
     local q d fx cmd
@@ -562,7 +562,7 @@ EOF
     "$UWS" kb pi --set "$PI" >/dev/null
     run "$UWS" kb approve "$(id_of "$q")"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"rests on an import (import:automemory#MEMORY.md:L3)"* ]]
+    [[ "$output" == *"rests on an import (import:automemory#MEMORY.md:L3)"* ]] || false
     run "$UWS" kb lint
     [ "$status" -eq 0 ]
     # a rerun changes nothing
@@ -570,13 +570,13 @@ EOF
     listing="$(ls "$KB/items")"; events="$(cat "$KB/events.tsv")"
     run "$UWS" kb import automemory --dir "$mem" --include-index
     [ "$status" -eq 0 ]
-    [[ "$output" == *"added 0 candidate(s)"* ]]
+    [[ "$output" == *"added 0 candidate(s)"* ]] || false
     [ "$(ls "$KB/items")" = "$listing" ]
     [ "$(cat "$KB/events.tsv")" = "$events" ]
     # the flag belongs to the auto-memory import only
     run "$UWS" kb import vector --db "${SRC}/local.db" --include-index
     [ "$status" -eq 2 ]
-    [[ "$output" == *"--include-index is for 'import automemory'"* ]]
+    [[ "$output" == *"--include-index is for 'import automemory'"* ]] || false
     chmod 755 "$mem"
 }
 

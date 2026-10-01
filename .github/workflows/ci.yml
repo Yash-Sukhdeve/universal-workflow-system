@@ -56,6 +56,19 @@ jobs:
             exit 1
           fi
 
+      - name: Reject test assertions that cannot fail under bash 3.2
+        run: |
+          # macOS's /bin/bash 3.2 does not apply errexit to a failing [[ ]] or (( )), so a
+          # bats line that is only `[[ ... ]]` never fails a test there: write
+          # `[[ ... ]] || false` (like the bare `! cmd` rule in CLAUDE.md). Checked in the
+          # knowledge-base increment-2 test files; add new test files to this list.
+          if grep -nE '^[[:space:]]*(\[\[ .* \]\]|\(\( .* \)\))[[:space:]]*$' \
+              tests/integration/test_kb_global.bats tests/integration/test_kb_import.bats \
+              tests/integration/test_kb_usage.bats; then
+            echo "::error::bare [[ ]] / (( )) assertion: append || false (bash 3.2 ignores its failure)"
+            exit 1
+          fi
+
       - name: Compile the research checker (Python 3 standard library only)
         run: |
           # scripts/research_check.py backs the research gates; its behaviour is tested by

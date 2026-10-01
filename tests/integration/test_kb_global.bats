@@ -95,7 +95,7 @@ EOF
     run "$UWS" kb add --global --type lesson --claim "Pin tool versions" --evidence reported \
         --source url:https://example.org --quote "pin"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"not its own git repository"*"uws kb init --global"* ]]
+    [[ "$output" == *"not its own git repository"*"uws kb init --global"* ]] || false
     # a plain directory (for example a copied KB) is not enough
     mkdir -p "$GKB"
     run "$UWS" kb add --global --type lesson --claim "Pin tool versions" --evidence reported \
@@ -103,14 +103,14 @@ EOF
     [ "$status" -eq 2 ]
     run "$UWS" kb init --global
     [ "$status" -eq 0 ]
-    [[ "$output" == *"as its own git repository"* ]]
+    [[ "$output" == *"as its own git repository"* ]] || false
     [ "$(cd "$(git -C "$GKB" rev-parse --show-toplevel)" && pwd -P)" = "$(cd "$GKB" && pwd -P)" ]
     grep -qx '.cache/' "$GKB/.gitignore"
     run "$UWS" kb init --global
-    [[ "$output" == *"already initialised"* ]]
+    [[ "$output" == *"already initialised"* ]] || false
     gid add --global --type lesson --claim "Pin tool versions" --evidence reported \
         --source url:https://example.org --quote "pin"
-    [[ "$KB_RAW" =~ ^global:K-20260924-[0-9a-f]{6}$ ]]
+    [[ "$KB_RAW" =~ ^global:K-20260924-[0-9a-f]{6}$ ]] || false
     [ "$(field "$GKB/items/${KB_OUT}.md" scope)" = "global" ]
     grep -q "	${KB_OUT}	-	candidate	add	" "$GKB/events.tsv"
     # nothing went to the project KB, and nothing was committed for the user
@@ -161,7 +161,7 @@ EOF
     run "$UWS" kb add --global --type fact --claim "The checker lives in scripts/kb.sh" --evidence reported \
         --source url:https://example.org --quote "q"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"must not name a project or home path (scripts/kb.sh)"* ]]
+    [[ "$output" == *"must not name a project or home path (scripts/kb.sh)"* ]] || false
     run "$UWS" kb add --global --type fact --claim "Notes are in /home/alice/notes.md" --evidence reported \
         --source url:https://example.org --quote "q"
     [ "$status" -eq 2 ]
@@ -178,7 +178,7 @@ EOF
     sed -e 's|^claim: .*|claim: "See /home/alice/x"|' "$f" > "$f.new" && mv "$f.new" "$f"
     run "$UWS" kb lint --global
     [ "$status" -eq 1 ]
-    [[ "$output" == *"I8 ${KB_OUT}: global claim names a project or home path (/home/alice/x)"* ]]
+    [[ "$output" == *"I8 ${KB_OUT}: global claim names a project or home path (/home/alice/x)"* ]] || false
     # --escaped-from is project-only
     run "$UWS" kb add --global --type lesson --claim "Escaped" --evidence reported \
         --source url:https://example.org --quote "q" --escaped-from verification
@@ -263,7 +263,7 @@ EOF
     "$UWS" kb pi --set "$PI" >/dev/null
     run "$UWS" kb approve "global:${id}"
     [ "$status" -eq 6 ]
-    [[ "$output" == *"no PI configured"* ]]
+    [[ "$output" == *"no PI configured"* ]] || false
     run env CLAUDECODE=1 "$UWS" kb pi --set "$PI" --global
     [ "$status" -eq 6 ]
     "$UWS" kb pi --set "$PI" --global >/dev/null
@@ -277,12 +277,12 @@ EOF
     git -C "$GKB" config user.email "$PI"
     run "$UWS" kb approve "global:${id}"
     [ "$status" -eq 0 ]
-    [[ "$output" == "global:${id}: candidate -> trusted (approved by ${PI})" ]]
+    [[ "$output" == "global:${id}: candidate -> trusted (approved by ${PI})" ]] || false
     [ "$(field "$GKB/items/${id}.md" reviewer)" = "$PI" ]
     # show finds a global item with or without the prefix
     run "$UWS" kb show "global:${id}"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"id: ${id}"* ]]
+    [[ "$output" == *"id: ${id}"* ]] || false
     run "$UWS" kb show "$id"
     [ "$status" -eq 0 ]
     run "$UWS" kb lint --global
@@ -370,13 +370,13 @@ EOF
     local line
     while IFS= read -r line; do [ "$(printf '%s' "$line" | LC_ALL=C wc -c | tr -d ' ')" -le 200 ]; done <<< "$output"
     # verified global lessons outrank observed project notes, and are marked
-    [[ "$(printf '%s\n' "$output" | head -1)" == "global:K-20260924-aa"*" [lesson|trusted|verified|2026-09-24] Global test lesson"* ]]
-    [[ "$output" == *$'\n'"K-20260924-0000"* ]]
+    [[ "$(printf '%s\n' "$output" | head -1)" == "global:K-20260924-aa"*" [lesson|trusted|verified|2026-09-24] Global test lesson"* ]] || false
+    [[ "$output" == *$'\n'"K-20260924-0000"* ]] || false
     run "$UWS" kb search --scope project test
-    [[ "$output" != *"global:"* ]]
+    [[ "$output" != *"global:"* ]] || false
     run "$UWS" kb search --scope global test
     [ "$(printf '%s\n' "$output" | grep -c '^global:K-' || true)" -eq 3 ]
-    [[ "$output" != *"Project test note"* ]]
+    [[ "$output" != *"Project test note"* ]] || false
     run "$UWS" kb search --scope everywhere test
     [ "$status" -eq 2 ]
     run "$UWS" kb learn --global
@@ -429,7 +429,7 @@ EOF
     [ "$(field "$GKB/retired/${id}.md" retired_reason)" = "unpromoted" ]
     [ ! -e "$KB/outcomes.tsv" ]
     run "$UWS" kb stats --global
-    [[ "$output" == "Global KB ${GKB}: 0 active"*"1 retired"* ]]
+    [[ "$output" == "Global KB ${GKB}: 0 active"*"1 retired"* ]] || false
 }
 
 @test "uws kb <verb> --global works outside any UWS project; project verbs still need one" {
@@ -444,10 +444,10 @@ EOF
     [ "$status" -eq 0 ]
     run "$UWS" kb stats --global
     [ "$status" -eq 0 ]
-    [[ "$output" == *"1 active"* ]]
+    [[ "$output" == *"1 active"* ]] || false
     run "$UWS" kb stats
     [ "$status" -eq 1 ]
-    [[ "$output" == *"No UWS project found"* ]]
+    [[ "$output" == *"No UWS project found"* ]] || false
     cd "$TEST_TMP_DIR"
     rm -rf "$elsewhere"
 }
@@ -457,20 +457,20 @@ EOF
     gid add --scope global --type lesson --claim "Scoped lesson about retry jitter" --evidence reported \
         --source url:https://example.org/doc --quote "a verbatim line"
     local id="$KB_OUT"
-    [[ "$id" =~ ^K-20260924-[0-9a-f]{6}$ ]]
+    [[ "$id" =~ ^K-20260924-[0-9a-f]{6}$ ]] || false
     [ -f "$GKB/items/${id}.md" ]
     [ "$(field "$GKB/items/${id}.md" scope)" = "global" ]
     [ ! -e "$KB/items/${id}.md" ]
     run "$UWS" kb show --scope global "$id"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"id: ${id}"* ]]
-    [[ "$output" == *"scope: global"* ]]
+    [[ "$output" == *"id: ${id}"* ]] || false
+    [[ "$output" == *"scope: global"* ]] || false
     run "$UWS" kb show --scope=global "$id"
     [ "$status" -eq 0 ]
     # candidates are searched with --status; the hit is marked global
     run "$UWS" kb search --scope global --status candidate jitter
     [ "$status" -eq 0 ]
-    [[ "$output" == "global:${id} [lesson|candidate|reported|"* ]]
+    [[ "$output" == "global:${id} [lesson|candidate|reported|"* ]] || false
     run "$UWS" kb search --scope project --status candidate jitter
     [ "$status" -eq 1 ]
     # a project-only verb is refused with the global scope
@@ -484,8 +484,8 @@ EOF
     "$UWS" kb add --type fact --claim "f has one line" --evidence observed --source file:f:1 >/dev/null 2>&1
     run "$UWS" kb stats
     [ "$status" -eq 0 ]
-    [[ "$output" == *"KB docs/kb: 1 active"* ]]
-    [[ "$output" == *"global KB ${GKB}: 0 trusted, 0 stale, 0 disputed, 1 candidate, 0 retired"* ]]
+    [[ "$output" == *"KB docs/kb: 1 active"* ]] || false
+    [[ "$output" == *"global KB ${GKB}: 0 trusted, 0 stale, 0 disputed, 1 candidate, 0 retired"* ]] || false
     run "$UWS" kb stats --short --global
-    [[ "$output" == "Global KB: 0 trusted, 0 stale, 0 disputed, 1 to review."* ]]
+    [[ "$output" == "Global KB: 0 trusted, 0 stale, 0 disputed, 1 to review."* ]] || false
 }
