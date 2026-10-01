@@ -1716,7 +1716,10 @@ _INT_NOT_UNITS = ("s", "h")
 NUM_PREFIX_EXEMPT = re.compile(
     r"(?:Section|Sec\.|Sections|§|Table|Tab\.|Fig\.|Figure|Eq\.|Equation|Algorithm|Alg\.|Appendix|"
     r"Chapter|Theorem|Lemma|Definition|v|version|Version|Python|release|RFC|ISO|IEEE)\s*~?\s*$")
-NUM_SUFFIX_EXEMPT = re.compile(r"^\s*\\?(?:textwidth|linewidth|columnwidth|textheight|cm|mm|pt|em|ex|in|bp|pc)\b")
+# A TeX length after a number is not a result: 0.45\textwidth, 0.5 cm, 2 pt. `in` (inches)
+# counts only attached to the number, because the English word follows numbers in prose
+# ("0.912 in cross-validation", "2.5ms in the worst case").
+NUM_SUFFIX_EXEMPT = re.compile(r"^(?:\s*\\(?:textwidth|linewidth|columnwidth|textheight)|\s*(?:cm|mm|pt|em|ex|bp|pc)|in)\b")
 LITERAL_RE = re.compile(r"uws:literal\b(.*)")
 
 # Where results are reported (design 6.4 d): the abstract, tables and figures, and files or

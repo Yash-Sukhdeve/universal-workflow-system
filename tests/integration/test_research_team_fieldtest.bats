@@ -260,6 +260,19 @@ EOF
     [[ "$output" != *"number 3:"* ]]
 }
 
+@test "P1 NUM-LITERAL: a number followed by the word 'in' is a number; a length such as 0.45\\textwidth is not" {
+    printf '\n\\section{Discussion}\nThe AUC was 0.912 in cross-validation.\nRecovery takes 2.5ms in the worst case.\n\\parbox{0.45\\textwidth}{A box} and \\parbox{0.3 \\linewidth}{another}.\n' >> "$P/paper/main.tex"
+    local l
+    l="$(line_of 'The AUC was 0.912 in')"
+    run check numbers
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 0.912:"* ]]
+    [[ "$output" == *"main.tex:$((l + 1)) NUM-LITERAL hand-typed number 2.5ms:"* ]]
+    [[ "$output" != *"number 0.45"* ]]
+    [[ "$output" != *"number 0.3"* ]]
+}
+
 @test "P1 NUM-LITERAL: the real PROMISE abstract and introduction numbers are all caught" {
     { printf '\n\\section{Introduction}\n'; cat "$PROMISE/intro-findings.tex"; printf '\n'; cat "$PROMISE/abstract.tex"; } >> "$P/paper/main.tex"
     local li la
