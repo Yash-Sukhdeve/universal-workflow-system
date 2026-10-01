@@ -91,6 +91,23 @@ jobs:
           # connection and backup API (Python 3.7+)
           python3 -c 'import sqlite3, sys; assert sys.version_info >= (3, 7); print("sqlite", sqlite3.sqlite_version)'
 
+      - name: Reject sourcing from process substitution (reads nothing on bash 3.2)
+        run: |
+          if grep -rnE '^[^#]*(^|[;&|[:space:]])(source|\.)[[:space:]]+<\(' scripts bin tests --include='*.sh' --include='*.bash' --include='*.bats' --include=uws; then
+            echo "::error::'source <(...)' silently reads nothing on bash 3.2 (macOS); write to a temp file and source that"
+            exit 1
+          fi
+
+      - name: Reject bats assertions that cannot fail on macOS
+        run: |
+          # Under bash 3.2 (macOS /bin/bash) a failing [[ ]] that is not the last
+          # command of a test does not trip errexit, so the assertion is a no-op.
+          # Write `[[ ... ]] || false` (or use [ ], run + $status checks).
+          if grep -rnE '^[[:space:]]+\[\[ .* \]\][[:space:]]*$' tests --include='*.bats' --include='*.bash'; then
+            echo "::error::bare [[ ]] assertion in a bats test: append '|| false' (bash 3.2 ignores it otherwise)"
+            exit 1
+          fi
+
       - name: Lint user-facing entry points (warnings fail)
         run: |
           # These run on users' machines, so they get the stricter warning level

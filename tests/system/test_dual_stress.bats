@@ -97,7 +97,7 @@ teardown() {
     # Operations should still work
     run "${SCRIPTS_DIR}/status.sh" 2>/dev/null
     # May succeed or handle gracefully
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]] || false
 }
 
 @test "Large handoff.md (>50KB)" {
@@ -192,7 +192,7 @@ teardown() {
     run "${SCRIPTS_DIR}/recover_context.sh" 2>/dev/null
 
     # Should either recover or fail gracefully
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]] || false
 
     # Restore for cleanup
     mv .workflow/state.yaml.bak .workflow/state.yaml 2>/dev/null || true
@@ -210,7 +210,7 @@ teardown() {
     run "${SCRIPTS_DIR}/recover_context.sh" 2>/dev/null
 
     # Should not crash
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]] || false
 }
 
 @test "Network timeout simulation (Gemini API)" {

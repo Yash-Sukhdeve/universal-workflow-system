@@ -74,19 +74,19 @@ ingest_wakefield() {
 @test "gates: the increment-2 checks run; only rules that are still unimplemented are listed as unchecked" {
     run check gate analysis
     [ "$status" -eq 1 ]
-    [[ "$output" == *"REPRO N-0001 has never been reproduced"* ]]
+    [[ "$output" == *"REPRO N-0001 has never been reproduced"* ]] || false
     research_make_reproducible
     local phase
     for phase in experiment_design data_collection analysis peer_review publication; do
         run check gate "$phase"
         echo "$phase: $output"
         [ "$status" -eq 0 ]
-        [[ "$output" != *"increment 2"* ]]
+        [[ "$output" != *"increment 2"* ]] || false
     done
     run check gate experiment_design
-    [[ "$output" != *"not checked yet: slop"* ]]
+    [[ "$output" != *"not checked yet: slop"* ]] || false
     run check gate analysis
-    [[ "$output" == *"not checked yet: slop rules S3"* ]]
+    [[ "$output" == *"not checked yet: slop rules S3"* ]] || false
 }
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
@@ -99,11 +99,11 @@ ingest_wakefield() {
         research_state "$phase"
         run "${SCRIPTS_DIR}/orchestrate.sh" status --methodology research
         [ "$status" -eq 0 ]
-        [[ "$output" == *"uws-${agent}.md"* ]]
+        [[ "$output" == *"uws-${agent}.md"* ]] || false
     done
     run "${SCRIPTS_DIR}/orchestrate.sh" dispatch --methodology research --agent rt-writer "Draft the results section"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"DISPATCH: agent=rt-writer subagent=.claude/agents/uws-rt-writer.md"* ]]
+    [[ "$output" == *"DISPATCH: agent=rt-writer subagent=.claude/agents/uws-rt-writer.md"* ]] || false
     grep -q "research/ledger/claims.jsonl" "$P/workspace/rt-writer/TASK.md"
     run grep -q "REQ-ID" "$P/workspace/rt-writer/TASK.md"
     [ "$status" -ne 0 ]
@@ -126,9 +126,9 @@ ingest_wakefield() {
 @test "hook: the SubagentStop matcher covers the new research roles" {
     local matcher
     matcher="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hooks"]["SubagentStop"][0]["matcher"])' "${PROJECT_ROOT}/plugins/uws/hooks/hooks.json")"
-    [[ "uws-rt-methodologist" =~ $matcher ]]
-    [[ "uws:uws-rt-engineer" =~ $matcher ]]
-    [[ "uws-rt-writer" =~ $matcher ]]
+    [[ "uws-rt-methodologist" =~ $matcher ]] || false
+    [[ "uws:uws-rt-engineer" =~ $matcher ]] || false
+    [[ "uws-rt-writer" =~ $matcher ]] || false
 }
 
 # ── Plan freeze (pre-registration) ───────────────────────────────────────────
@@ -139,28 +139,28 @@ ingest_wakefield() {
     [ -f "$P/research/experiments/EXP-NEW/plan.md" ]
     run check plan new EXP-NEW
     [ "$status" -eq 1 ]
-    [[ "$output" == *"never overwritten"* ]]
+    [[ "$output" == *"never overwritten"* ]] || false
     run check plan freeze EXP-NEW
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-FIELDS"* ]]
-    [[ "$output" == *"cannot be pre-registered"* ]]
+    [[ "$output" == *"PLAN-FIELDS"* ]] || false
+    [[ "$output" == *"cannot be pre-registered"* ]] || false
     run grep -q "EXP-NEW" "$P/research/ledger/plans.jsonl"
     [ "$status" -ne 0 ]
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"EXP-NEW: 'hypothesis' is missing or empty"* ]]
-    [[ "$output" == *"PLAN-FREEZE"* ]]
+    [[ "$output" == *"EXP-NEW: 'hypothesis' is missing or empty"* ]] || false
+    [[ "$output" == *"PLAN-FREEZE"* ]] || false
 }
 
 @test "experiment_design gate: no plan, or an unfrozen plan, blocks; freezing passes" {
     fresh_project
     run check gate experiment_design
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-FREEZE no experiment plan"* ]]
+    [[ "$output" == *"PLAN-FREEZE no experiment plan"* ]] || false
     write_plan EXP-A
     run check gate experiment_design
     [ "$status" -eq 1 ]
-    [[ "$output" == *"EXP-A is not frozen"* ]]
+    [[ "$output" == *"EXP-A is not frozen"* ]] || false
     run check plan freeze EXP-A
     [ "$status" -eq 0 ]
     run check gate experiment_design
@@ -173,11 +173,11 @@ ingest_wakefield() {
     printf 'Also report the fold SD.\n' >> "$P/research/experiments/EXP-B/plan.md"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-DRIFT EXP-B changed after it was frozen"* ]]
-    [[ "$output" == *"no results exist yet"* ]]
+    [[ "$output" == *"PLAN-DRIFT EXP-B changed after it was frozen"* ]] || false
+    [[ "$output" == *"no results exist yet"* ]] || false
     run check plan freeze EXP-B
     [ "$status" -eq 0 ]
-    [[ "$output" == *"froze EXP-B rev 2"* ]]
+    [[ "$output" == *"froze EXP-B rev 2"* ]] || false
     run check plan
     [ "$status" -eq 0 ]
 }
@@ -188,7 +188,7 @@ ingest_wakefield() {
     commit_all "results first"
     run check plan freeze EXP-POST
     [ "$status" -eq 1 ]
-    [[ "$output" == *"already exist (N-0002)"* ]]
+    [[ "$output" == *"already exist (N-0002)"* ]] || false
     # An agent that writes the freeze row by hand instead of using the tool:
     python3 - "$P" << 'EOF'
 import hashlib, json, os, sys
@@ -201,8 +201,8 @@ EOF
     commit_all "freeze after results"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-ORDER EXP-POST: N-0002 was committed in"* ]]
-    [[ "$output" == *"not after the plan was frozen"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-POST: N-0002 was committed in"* ]] || false
+    [[ "$output" == *"not after the plan was frozen"* ]] || false
 }
 
 @test "plan: results with an uncommitted freeze, or committed together with it, fail PLAN-ORDER" {
@@ -211,27 +211,27 @@ EOF
     add_number '{"id":"N-0002","exp":"EXP-C","data_origin":"measured"}'
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"EXP-C: the freeze is not committed, but results exist (N-0002)"* ]]
+    [[ "$output" == *"EXP-C: the freeze is not committed, but results exist (N-0002)"* ]] || false
     commit_all "freeze and results together"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-ORDER EXP-C: N-0002 was committed in"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-C: N-0002 was committed in"* ]] || false
 }
 
 @test "plan: changing a frozen plan after results is a deviation that needs a recorded PI decision" {
     printf 'An extra control, added after the results were seen.\n' >> "$P/research/experiments/EXP-LEAK/plan.md"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-DRIFT EXP-LEAK changed after it was frozen"* ]]
-    [[ "$output" == *"results exist (N-0001)"* ]]
+    [[ "$output" == *"PLAN-DRIFT EXP-LEAK changed after it was frozen"* ]] || false
+    [[ "$output" == *"results exist (N-0001)"* ]] || false
     run check plan freeze EXP-LEAK --reason "added a control"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"is a deviation"* ]]
+    [[ "$output" == *"is a deviation"* ]] || false
     run check plan freeze EXP-LEAK --reason "added a control" --pi-decision D-099
     [ "$status" -eq 1 ]
     run check plan freeze EXP-LEAK --reason "added a control" --pi-decision D-001
     [ "$status" -eq 0 ]
-    [[ "$output" == *"deviation DEV-001, D-001"* ]]
+    [[ "$output" == *"deviation DEV-001, D-001"* ]] || false
     grep -q '^| DEV-001 | .* | added a control | D-001 |$' "$P/research/experiments/EXP-LEAK/deviations.md"
     commit_all "deviation"
     run check plan
@@ -254,7 +254,7 @@ EOF
     commit_all "silent re-freeze"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-DEVIATION EXP-LEAK@2 re-froze the plan after results existed without a reason, a PI decision ID"* ]]
+    [[ "$output" == *"PLAN-DEVIATION EXP-LEAK@2 re-froze the plan after results existed without a reason, a PI decision ID"* ]] || false
 }
 
 @test "plan: a freeze row edited in place after results counts from the edit, so it fails PLAN-ORDER" {
@@ -273,19 +273,19 @@ EOF
     commit_all "later work"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" != *"PLAN-APPEND"* ]]
-    [[ "$output" == *"PLAN-ORDER EXP-LEAK: N-0001 was committed in"* ]]
+    [[ "$output" != *"PLAN-APPEND"* ]] || false
+    [[ "$output" == *"PLAN-ORDER EXP-LEAK: N-0001 was committed in"* ]] || false
 }
 
 @test "plan: every result names its experiment or is labelled exploratory (PLAN-LINK)" {
     add_revision N-0001 '{"exp": null}'
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-LINK N-0001: set exp"* ]]
+    [[ "$output" == *"PLAN-LINK N-0001: set exp"* ]] || false
     add_revision N-0001 '{"exp": "EXP-NOPE"}'
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"N-0001: exp EXP-NOPE has no research/experiments/EXP-NOPE/plan.md"* ]]
+    [[ "$output" == *"N-0001: exp EXP-NOPE has no research/experiments/EXP-NOPE/plan.md"* ]] || false
     add_revision N-0001 '{"exp": "exploratory"}'
     run check plan
     [ "$status" -eq 0 ]
@@ -294,11 +294,11 @@ EOF
 @test "run: --exp needs a frozen plan, and run records are never overwritten" {
     run check run --exp EXP-NONE -- true
     [ "$status" -eq 1 ]
-    [[ "$output" == *"EXP-NONE has no frozen plan"* ]]
+    [[ "$output" == *"EXP-NONE has no frozen plan"* ]] || false
     research_make_reproducible
     run check run --id RUN-0001 --exp exploratory -- true
     [ "$status" -eq 1 ]
-    [[ "$output" == *"never overwritten"* ]]
+    [[ "$output" == *"never overwritten"* ]] || false
 }
 
 # ── Data manifest ─────────────────────────────────────────────────────────────
@@ -324,14 +324,14 @@ EOF
                 --generator research/code/gen_unseeded.py --labels generator-rule)
     run check "${args[@]}"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"needs --seed"* ]]
+    [[ "$output" == *"needs --seed"* ]] || false
     run check "${args[@]}" --seed unrecorded
     [ "$status" -eq 0 ]
-    [[ "$output" == *"is not a recorded seed"* ]]
+    [[ "$output" == *"is not a recorded seed"* ]] || false
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-SEED research/data/raw/scenarios.csv was generated without a recorded seed"* ]]
-    [[ "$output" == *"gen_unseeded.py draws random values (random.random() at line 8) but never sets a seed"* ]]
+    [[ "$output" == *"DATA-SEED research/data/raw/scenarios.csv was generated without a recorded seed"* ]] || false
+    [[ "$output" == *"gen_unseeded.py draws random values (random.random() at line 8) but never sets a seed"* ]] || false
 }
 
 @test "data: a generator that builds its RNG without a seed is reported even when a seed is claimed" {
@@ -356,7 +356,7 @@ EOF
     [ "$status" -eq 0 ]
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"its generator research/code/gen_rng.py:7 creates np.random.default_rng() without a seed"* ]]
+    [[ "$output" == *"its generator research/code/gen_rng.py:7 creates np.random.default_rng() without a seed"* ]] || false
 }
 
 @test "data: hash drift in registered data fails DATA-HASH; a missing file fails DATA-MISSING" {
@@ -364,11 +364,11 @@ EOF
     printf 'cv,6,0.9\n' >> "$P/research/data/raw/gb_scores.csv"
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-HASH research/data/raw/gb_scores.csv changed after it was registered"* ]]
+    [[ "$output" == *"DATA-HASH research/data/raw/gb_scores.csv changed after it was registered"* ]] || false
     rm -f "$P/research/data/raw/gb_scores.csv"
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-MISSING research/data/raw/gb_scores.csv is registered but missing"* ]]
+    [[ "$output" == *"DATA-MISSING research/data/raw/gb_scores.csv is registered but missing"* ]] || false
 }
 
 @test "PROMISE: an input picked by modification time and never archived fails C5 and DATA-UNMANIFESTED" {
@@ -397,22 +397,22 @@ EOF
     add_number '{"id":"N-0002","run":"RUN-0001","exp":"exploratory","data_origin":"measured"}'
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-UNMANIFESTED N-0002: input research/data/processed/training_data_20251122.csv is not in research/data/manifest.jsonl"* ]]
+    [[ "$output" == *"DATA-UNMANIFESTED N-0002: input research/data/processed/training_data_20251122.csv is not in research/data/manifest.jsonl"* ]] || false
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"research/code/train.py:7 C5 input chosen by modification time"* ]]
+    [[ "$output" == *"research/code/train.py:7 C5 input chosen by modification time"* ]] || false
 }
 
 @test "data: unregistered raw data and a number with no inputs are reported" {
     printf 'x\n' > "$P/research/data/raw/extra.csv"
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"research/data/raw/extra.csv:1 DATA-UNMANIFESTED raw data file is not in research/data/manifest.jsonl"* ]]
+    [[ "$output" == *"research/data/raw/extra.csv:1 DATA-UNMANIFESTED raw data file is not in research/data/manifest.jsonl"* ]] || false
     rm "$P/research/data/raw/extra.csv"
     add_revision N-0001 '{"inputs": null}'
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-NOINPUT N-0001 names no run and no inputs"* ]]
+    [[ "$output" == *"DATA-NOINPUT N-0001 names no run and no inputs"* ]] || false
 }
 
 @test "data: a hand-written run record is incomplete (RUN-SCHEMA)" {
@@ -420,7 +420,7 @@ EOF
     printf '{"id":"RUN-0009","exit_code":0,"git_commit":"abc"}\n' > "$P/research/runs/RUN-0009/run.json"
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"RUN-SCHEMA RUN-0009: missing 'command'"* ]]
+    [[ "$output" == *"RUN-SCHEMA RUN-0009: missing 'command'"* ]] || false
 }
 
 @test "data add: a new version needs a reason, and replacing raw data needs a PI decision" {
@@ -430,10 +430,10 @@ EOF
                 --origin synthetic-generated --generator research/code/gen_scores.py --seed 7 --labels none)
     run check "${args[@]}"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"needs --reason"* ]]
+    [[ "$output" == *"needs --reason"* ]] || false
     run check "${args[@]}" --reason "sixth fold"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"needs --pi-decision"* ]]
+    [[ "$output" == *"needs --pi-decision"* ]] || false
     run check "${args[@]}" --reason "sixth fold" --pi-decision D-001
     [ "$status" -eq 0 ]
     [ ! -w "$P/research/data/raw/gb_scores.csv" ] || [ "$(id -u)" -eq 0 ]
@@ -450,7 +450,7 @@ EOF
         --reason "sixth fold" --pi-decision D-001 >/dev/null
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-RUNHASH N-0001: RUN-0001 used research/data/raw/gb_scores.csv version 15756d4e4a35"* ]]
+    [[ "$output" == *"DATA-RUNHASH N-0001: RUN-0001 used research/data/raw/gb_scores.csv version 15756d4e4a35"* ]] || false
 }
 
 # ── Run records and the repro job ────────────────────────────────────────────
@@ -488,7 +488,7 @@ EOF
     scratch_tmp="$(mktemp -d)"
     TMPDIR="$scratch_tmp" run check repro all
     [ "$status" -eq 0 ]
-    [[ "$output" == *"N-0001 pass RUN-0001: expected 0.9125, observed 0.9125 (exact)"* ]]
+    [[ "$output" == *"N-0001 pass RUN-0001: expected 0.9125, observed 0.9125 (exact)"* ]] || false
     # the scratch copy is removed afterwards
     [ -z "$(ls -A "$scratch_tmp")" ]
     rm -rf "$scratch_tmp"
@@ -517,8 +517,8 @@ EOF
     commit_all "noisy number"
     run check repro N-0002
     [ "$status" -eq 1 ]
-    [[ "$output" == *"REPRO N-0002: re-run gives"* ]]
-    [[ "$output" == *"(tolerance exact)"* ]]
+    [[ "$output" == *"REPRO N-0002: re-run gives"* ]] || false
+    [[ "$output" == *"(tolerance exact)"* ]] || false
     add_revision N-0002 '{"tolerance": {"kind": "abs", "value": 1.0}}'
     commit_all "tolerance"
     run check repro N-0002
@@ -528,12 +528,12 @@ EOF
 @test "repro: a command that does not write its output fails, even when a committed copy exists" {
     run check run --exp EXP-LEAK --output artifacts/model_results.json -- python3 -c pass
     [ "$status" -eq 0 ]
-    [[ "$output" == *"were not rewritten"* ]]
+    [[ "$output" == *"were not rewritten"* ]] || false
     add_revision N-0001 '{"run": "RUN-0001"}'
     commit_all "run that writes nothing"
     run check repro N-0001
     [ "$status" -eq 1 ]
-    [[ "$output" == *"the re-run did not write artifacts/model_results.json"* ]]
+    [[ "$output" == *"the re-run did not write artifacts/model_results.json"* ]] || false
 }
 
 @test "repro: a run recorded on an uncommitted tree cannot be reproduced" {
@@ -541,11 +541,11 @@ EOF
     run check run --exp EXP-LEAK --input research/data/raw/gb_scores.csv --output artifacts/model_results.json -- \
         python3 research/code/make_results.py research/data/raw/gb_scores.csv artifacts/model_results.json
     [ "$status" -eq 0 ]
-    [[ "$output" == *"uncommitted changes"* ]]
+    [[ "$output" == *"uncommitted changes"* ]] || false
     add_revision N-0001 '{"run": "RUN-0001"}'
     run check repro N-0001
     [ "$status" -eq 1 ]
-    [[ "$output" == *"was recorded on a working tree with uncommitted changes"* ]]
+    [[ "$output" == *"was recorded on a working tree with uncommitted changes"* ]] || false
 }
 
 @test "repro: a re-run that writes into the original project is reported" {
@@ -568,7 +568,7 @@ EOF
     commit_all "mutating number"
     run check repro N-0002
     [ "$status" -eq 1 ]
-    [[ "$output" == *"changed files in the original project (artifacts/mut.json)"* ]]
+    [[ "$output" == *"changed files in the original project (artifacts/mut.json)"* ]] || false
 }
 
 @test "repro: a number revised after its repro re-opens the analysis gate" {
@@ -577,7 +577,7 @@ EOF
     commit_all "revise N-0001"
     run check gate analysis
     [ "$status" -eq 1 ]
-    [[ "$output" == *"REPRO N-0001 changed after its latest repro"* ]]
+    [[ "$output" == *"REPRO N-0001 changed after its latest repro"* ]] || false
     check repro all >/dev/null 2>&1
     commit_all "repro again"
     run check gate analysis
@@ -615,13 +615,13 @@ EOF
 @test "repro: unknown N-IDs, no selection and no git repository are environment errors (exit 2)" {
     run check repro N-9999
     [ "$status" -eq 2 ]
-    [[ "$output" == *"not in the number ledger: N-9999"* ]]
+    [[ "$output" == *"not in the number ledger: N-9999"* ]] || false
     run check repro
     [ "$status" -eq 2 ]
     rm -rf "$P/.git"
     run check repro all
     [ "$status" -eq 2 ]
-    [[ "$output" == *"needs a git repository"* ]]
+    [[ "$output" == *"needs a git repository"* ]] || false
 }
 
 # ── Numbers: formulas and evaluation splits ──────────────────────────────────
@@ -634,8 +634,8 @@ EOF
     add_number "{\"id\":\"N-0004\",\"macro\":\"\\\\FprPct\",\"printed\":\"5.8\",\"raw\":0.058,\"rounding\":\"round:1\",\"scale\":100,\"formula\":\"N-0002/(N-0002+N-0003)\",\"metric\":\"false-positive rate FP/(FP+TN), held-out split\",\"pointer\":\"/fpr\",${common}}"
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-FORMULA N-0004: formula N-0002/(N-0002+N-0003) = 0.420455 (N-0002=37, N-0003=51), but raw is 0.058"* ]]
-    [[ "$output" == *"N-0004: printed '5.8', but round:1 applied to the formula's value gives 42.0"* ]]
+    [[ "$output" == *"NUM-FORMULA N-0004: formula N-0002/(N-0002+N-0003) = 0.420455 (N-0002=37, N-0003=51), but raw is 0.058"* ]] || false
+    [[ "$output" == *"N-0004: printed '5.8', but round:1 applied to the formula's value gives 42.0"* ]] || false
     # The corrected output and row pass.
     printf '{"fp": 37, "tn": 51, "fpr": 0.42045454545454547}\n' > "$P/artifacts/confusion.json"
     python3 - "$P" << 'EOF'
@@ -662,35 +662,35 @@ EOF
     add_revision N-0001 '{"formula": "N-0099/2"}'
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-FORMULA N-0001: formula refers to N-0099, which is not in the number ledger"* ]]
+    [[ "$output" == *"NUM-FORMULA N-0001: formula refers to N-0099, which is not in the number ledger"* ]] || false
     add_revision N-0001 '{"formula": "N-0001*1"}'
     run check numbers
-    [[ "$output" == *"NUM-FORMULA N-0001: formula refers to itself"* ]]
+    [[ "$output" == *"NUM-FORMULA N-0001: formula refers to itself"* ]] || false
     add_revision N-0001 '{"formula": "abs(2)"}'
     run check numbers
-    [[ "$output" == *"may only use N-IDs, numbers, + - * / and parentheses"* ]]
+    [[ "$output" == *"may only use N-IDs, numbers, + - * / and parentheses"* ]] || false
 }
 
 @test "PROMISE: a cross-validation mean presented without saying so fails NUM-SPLIT; a held-out word is a warning" {
     printf '\n\\section{Discussion}\nThe model reaches \\GbAucCv{} on held-out scenarios.\n' >> "$P/paper/main.tex"
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:25 NUM-SPLIT \\GbAucCv (N-0001) is a cross-validation value, but the sentence/caption does not say so"* ]]
+    [[ "$output" == *"paper/main.tex:25 NUM-SPLIT \\GbAucCv (N-0001) is a cross-validation value, but the sentence/caption does not say so"* ]] || false
     sed_inplace 's/^The model reaches .*/The 5-fold CV mean \\GbAucCv{} is not a held-out estimate./' "$P/paper/main.tex"
     run check numbers
     [ "$status" -eq 0 ]
-    [[ "$output" == *"NUM-SPLIT [warn]"* ]]
+    [[ "$output" == *"NUM-SPLIT [warn]"* ]] || false
 }
 
 @test "numbers: every measured or generated number says which split it comes from, consistently with its source" {
     add_revision N-0001 '{"evaluation": null}'
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-SPLIT N-0001: missing 'evaluation'"* ]]
+    [[ "$output" == *"NUM-SPLIT N-0001: missing 'evaluation'"* ]] || false
     add_revision N-0001 '{"evaluation": "held-out"}'
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-SPLIT N-0001: evaluation is held-out, but its metric/pointer describe a cross-validation value"* ]]
+    [[ "$output" == *"NUM-SPLIT N-0001: evaluation is held-out, but its metric/pointer describe a cross-validation value"* ]] || false
 }
 
 # ── Slop C6: generator labels are not ground truth ───────────────────────────
@@ -699,10 +699,10 @@ EOF
     printf '\nAgainst the ground truth labels the CV mean is \\GbAucCv{}.\n' >> "$P/paper/main.tex"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:24 C6 'ground truth', but N-0001 is synthetic-generated data"* ]]
+    [[ "$output" == *"paper/main.tex:24 C6 'ground truth', but N-0001 is synthetic-generated data"* ]] || false
     sed_inplace 's/^Against the ground truth labels/Against the generator-assigned labels (not ground truth),/' "$P/paper/main.tex"
     run check slop
-    [[ "$output" != *" C6 "* ]]
+    [[ "$output" != *" C6 "* ]] || false
 }
 
 @test "C6: measured numbers whose input has generator-rule labels, and untraced ground-truth wording, are reported" {
@@ -714,8 +714,8 @@ EOF
     printf '\nThe annotated success rate is \\SuccessRate{}.\n\nWe compare against ground truth.\n' >> "$P/paper/main.tex"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"C6 'annotated', but N-0002 uses research/data/raw/labels.csv, whose labels come from generator rules"* ]]
-    [[ "$output" == *"C6 [warn] 'ground truth' in a sentence with no C-ID or number macro"* ]]
+    [[ "$output" == *"C6 'annotated', but N-0002 uses research/data/raw/labels.csv, whose labels come from generator rules"* ]] || false
+    [[ "$output" == *"C6 [warn] 'ground truth' in a sentence with no C-ID or number macro"* ]] || false
 }
 
 # ── Red team: the review names the current manuscript ────────────────────────
@@ -727,8 +727,8 @@ EOF
     printf '\nA sentence added after the review.\n' >> "$P/paper/main.tex"
     run check gate peer_review
     [ "$status" -eq 1 ]
-    [[ "$output" == *"GATE-REVIEW-HASH no red-team review covers the current manuscript"* ]]
-    [[ "$output" == *"REV-001.md: 56dbe6210935"* ]]
+    [[ "$output" == *"GATE-REVIEW-HASH no red-team review covers the current manuscript"* ]] || false
+    [[ "$output" == *"REV-001.md: 56dbe6210935"* ]] || false
     local h
     h="$(check manuscript-hash)"
     printf '# REV-002\n\nManuscript: %s\n\n| ID | Severity | Status | Finding | Evidence | Settling check |\n|---|---|---|---|---|---|\n' "$h" \
@@ -742,16 +742,16 @@ EOF
     sed_inplace '/^Manuscript: /d' "$P/research/reviews/REV-001.md"
     run check gate publication
     [ "$status" -eq 1 ]
-    [[ "$output" == *"REV-001.md: no Manuscript line"* ]]
+    [[ "$output" == *"REV-001.md: no Manuscript line"* ]] || false
     local h1 h2
     h1="$(check manuscript-hash)"
-    [[ "$h1" == sha256:56dbe621093513baaf97e7be7d30a608ce2d860e18a55a29116677480ea38d29 ]]
+    [[ "$h1" == sha256:56dbe621093513baaf97e7be7d30a608ce2d860e18a55a29116677480ea38d29 ]] || false
     printf '%% regenerated\n' >> "$P/paper/generated/numbers.tex"
     h2="$(check manuscript-hash)"
     [ "$h1" != "$h2" ]
     run check manuscript-hash --files
-    [[ "$output" == *"paper/generated/numbers.tex"* ]]
-    [[ "$output" == *"paper/references.bib"* ]]
+    [[ "$output" == *"paper/generated/numbers.tex"* ]] || false
+    [[ "$output" == *"paper/references.bib"* ]] || false
 }
 
 # ── Retraction checks ─────────────────────────────────────────────────────────
@@ -760,10 +760,10 @@ EOF
     rm "$P/research/sources/retractions.jsonl"
     run check retraction
     [ "$status" -eq 0 ]
-    [[ "$output" == *"RETRACTION [warn] sandve2013: retraction status never checked"* ]]
+    [[ "$output" == *"RETRACTION [warn] sandve2013: retraction status never checked"* ]] || false
     run check gate literature_review
     [ "$status" -eq 0 ]
-    [[ "$output" == *"retraction status never checked"* ]]
+    [[ "$output" == *"retraction status never checked"* ]] || false
 }
 
 @test "retraction --online: Crossref's notices are cached; a verified claim or an unqualified cite of a retracted source fails" {
@@ -773,7 +773,7 @@ EOF
         FAKE_UPDATES="${RFIX}/responses/crossref_updates_wakefield1998.json" \
         UWS_RESEARCH_CURL="$P/fakebin/curl" run check retraction --online --key wakefield1998
     [ "$status" -eq 0 ]
-    [[ "$output" == *"wakefield1998: retracted"* ]]
+    [[ "$output" == *"wakefield1998: retracted"* ]] || false
     grep -q '"status": "retracted"' "$P/research/sources/retractions.jsonl"
     grep -q '10.1016/s0140-6736(10)60175-4' "$P/research/sources/retractions.jsonl"
     grep -q '^https://api.crossref.org/works/10.1016/s0140-6736(97)11096-0$' "$P/fakebin/urls.log"
@@ -782,28 +782,28 @@ EOF
     printf '\nEarly work linked the vaccine to autism \\cite{wakefield1998}.\n' >> "$P/paper/main.tex"
     run check retraction
     [ "$status" -eq 1 ]
-    [[ "$output" == *"RETRACTION C-0004 rests on wakefield1998, which Crossref lists as retracted (correction 10.1016/s0140-6736(04)15715-2, retraction 10.1016/s0140-6736(10)60175-4)"* ]]
-    [[ "$output" == *"paper/main.tex:24 RETRACTION \\cite{wakefield1998}: Crossref lists this source as retracted, and the sentence does not say so"* ]]
+    [[ "$output" == *"RETRACTION C-0004 rests on wakefield1998, which Crossref lists as retracted (correction 10.1016/s0140-6736(04)15715-2, retraction 10.1016/s0140-6736(10)60175-4)"* ]] || false
+    [[ "$output" == *"paper/main.tex:24 RETRACTION \\cite{wakefield1998}: Crossref lists this source as retracted, and the sentence does not say so"* ]] || false
     sed_inplace 's/autism \\cite{wakefield1998}\./autism \\cite{wakefield1998}, a paper since retracted./' "$P/paper/main.tex"
     run check retraction
-    [[ "$output" != *"main.tex:24 RETRACTION"* ]]
+    [[ "$output" != *"main.tex:24 RETRACTION"* ]] || false
 }
 
 @test "retraction --online: unreachable Crossref exits 2, keeps the earlier answer, and never reads as clean" {
     crossref_stub
     FAKE_DOWN=1 UWS_RESEARCH_CURL="$P/fakebin/curl" run check retraction --online
     [ "$status" -eq 2 ]
-    [[ "$output" == *"sandve2013: unreachable"* ]]
+    [[ "$output" == *"sandve2013: unreachable"* ]] || false
     tail -1 "$P/research/sources/retractions.jsonl" | grep -q '"status": "unreachable"'
     run check retraction
     [ "$status" -eq 0 ]
-    [[ "$output" != *"retraction status unknown"* ]]
+    [[ "$output" != *"retraction status unknown"* ]] || false
     rm "$P/research/sources/retractions.jsonl"
     FAKE_DOWN=1 UWS_RESEARCH_CURL="$P/fakebin/curl" run check retraction --online
     run check retraction
     [ "$status" -eq 0 ]
-    [[ "$output" == *"RETRACTION [warn] sandve2013: retraction status unknown: Crossref was unreachable"* ]]
-    [[ "$output" != *"no-notice"* ]]
+    [[ "$output" == *"RETRACTION [warn] sandve2013: retraction status unknown: Crossref was unreachable"* ]] || false
+    [[ "$output" != *"no-notice"* ]] || false
 }
 
 @test "retraction --online: the captured Crossref answer for sandve2013 has no notice; a 404 is 'not in Crossref'" {
@@ -812,11 +812,11 @@ EOF
         FAKE_UPDATES="${RFIX}/responses/crossref_updates_sandve2013.json" \
         UWS_RESEARCH_CURL="$P/fakebin/curl" run check retraction --online
     [ "$status" -eq 0 ]
-    [[ "$output" == *"sandve2013: no-notice (10.1371/journal.pcbi.1003285)"* ]]
+    [[ "$output" == *"sandve2013: no-notice (10.1371/journal.pcbi.1003285)"* ]] || false
     FAKE_CODE=404 FAKE_WORK=/dev/null FAKE_UPDATES=/dev/null UWS_RESEARCH_CURL="$P/fakebin/curl" run check retraction --online
     [ "$status" -eq 0 ]
     run check retraction
-    [[ "$output" == *"RETRACTION [warn] sandve2013: retraction status unknown: its DOI 10.1371/journal.pcbi.1003285 is not registered with Crossref"* ]]
+    [[ "$output" == *"RETRACTION [warn] sandve2013: retraction status unknown: its DOI 10.1371/journal.pcbi.1003285 is not registered with Crossref"* ]] || false
 }
 
 # ── CLI wiring ────────────────────────────────────────────────────────────────
@@ -825,18 +825,18 @@ EOF
     research_state experiment_design
     run "${SCRIPTS_DIR}/research.sh" check plan
     [ "$status" -eq 0 ]
-    [[ "$output" == *"plan: PASS"* ]]
+    [[ "$output" == *"plan: PASS"* ]] || false
     run "${SCRIPTS_DIR}/research.sh" check data
     [ "$status" -eq 0 ]
-    [[ "$output" == *"data: PASS"* ]]
+    [[ "$output" == *"data: PASS"* ]] || false
     run "${SCRIPTS_DIR}/research.sh" check manuscript-hash
     [ "$status" -eq 0 ]
-    [[ "$output" == *"sha256:56dbe621093513baaf97e7be7d30a608ce2d860e18a55a29116677480ea38d29"* ]]
+    [[ "$output" == *"sha256:56dbe621093513baaf97e7be7d30a608ce2d860e18a55a29116677480ea38d29"* ]] || false
     run "${PROJECT_ROOT}/bin/uws" research check repro N-9999
     [ "$status" -eq 2 ]
     run "${SCRIPTS_DIR}/research.sh" help
-    [[ "$output" == *"check repro <N-ID ...|all>"* ]]
-    [[ "$output" == *"check plan [new|freeze <EXP-ID>]"* ]]
+    [[ "$output" == *"check repro <N-ID ...|all>"* ]] || false
+    [[ "$output" == *"check plan [new|freeze <EXP-ID>]"* ]] || false
 }
 
 @test "macros: the generated macro file is written from the number ledger" {
@@ -853,7 +853,7 @@ EOF
     mkdir -p "$P"
     run check init
     [ "$status" -eq 0 ]
-    [[ "$output" == *"created research/ledger/plans.jsonl"* ]]
+    [[ "$output" == *"created research/ledger/plans.jsonl"* ]] || false
     printf '{"exp": "EXP-X"}\n' > "$P/research/ledger/plans.jsonl"
     run check init
     [ "$(cat "$P/research/ledger/plans.jsonl")" = '{"exp": "EXP-X"}' ]

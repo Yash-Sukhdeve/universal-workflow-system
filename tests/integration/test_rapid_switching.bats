@@ -96,7 +96,7 @@ teardown() {
     run create_handoff_checkpoint "${TEST_TMP_DIR}" "With lock" "claude" "gemini"
 
     # Should succeed or fail gracefully
-    [[ "$status" -eq 0 ]] || [[ -f ".workflow/state.yaml" ]]
+    [[ "$status" -eq 0 ]] || [[ -f ".workflow/state.yaml" ]] || false
 
     rm -f .workflow/.lock
 }

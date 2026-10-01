@@ -34,19 +34,19 @@ teardown() {
 
     run require_workflow_initialized
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not initialized"* ]] || [[ "$output" == *"missing"* ]]
+    [[ "$output" == *"not initialized"* ]] || [[ "$output" == *"missing"* ]] || false
 }
 
 @test "R1: Invalid checkpoint ID is rejected" {
     run require_checkpoint_exists "INVALID_CP"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"Invalid"* ]] || [[ "$output" == *"not found"* ]]
+    [[ "$output" == *"Invalid"* ]] || [[ "$output" == *"not found"* ]] || false
 }
 
 @test "R1: Invalid agent name is rejected" {
     run bash -c "source '${PROJECT_ROOT}/scripts/lib/precondition_utils.sh'; require_agent_valid 'nonexistent_agent' 2>&1"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"Unknown agent"* ]] || [[ "$output" == *"Invalid"* ]] || [[ "$output" == *"Error"* ]]
+    [[ "$output" == *"Unknown agent"* ]] || [[ "$output" == *"Invalid"* ]] || [[ "$output" == *"Error"* ]] || false
 }
 
 @test "R1: Valid agents are accepted" {
@@ -82,7 +82,7 @@ EOF
     [ "$status" -eq 0 ]
 
     # Score should be a number between 0 and 100
-    [[ "$output" =~ ^[0-9]+$ ]]
+    [[ "$output" =~ ^[0-9]+$ ]] || false
     [ "$output" -ge 0 ]
     [ "$output" -le 100 ]
 }
@@ -108,7 +108,7 @@ EOF
     rm -f .workflow/checkpoints.log
 
     run check_required_files
-    [[ "$output" == *"checkpoints.log"* ]]
+    [[ "$output" == *"checkpoints.log"* ]] || false
 }
 
 @test "R2: JSON completeness report is valid" {
@@ -118,8 +118,8 @@ EOF
     [ "$status" -eq 0 ]
 
     # Should be valid JSON structure
-    [[ "$output" == *'"score":'* ]]
-    [[ "$output" == *'"file_score":'* ]]
+    [[ "$output" == *'"score":'* ]] || false
+    [[ "$output" == *'"file_score":'* ]] || false
 }
 
 # =============================================================================
@@ -221,13 +221,13 @@ EOF
 @test "R4: Assertion catches false condition" {
     run assert "[[ 1 -eq 2 ]]" "1 should equal 2"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"Assertion failed"* ]]
+    [[ "$output" == *"Assertion failed"* ]] || false
 }
 
 @test "R4: assert_file_exists catches missing file" {
     run assert_file_exists "/nonexistent/file.txt" "Test file"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not found"* ]]
+    [[ "$output" == *"not found"* ]] || false
 }
 
 @test "R4: Error stack tracks multiple errors" {
@@ -328,8 +328,8 @@ EOF
 
     run get_completeness_summary
     [ "$status" -eq 0 ]
-    [[ "$output" == *"## Recovery Completeness"* ]]
-    [[ "$output" == *"Score:"* ]]
+    [[ "$output" == *"## Recovery Completeness"* ]] || false
+    [[ "$output" == *"Score:"* ]] || false
 }
 
 # =============================================================================
@@ -341,7 +341,7 @@ EOF
     [ "$status" -eq 0 ]
 
     # Should match ISO 8601 pattern
-    [[ "$output" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]]
+    [[ "$output" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]] || false
 }
 
 @test "Timestamp validation accepts valid formats" {
@@ -366,7 +366,7 @@ EOF
     [ "$status" -eq 0 ]
 
     # Should return a decision ID (output may contain additional log lines)
-    [[ "$output" =~ DEC-[0-9]{4}-[0-9]+ ]]
+    [[ "$output" =~ DEC-[0-9]{4}-[0-9]+ ]] || false
 }
 
 @test "Blocker logging creates entries with severity" {
@@ -376,7 +376,7 @@ EOF
     run log_blocker "Test blocker" "technical" "high"
     [ "$status" -eq 0 ]
     # Output should contain a decision ID (blockers use same ID format)
-    [[ "$output" =~ DEC-[0-9]{4} ]] || [[ "$output" =~ BLK- ]] || [[ "$status" -eq 0 ]]
+    [[ "$output" =~ DEC-[0-9]{4} ]] || [[ "$output" =~ BLK- ]] || [[ "$status" -eq 0 ]] || false
 }
 
 @test "Open blockers can be retrieved" {

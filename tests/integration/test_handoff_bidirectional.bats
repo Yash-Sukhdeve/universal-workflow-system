@@ -42,7 +42,7 @@ teardown() {
     local final_phase final_checkpoint
     final_phase=$(grep "current_phase:" .workflow/state.yaml | head -1 | cut -d'"' -f2)
 
-    [[ "$initial_phase" == "$final_phase" ]]
+    [[ "$initial_phase" == "$final_phase" ]] || false
 }
 
 @test "Gemini → Claude → Gemini preserves state" {
@@ -64,7 +64,7 @@ teardown() {
     local final_phase
     final_phase=$(grep "current_phase:" .workflow/state.yaml | head -1 | cut -d'"' -f2)
 
-    [[ "$initial_phase" == "$final_phase" ]]
+    [[ "$initial_phase" == "$final_phase" ]] || false
 }
 
 @test "5-way handoff chain maintains integrity" {
@@ -126,14 +126,14 @@ teardown() {
     # Verify phase format before handoff
     local phase
     phase=$(grep "current_phase:" .workflow/state.yaml | head -1 | cut -d'"' -f2)
-    [[ "$phase" =~ ^phase_[1-5]_ ]]
+    [[ "$phase" =~ ^phase_[1-5]_ ]] || false
 
     # Handoff
     create_handoff_checkpoint "${TEST_TMP_DIR}" "Handoff" "claude" "gemini"
 
     # Verify phase format after handoff
     phase=$(grep "current_phase:" .workflow/state.yaml | head -1 | cut -d'"' -f2)
-    [[ "$phase" =~ ^phase_[1-5]_ ]]
+    [[ "$phase" =~ ^phase_[1-5]_ ]] || false
 }
 
 @test "Agent transitions valid across tools" {
@@ -150,7 +150,7 @@ teardown() {
     # Agent should still be valid
     local agent
     agent=$(grep -A2 "active_agent:" .workflow/state.yaml | grep "name:" | head -1)
-    [[ -n "$agent" ]]
+    [[ -n "$agent" ]] || false
 }
 
 @test "Skill state consistent across tools" {
@@ -204,7 +204,7 @@ teardown() {
     # Checkpoints.log should have new timestamps
     local latest_entry
     latest_entry=$(tail -1 .workflow/checkpoints.log)
-    [[ -n "$latest_entry" ]]
+    [[ -n "$latest_entry" ]] || false
 }
 
 @test "Git commit references valid" {

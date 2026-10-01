@@ -27,7 +27,7 @@ teardown() {
     checksum=$(calculate_checksum .workflow/test.yaml)
 
     [ ${#checksum} -eq 64 ]
-    [[ "$checksum" =~ ^[a-f0-9]+$ ]]
+    [[ "$checksum" =~ ^[a-f0-9]+$ ]] || false
 }
 
 @test "calculate_checksum returns empty for missing file" {
@@ -133,7 +133,7 @@ teardown() {
 
     run grep "algorithm:" .workflow/checksums.yaml
     [ "$status" -eq 0 ]
-    [[ "$output" == *"sha256"* ]]
+    [[ "$output" == *"sha256"* ]] || false
 }
 
 @test "store_checksums includes file entries" {
@@ -193,7 +193,7 @@ teardown() {
 
     run verify_checksums .workflow
     [ "$status" -ne 0 ]
-    [[ "$output" == *"No checksums"* ]] || [[ "$output" == *"not found"* ]]
+    [[ "$output" == *"No checksums"* ]] || [[ "$output" == *"not found"* ]] || false
 }
 
 # =============================================================================
@@ -214,13 +214,13 @@ teardown() {
 
     run verify_file_checksum .workflow/test.yaml "0000000000000000000000000000000000000000000000000000000000000000"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"mismatch"* ]]
+    [[ "$output" == *"mismatch"* ]] || false
 }
 
 @test "verify_file_checksum fails for missing file" {
     run verify_file_checksum .workflow/nonexistent.yaml "anyhash"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not found"* ]]
+    [[ "$output" == *"not found"* ]] || false
 }
 
 # =============================================================================
@@ -245,7 +245,7 @@ teardown() {
 
     run grep "version:" .workflow/checkpoints/snapshots/CP_1_002/manifest.yaml
     [ "$status" -eq 0 ]
-    [[ "$output" == *"2.0"* ]]
+    [[ "$output" == *"2.0"* ]] || false
 }
 
 @test "create_snapshot_manifest includes file checksums" {
@@ -325,10 +325,10 @@ teardown() {
 
     run get_checksums_json .workflow
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"generated":'* ]]
-    [[ "$output" == *'"algorithm":'* ]]
-    [[ "$output" == *'"files":'* ]]
-    [[ "$output" == *'"combined":'* ]]
+    [[ "$output" == *'"generated":'* ]] || false
+    [[ "$output" == *'"algorithm":'* ]] || false
+    [[ "$output" == *'"files":'* ]] || false
+    [[ "$output" == *'"combined":'* ]] || false
 }
 
 @test "get_checksums_json includes timestamp" {
@@ -337,7 +337,7 @@ teardown() {
     local output
     output=$(get_checksums_json .workflow)
 
-    [[ "$output" == *'"generated":'* ]]
+    [[ "$output" == *'"generated":'* ]] || false
 }
 
 # =============================================================================

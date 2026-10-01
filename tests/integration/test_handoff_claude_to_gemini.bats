@@ -32,7 +32,7 @@ teardown() {
     cp_id=$(create_handoff_checkpoint "${TEST_TMP_DIR}" "Handoff to Gemini" "claude" "gemini")
 
     # Verify checkpoint exists
-    [[ -n "$cp_id" ]]
+    [[ -n "$cp_id" ]] || false
     grep -q "$cp_id" .workflow/checkpoints.log
 }
 
@@ -125,7 +125,7 @@ teardown() {
     local current_phase
     current_phase=$(grep "current_phase:" .workflow/state.yaml | head -1 | cut -d'"' -f2)
 
-    [[ "$current_phase" == "phase_2_implementation" ]]
+    [[ "$current_phase" == "phase_2_implementation" ]] || false
 }
 
 @test "Gemini can complete Claude's TODO items" {

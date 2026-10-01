@@ -41,7 +41,7 @@ line_of() {
     commit_all "ledger row added after the freeze"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-ORDER EXP-LATE: N-0002: its output artifacts/results.json was first committed in"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-LATE: N-0002: its output artifacts/results.json was first committed in"* ]] || false
 }
 
 @test "P0 PLAN-ORDER: an earlier version of the output file committed before the freeze fails (output path evidence)" {
@@ -57,9 +57,9 @@ line_of() {
     run check plan
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-ORDER EXP-V: N-0002: its output artifacts/results.json was first committed in"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-V: N-0002: its output artifacts/results.json was first committed in"* ]] || false
     # The content 0.96 was first committed after the freeze: only the path is evidence here.
-    [[ "$output" != *"the content of its output"* ]]
+    [[ "$output" != *"the content of its output"* ]] || false
 }
 
 @test "P0 PLAN-ORDER: a value computed before the freeze and reformatted by a run after it fails (provenance)" {
@@ -91,8 +91,8 @@ EOF
     run check plan
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-ORDER EXP-X: RUN-0001 (writes artifacts/train_metrics.json, an input of N-0002) ran on commit"*"which does not contain the freeze"* ]]
-    [[ "$output" == *"PLAN-ORDER EXP-X: N-0002: artifacts/train_metrics.json (written by RUN-0001, an input) was first committed in"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-X: RUN-0001 (writes artifacts/train_metrics.json, an input of N-0002) ran on commit"*"which does not contain the freeze"* ]] || false
+    [[ "$output" == *"PLAN-ORDER EXP-X: N-0002: artifacts/train_metrics.json (written by RUN-0001, an input) was first committed in"* ]] || false
 }
 
 @test "P0 PLAN-ORDER: a run whose commit is not in the repository (squash merge) is not said to precede the freeze" {
@@ -117,9 +117,9 @@ EOF
     run check plan
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" != *"does not contain the freeze"* ]]
-    [[ "$output" != *"the run happened before the plan was frozen"* ]]
-    [[ "$output" == *"PLAN-ORDER EXP-LEAK: RUN-0001 (N-0001) ran on commit ${commit:0:12}, which is not in this repository"* ]]
+    [[ "$output" != *"does not contain the freeze"* ]] || false
+    [[ "$output" != *"the run happened before the plan was frozen"* ]] || false
+    [[ "$output" == *"PLAN-ORDER EXP-LEAK: RUN-0001 (N-0001) ran on commit ${commit:0:12}, which is not in this repository"* ]] || false
     [ "$(printf '%s\n' "$output" | grep -c 'PLAN-ORDER EXP-LEAK: RUN-0001' || true)" -eq 1 ]
 }
 
@@ -135,8 +135,8 @@ EOF
     commit_all "run record and row committed after the freeze"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-ORDER EXP-EARLY: RUN-0001 (N-0002) ran on commit"* ]]
-    [[ "$output" == *"which does not contain the freeze"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-EARLY: RUN-0001 (N-0002) ran on commit"* ]] || false
+    [[ "$output" == *"which does not contain the freeze"* ]] || false
 }
 
 @test "P0 PLAN-ORDER: a run on a tree that contains the committed freeze passes" {
@@ -165,7 +165,7 @@ EOF
     run check plan
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-ORDER EXP-REN: N-0002: the content of its output artifacts/final.json was first committed in"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-REN: N-0002: the content of its output artifacts/final.json was first committed in"* ]] || false
 }
 
 # ── P0: C6 on real PROMISE sentences ────────────────────────────────────────
@@ -180,9 +180,9 @@ EOF
     l2="$(line_of 'Why UWS as Platform')"
     run check slop
     echo "$output"
-    [[ "$output" == *"paper/main.tex:${l1} C6 [warn] 'ground-truth'"* ]]
-    [[ "$output" == *"paper/main.tex:${l1} C6 [warn] 'annotated'"* ]]
-    [[ "$output" == *"paper/main.tex:${l2} C6 [warn] 'ground-truth'"* ]]
+    [[ "$output" == *"paper/main.tex:${l1} C6 [warn] 'ground-truth'"* ]] || false
+    [[ "$output" == *"paper/main.tex:${l1} C6 [warn] 'annotated'"* ]] || false
+    [[ "$output" == *"paper/main.tex:${l2} C6 [warn] 'ground-truth'"* ]] || false
 }
 
 @test "P0 C6: a claim row that records the sentence as resting on generator data makes C6 block" {
@@ -193,11 +193,11 @@ EOF
     local l
     l="$(line_of 'records ground-truth outcomes')"
     run check slop
-    [[ "$output" == *"paper/main.tex:${l} C6 [warn] 'ground-truth'"* ]]
+    [[ "$output" == *"paper/main.tex:${l} C6 [warn] 'ground-truth'"* ]] || false
     append_claim "{\"id\":\"C-0004\",\"rev\":1,\"supersedes\":null,\"text\":\"Each trial records ground-truth outcomes.\",\"where\":\"paper/main.tex:${l}\",\"category\":\"own_observation\",\"strength\":\"empirical\",\"data_origin\":\"synthetic-generated\",\"labels\":\"generator-rule\",\"numbers\":[],\"depends_on\":[],\"sources\":[],\"author\":\"engineer\",\"status\":\"unverified\"}"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:${l} C6 'ground-truth', but C-0004"* ]]
+    [[ "$output" == *"paper/main.tex:${l} C6 'ground-truth', but C-0004"* ]] || false
 }
 
 @test "P0 sentences: e.g., et al. and Fig. do not end a sentence, so a citation and a C-ID still attach to it" {
@@ -207,8 +207,8 @@ EOF
     run check slop
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" != *" S2 "* ]]
-    [[ "$output" != *" S1 "* ]]
+    [[ "$output" != *" S2 "* ]] || false
+    [[ "$output" != *" S1 "* ]] || false
 }
 
 @test "P0 sentences: a dot inside a file name neither ends the sentence nor drops its start" {
@@ -216,7 +216,7 @@ EOF
     run check slop
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" != *" S2 "* ]]
+    [[ "$output" != *" S2 "* ]] || false
 }
 
 # ── P0: hand-typed numbers are linked to their rows through `where` ──────────
@@ -229,7 +229,7 @@ EOF
     run check numbers
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:${l} NUM-SPLIT hand-typed 0.912 (N-0001) is a cross-validation value"* ]]
+    [[ "$output" == *"paper/main.tex:${l} NUM-SPLIT hand-typed 0.912 (N-0001) is a cross-validation value"* ]] || false
 }
 
 @test "P0 C3/C6: a hand-typed number linked by where is judged by the slop check like a macro use" {
@@ -243,9 +243,9 @@ EOF
     run check slop
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:${l3} C3 hand-typed 0.912 (N-0001) is synthetic-generated"* ]]
-    [[ "$output" == *"paper/main.tex:${l6} C6 'ground-truth', but N-0001 is synthetic-generated data"* ]]
-    [[ "$output" != *"C6 [warn]"* ]]
+    [[ "$output" == *"paper/main.tex:${l3} C3 hand-typed 0.912 (N-0001) is synthetic-generated"* ]] || false
+    [[ "$output" == *"paper/main.tex:${l6} C6 'ground-truth', but N-0001 is synthetic-generated data"* ]] || false
+    [[ "$output" != *"C6 [warn]"* ]] || false
 }
 
 @test "P0 NUM-LITERAL: a hand-typed number at its row's where names the row and its macro; a missing value warns" {
@@ -256,8 +256,8 @@ EOF
     run check numbers
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL hand-typed number 0.912 is N-0001: use its macro \\GbAucCv"* ]]
-    [[ "$output" == *"NUM-WHERE [warn] N-0001: where names paper/main.tex:9, but its printed value 0.912 is not there"* ]]
+    [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL hand-typed number 0.912 is N-0001: use its macro \\GbAucCv"* ]] || false
+    [[ "$output" == *"NUM-WHERE [warn] N-0001: where names paper/main.tex:9, but its printed value 0.912 is not there"* ]] || false
 }
 
 @test "P0 where: a manuscript file whose name has a space is linked, after free text too" {
@@ -266,8 +266,8 @@ EOF
     run check numbers
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/sec one.tex:2 NUM-LITERAL hand-typed number 0.912 is N-0001: use its macro \\GbAucCv"* ]]
-    [[ "$output" != *"NUM-WHERE"* ]]
+    [[ "$output" == *"paper/sec one.tex:2 NUM-LITERAL hand-typed number 0.912 is N-0001: use its macro \\GbAucCv"* ]] || false
+    [[ "$output" != *"NUM-WHERE"* ]] || false
 }
 
 # ── P1: coverage and false positives ─────────────────────────────────────────
@@ -279,12 +279,12 @@ EOF
     run check numbers
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 1.1ms:"* ]]
-    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 1.1\\,ms:"* ]]
-    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 30\\%:"* ]]
-    [[ "$output" != *"number 3.2"* ]]
-    [[ "$output" != *"number 1990"* ]]
-    [[ "$output" != *"number 3:"* ]]
+    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 1.1ms:"* ]] || false
+    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 1.1\\,ms:"* ]] || false
+    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 30\\%:"* ]] || false
+    [[ "$output" != *"number 3.2"* ]] || false
+    [[ "$output" != *"number 1990"* ]] || false
+    [[ "$output" != *"number 3:"* ]] || false
 }
 
 @test "P1 NUM-LITERAL: a number followed by the word 'in' is a number; a length such as 0.45\\textwidth is not" {
@@ -294,10 +294,10 @@ EOF
     run check numbers
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 0.912:"* ]]
-    [[ "$output" == *"main.tex:$((l + 1)) NUM-LITERAL hand-typed number 2.5ms:"* ]]
-    [[ "$output" != *"number 0.45"* ]]
-    [[ "$output" != *"number 0.3"* ]]
+    [[ "$output" == *"main.tex:${l} NUM-LITERAL hand-typed number 0.912:"* ]] || false
+    [[ "$output" == *"main.tex:$((l + 1)) NUM-LITERAL hand-typed number 2.5ms:"* ]] || false
+    [[ "$output" != *"number 0.45"* ]] || false
+    [[ "$output" != *"number 0.3"* ]] || false
 }
 
 @test "P1 NUM-LITERAL: the real PROMISE abstract and introduction numbers are all caught" {
@@ -320,8 +320,8 @@ EOF
     run check numbers
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"NUM-ROUND [warn] N-0001"* ]]
-    [[ "$output" == *"pre-rounded"* ]]
+    [[ "$output" == *"NUM-ROUND [warn] N-0001"* ]] || false
+    [[ "$output" == *"pre-rounded"* ]] || false
     printf 'import json\njson.dump({"cv_auc_mean": 0.9124501829991217}, open("artifacts/full.json", "w"))\n' > "$P/research/code/full.py"
     printf 'import json\njson.dump({"cv_auc_mean": 0.91251}, open("artifacts/other.json", "w"))\n' > "$P/research/code/other.py"
     commit_all "full-precision scripts"
@@ -331,11 +331,11 @@ EOF
     run check numbers
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" != *"NUM-ROUND"* ]]
+    [[ "$output" != *"NUM-ROUND"* ]] || false
     add_revision N-0001 '{"unrounded": {"run": "RUN-0002", "output": "artifacts/other.json", "pointer": "/cv_auc_mean"}}'
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-ROUND N-0001: printed '0.912' is not round:3 applied to the unrounded value 0.91251 (expected 0.913"* ]]
+    [[ "$output" == *"NUM-ROUND N-0001: printed '0.912' is not round:3 applied to the unrounded value 0.91251 (expected 0.913"* ]] || false
 }
 
 @test "P1 NUM-ROUND: an unrounded value that does not round to raw is a different quantity" {
@@ -345,8 +345,8 @@ EOF
     add_revision N-0001 '{"unrounded": {"run": "RUN-0001", "output": "artifacts/wrong.json", "pointer": "/v"}}'
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-ROUND N-0001: the unrounded value 0.7"* ]]
-    [[ "$output" == *"does not round to raw 0.9125"* ]]
+    [[ "$output" == *"NUM-ROUND N-0001: the unrounded value 0.7"* ]] || false
+    [[ "$output" == *"does not round to raw 0.9125"* ]] || false
 }
 
 @test "P1 gate: a number-ledger schema error is reported once, not once per check" {
@@ -360,11 +360,11 @@ EOF
     run check slop
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" != *" S1 "* ]]
+    [[ "$output" != *" S1 "* ]] || false
     printf '\nOurs is the best model for recovery.\n' >> "$P/paper/main.tex"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"S1 'best' needs a verified claim"* ]]
+    [[ "$output" == *"S1 'best' needs a verified claim"* ]] || false
 }
 
 @test "P1 DATA-UNMANIFESTED: code given as --input or --code is not data; uncommitted code is RUN-CODE" {
@@ -375,16 +375,16 @@ EOF
     run check data
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" != *"DATA-UNMANIFESTED"* ]]
+    [[ "$output" != *"DATA-UNMANIFESTED"* ]] || false
     python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert [c["path"] for c in r["code"]] == ["research/code/make_results.py"], r; assert [i["path"] for i in r["inputs"]] == ["research/data/raw/gb_scores.csv"], r' \
         "$P/research/runs/RUN-0001/run.json"
     printf 'print(1)\n' > "$P/research/code/untracked.py"
     run check run --exp exploratory --code research/code/untracked.py -- python3 research/code/untracked.py
     [ "$status" -eq 0 ]
-    [[ "$output" == *"research/code/untracked.py is not committed"* ]]
+    [[ "$output" == *"research/code/untracked.py is not committed"* ]] || false
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"RUN-CODE RUN-0002: code research/code/untracked.py is not in commit"* ]]
+    [[ "$output" == *"RUN-CODE RUN-0002: code research/code/untracked.py is not in commit"* ]] || false
 }
 
 # set_run_commit <RUN-ID> <commit or null>: rewrite the git_commit of a run record.
@@ -404,31 +404,31 @@ EOF
     [ "$status" -eq 0 ]
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"RUN-CODE RUN-0001: code research/code/new_untracked.py is not in commit"* ]]
+    [[ "$output" == *"RUN-CODE RUN-0001: code research/code/new_untracked.py is not in commit"* ]] || false
     set_run_commit RUN-0001 0123456789abcdef0123456789abcdef01234567
     run check data
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"RUN-CODE RUN-0001: its commit 0123456789ab is not in this repository, so the code it ran cannot be shown to exist"* ]]
+    [[ "$output" == *"RUN-CODE RUN-0001: its commit 0123456789ab is not in this repository, so the code it ran cannot be shown to exist"* ]] || false
     run check gate data_collection
     [ "$status" -eq 1 ]
-    [[ "$output" == *"RUN-CODE RUN-0001: its commit 0123456789ab"* ]]
+    [[ "$output" == *"RUN-CODE RUN-0001: its commit 0123456789ab"* ]] || false
     set_run_commit RUN-0001 null
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"RUN-CODE RUN-0001: the record names no git_commit"* ]]
+    [[ "$output" == *"RUN-CODE RUN-0001: the record names no git_commit"* ]] || false
 }
 
 @test "P1 BIB-UNDEFINED: a \\cite key that references.bib does not define is its own finding" {
     printf 'See \\cite{autogen2023}.\n' >> "$P/paper/main.tex"
     run check bib
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:23 BIB-UNDEFINED \\cite{autogen2023} is not defined"* ]]
-    [[ "$output" != *"BIB-MISSING \\cite{autogen2023}"* ]]
+    [[ "$output" == *"paper/main.tex:23 BIB-UNDEFINED \\cite{autogen2023} is not defined"* ]] || false
+    [[ "$output" != *"BIB-MISSING \\cite{autogen2023}"* ]] || false
     printf '\n@misc{handwritten,\n  title = {Typed from memory}\n}\n' >> "$P/paper/references.bib"
     printf 'And \\cite{handwritten}.\n' >> "$P/paper/main.tex"
     run check bib
-    [[ "$output" == *"paper/main.tex:24 BIB-MISSING \\cite{handwritten} has no bib_sources/handwritten.bib"* ]]
+    [[ "$output" == *"paper/main.tex:24 BIB-MISSING \\cite{handwritten} has no bib_sources/handwritten.bib"* ]] || false
 }
 
 @test "P1 BIB-UNDEFINED: multi-line, biblatex, capitalised, spaced and multicite \\cite forms are all read" {
@@ -455,10 +455,10 @@ EOF
                 "$((l + 4)) BIB-UNDEFINED \\cite{ghostAuthor2012}" "$((l + 6)) BIB-UNDEFINED \\cite{ghostControl2017}"; do
         [[ "$output" == *"paper/main.tex:${want} "* ]] || { echo "missing: $want"; false; }
     done
-    [[ "$output" != *"ghostComment2011"* ]]
-    [[ "$output" != *"sandve2013"* ]]
-    [[ "$output" != *"priv."* ]]
-    [[ "$output" != *"{plain}"* ]]
+    [[ "$output" != *"ghostComment2011"* ]] || false
+    [[ "$output" != *"sandve2013"* ]] || false
+    [[ "$output" != *"priv."* ]] || false
+    [[ "$output" != *"{plain}"* ]] || false
     [ "$(printf '%s\n' "$output" | grep -c 'BIB-UNDEFINED' || true)" -eq 11 ]
 }
 
@@ -483,7 +483,7 @@ EOF
     run check repro N-0002
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"N-0002 pass RUN-0001"* ]]
+    [[ "$output" == *"N-0002 pass RUN-0001"* ]] || false
 }
 
 @test "P1 repro: a hand-written pass (a reproduction made outside the tool) does not satisfy REPRO" {
@@ -508,8 +508,8 @@ EOF
     run check gate analysis
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"REPRO N-0002: the passing entry is not a re-run of its recorded run by the repro job (the number has no run record)"* ]]
-    [[ "$output" != *"REPRO N-0001"* ]]
+    [[ "$output" == *"REPRO N-0002: the passing entry is not a re-run of its recorded run by the repro job (the number has no run record)"* ]] || false
+    [[ "$output" != *"REPRO N-0001"* ]] || false
 }
 
 @test "P1 run: an output path with a literal [ (or ? or *) that the command wrote is that file, not a glob" {
@@ -548,7 +548,7 @@ EOF
     run check repro N-0002
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"N-0002 pass RUN-0001"* ]]
+    [[ "$output" == *"N-0002 pass RUN-0001"* ]] || false
 }
 
 @test "P2 run: a venv's interpreter is recorded with the venv prefix, by path and through PATH" {
@@ -594,23 +594,23 @@ EOF
 @test "P1 repro: a pass from another tool, or one naming another run, does not satisfy REPRO" {
     research_make_reproducible
     run check gate analysis
-    [[ "$output" != *"REPRO N-0001"* ]]
+    [[ "$output" != *"REPRO N-0001"* ]] || false
     forge_report "my audit script" RUN-0001
     run check gate analysis
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"REPRO N-0001: the passing entry is not a re-run of its recorded run by the repro job (the report was not written by \`uws research check repro\`)"* ]]
+    [[ "$output" == *"REPRO N-0001: the passing entry is not a re-run of its recorded run by the repro job (the report was not written by \`uws research check repro\`)"* ]] || false
     forge_report "research_check.py repro" RUN-0099
     run check gate analysis
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"REPRO N-0001: the passing entry is not a re-run of its recorded run by the repro job (the entry names run RUN-0099, the row RUN-0001)"* ]]
+    [[ "$output" == *"REPRO N-0001: the passing entry is not a re-run of its recorded run by the repro job (the entry names run RUN-0099, the row RUN-0001)"* ]] || false
 }
 
 @test "P1 run: a glob that matches no file the command wrote is an error" {
     run check run --exp exploratory --output 'artifacts/none_*.json' -- python3 -c pass
     [ "$status" -eq 1 ]
-    [[ "$output" == *"artifacts/none_*.json matched no file the command wrote"* ]]
+    [[ "$output" == *"artifacts/none_*.json matched no file the command wrote"* ]] || false
 }
 
 @test "P1 DATA-LEAK: a structured split with a group in train and test fails; free text warns" {
@@ -628,15 +628,15 @@ EOF
     run check data
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv: 1 scenario_id value(s) appear in both train and test (3)"* ]]
-    [[ "$output" == *"DATA-LEAK [warn] research/data/raw/gb_scores.csv: the split is free text"* ]]
+    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv: 1 scenario_id value(s) appear in both train and test (3)"* ]] || false
+    [[ "$output" == *"DATA-LEAK [warn] research/data/raw/gb_scores.csv: the split is free text"* ]] || false
     printf 'x\n' > "$P/research/data/derived/x.csv"
     run check data add research/data/derived/x.csv --source s --version 1 --origin measured --split '{"train": 1'
     [ "$status" -eq 1 ]
-    [[ "$output" == *"--split looks like JSON but does not parse"* ]]
+    [[ "$output" == *"--split looks like JSON but does not parse"* ]] || false
     run check data add research/data/derived/x.csv --source s --version 1 --origin measured --split '{"train": "nope.csv", "group_key": "id"}'
     [ "$status" -eq 1 ]
-    [[ "$output" == *"--split: train file nope.csv is not a file inside the project"* ]]
+    [[ "$output" == *"--split: train file nope.csv is not a file inside the project"* ]] || false
 }
 
 @test "P1 DATA-LEAK: disjoint groups pass; a missing group column is reported" {
@@ -654,13 +654,13 @@ EOF
     run check data
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" != *"DATA-LEAK research/data/derived/all.csv"* ]]
+    [[ "$output" != *"DATA-LEAK research/data/derived/all.csv"* ]] || false
     printf 'scenario_id,x\n1,a\n2,b\n3,c\n5,e\n' > "$P/research/data/derived/all.csv"
     check data add research/data/derived/all.csv --source runs --version 2 --origin measured --reason "validation split" \
         --split '{"train": "research/data/derived/train.csv", "validation": "research/data/derived/valid.jsonl", "test": "research/data/derived/test.csv", "group_key": "scenario_id"}' >/dev/null
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-SPLIT research/data/derived/all.csv: research/data/derived/valid.jsonl has no scenario_id"* ]]
+    [[ "$output" == *"DATA-SPLIT research/data/derived/all.csv: research/data/derived/valid.jsonl has no scenario_id"* ]] || false
 }
 
 # leak_fixture: train.csv (S1-S3) and test.csv (S3, S4) registered with split none, and
@@ -683,7 +683,7 @@ leak_fixture() {
     commit_all "split declared"
     run check data
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv: 1 scenario_id value(s) appear in both train and test (S3)"* ]]
+    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv: 1 scenario_id value(s) appear in both train and test (S3)"* ]] || false
     # A hand-appended copy of the row with only the split changed, same sha256, no reason.
     python3 - "$P/research/data/manifest.jsonl" << 'EOF'
 import json, sys
@@ -695,8 +695,8 @@ EOF
     run check data
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-REPLACE research/data/derived/all.csv: the row changes split of a file whose content did not change"* ]]
-    [[ "$output" == *"DATA-REPLACE research/data/derived/all.csv: the row replaces a structured split, which the leakage check tests, with 'none'"* ]]
+    [[ "$output" == *"DATA-REPLACE research/data/derived/all.csv: the row changes split of a file whose content did not change"* ]] || false
+    [[ "$output" == *"DATA-REPLACE research/data/derived/all.csv: the row replaces a structured split, which the leakage check tests, with 'none'"* ]] || false
 }
 
 @test "P1 data add: a new declaration of an unchanged file needs a reason, and dropping a structured split a PI decision" {
@@ -704,13 +704,13 @@ EOF
     run check data add research/data/derived/all.csv --source runs --version 1 --origin measured \
         --split '{"train": "research/data/derived/train.csv", "test": "research/data/derived/test.csv", "group_key": "scenario_id"}'
     [ "$status" -eq 0 ]
-    [[ "$output" == *"already registered"* ]]
+    [[ "$output" == *"already registered"* ]] || false
     run check data add research/data/derived/all.csv --source runs --version 1 --origin measured --split none
     [ "$status" -eq 1 ]
-    [[ "$output" == *"a new declaration needs --reason"* ]]
+    [[ "$output" == *"a new declaration needs --reason"* ]] || false
     run check data add research/data/derived/all.csv --source runs --version 1 --origin measured --split none --reason "split was wrong"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"needs --pi-decision"* ]]
+    [[ "$output" == *"needs --pi-decision"* ]] || false
     local n
     n="$(wc -l < "$P/research/data/manifest.jsonl")"
     run check data add research/data/derived/all.csv --source runs --version 1 --origin measured --labels annotation --reason "annotated by hand" \
@@ -719,8 +719,8 @@ EOF
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$P/research/data/manifest.jsonl")" -eq "$((n + 1))" ]
     run check data
-    [[ "$output" != *"DATA-REPLACE"* ]]
-    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv"* ]]
+    [[ "$output" != *"DATA-REPLACE"* ]] || false
+    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv"* ]] || false
 }
 
 @test "P1 DATA-LEAK: a CSV with a UTF-8 byte-order mark (Excel 'CSV UTF-8') is read by its header" {
@@ -737,8 +737,8 @@ EOF
     run check data
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" != *"DATA-SPLIT"* ]]
-    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv: 1 scenario_id value(s) appear in both train and test (2)"* ]]
+    [[ "$output" != *"DATA-SPLIT"* ]] || false
+    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv: 1 scenario_id value(s) appear in both train and test (2)"* ]] || false
 }
 
 @test "P1 DATA-LEAK: the column form (one file with a split column) finds a leak, passes disjoint groups, and reports a row with no split" {
@@ -754,10 +754,10 @@ EOF
     run check data
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"DATA-LEAK research/data/derived/leaky.csv: 1 scenario_id value(s) appear in both train and test (2)"* ]]
-    [[ "$output" != *"DATA-LEAK research/data/derived/clean.csv"* ]]
-    [[ "$output" != *"DATA-SPLIT research/data/derived/clean.csv"* ]]
-    [[ "$output" == *"DATA-SPLIT research/data/derived/gap.csv: research/data/derived/gap.csv has no split (row 2)"* ]]
+    [[ "$output" == *"DATA-LEAK research/data/derived/leaky.csv: 1 scenario_id value(s) appear in both train and test (2)"* ]] || false
+    [[ "$output" != *"DATA-LEAK research/data/derived/clean.csv"* ]] || false
+    [[ "$output" != *"DATA-SPLIT research/data/derived/clean.csv"* ]] || false
+    [[ "$output" == *"DATA-SPLIT research/data/derived/gap.csv: research/data/derived/gap.csv has no split (row 2)"* ]] || false
 }
 
 # ── P2: friction ─────────────────────────────────────────────────────────────
@@ -801,12 +801,12 @@ inst_listing() {
     [ ! -e "$NOSTATE/.workflow" ]
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/scripts/research.sh" check ledger
     [ "$status" -eq 0 ]
-    [[ "$output" == *"ledger: PASS"* ]]
+    [[ "$output" == *"ledger: PASS"* ]] || false
     [ ! -e "$NOSTATE/.workflow" ]
     [ "$(inst_listing)" = "$before" ]
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" status
     [ "$status" -eq 1 ]
-    [[ "$output" == *"No UWS project found"* ]]
+    [[ "$output" == *"No UWS project found"* ]] || false
 }
 
 @test "P2 no .workflow: a check or bib build from a subdirectory finds the project and writes nothing else" {
@@ -817,7 +817,7 @@ inst_listing() {
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research check ledger
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"ledger: PASS"* ]]
+    [[ "$output" == *"ledger: PASS"* ]] || false
     [ ! -e "$NOSTATE/paper/.workflow" ]
     [ ! -e "$NOSTATE/.workflow" ]
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research bib build
@@ -843,7 +843,7 @@ inst_listing() {
     [ "$(inst_listing)" = "$before" ]
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research check 2
     [ "$status" -eq 1 ]
-    [[ "$output" == *"No UWS project found"* ]]
+    [[ "$output" == *"No UWS project found"* ]] || false
     [ ! -e "$NOSTATE/.workflow" ]
 }
 
@@ -859,7 +859,7 @@ inst_listing() {
         run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/scripts/research.sh" "$action"
         echo "$output"
         [ "$status" -eq 1 ]
-        [[ "$output" == *"research.sh ${action} needs .workflow/state.yaml"* ]]
+        [[ "$output" == *"research.sh ${action} needs .workflow/state.yaml"* ]] || false
         cmp "$INST/.workflow/state.yaml" "$TEST_TMP_DIR/inst-state.yaml"
     done
     [ ! -e "$NOSTATE/.workflow" ]
@@ -872,8 +872,8 @@ inst_listing() {
     cd "$NOSTATE"
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/scripts/research.sh" next
     [ "$status" -eq 1 ]
-    [[ "$output" == *"research.sh next needs .workflow/state.yaml"* ]]
-    [[ "$output" == *"research.sh check"* ]]
+    [[ "$output" == *"research.sh next needs .workflow/state.yaml"* ]] || false
+    [[ "$output" == *"research.sh check"* ]] || false
 }
 
 @test "P2 numbers add / claims add append validated rows and never edit existing ones" {
@@ -882,7 +882,7 @@ inst_listing() {
     run check numbers add '{"macro":"\\GbAucTest","rounding":"round:3","metric":"held-out ROC-AUC","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/test_auc","data_origin":"synthetic-generated","evaluation":"held-out","exp":"EXP-LEAK","inputs":["research/data/raw/gb_scores.csv"]}'
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"appended N-0002 rev 1"* ]]
+    [[ "$output" == *"appended N-0002 rev 1"* ]] || false
     [ "$(head -1 "$P/research/ledger/numbers.jsonl")" = "$before" ]
     python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).read().splitlines()[-1]); assert r["id"]=="N-0002" and r["raw"]==0.9199 and r["printed"]=="0.920" and r["rev"]==1 and r["supersedes"] is None and len(r["output_sha256"])==64, r' \
         "$P/research/ledger/numbers.jsonl"
@@ -890,19 +890,19 @@ inst_listing() {
     n="$(wc -l < "$P/research/ledger/numbers.jsonl")"
     run check numbers add '{"macro":"\\NoMetric","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/test_auc","rounding":"exact","data_origin":"measured","evaluation":"held-out","exp":"exploratory","inputs":[]}'
     [ "$status" -eq 1 ]
-    [[ "$output" == *"missing 'metric'"* ]]
+    [[ "$output" == *"missing 'metric'"* ]] || false
     run check numbers add '{"macro":"\\WrongRaw","raw":0.95,"rounding":"round:2","metric":"m","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/test_auc","data_origin":"measured","evaluation":"held-out","exp":"exploratory","inputs":[]}'
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-VALUE"* ]]
+    [[ "$output" == *"NUM-VALUE"* ]] || false
     run check numbers add '{"id":"N-0001","rev":1,"macro":"\\GbAucCv"}'
     [ "$status" -eq 1 ]
     [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$n" ]
     run check claims add '{"text":"t","category":"own_observation","status":"verified","author":"writer","verified_by":"writer","verified_at":"2026-09-30T00:00:00Z","verdict":"supports","numbers":["N-0002"]}'
     [ "$status" -eq 1 ]
-    [[ "$output" == *"LEDGER-SELFVERIFY"* ]]
+    [[ "$output" == *"LEDGER-SELFVERIFY"* ]] || false
     run check claims add '{"text":"GB reaches a held-out AUC of 0.920.","category":"own_observation","strength":"empirical","data_origin":"synthetic-generated","status":"unverified","author":"writer","numbers":["N-0002"]}'
     [ "$status" -eq 0 ]
-    [[ "$output" == *"appended C-0004 rev 1"* ]]
+    [[ "$output" == *"appended C-0004 rev 1"* ]] || false
     run check ledger
     [ "$status" -eq 0 ]
 }
@@ -916,7 +916,7 @@ N0001_FIELDS='"rounding":"floor:3","metric":"5-fold CV mean ROC-AUC, training sp
     run check numbers add "{\"id\":\"N-0001\",\"macro\":\"\\\\GbAucCv\",${N0001_FIELDS}}"
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"appended N-0001 rev 2"* ]]
+    [[ "$output" == *"appended N-0001 rev 2"* ]] || false
     [ "$(head -1 "$P/research/ledger/numbers.jsonl")" = "$first" ]
     [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$((n + 1))" ]
     python3 -c 'import json,sys; r=json.loads(open(sys.argv[1]).read().splitlines()[-1]); assert r["id"]=="N-0001" and r["rev"]==2 and r["supersedes"]=="N-0001@1" and r["printed"]=="0.912", r' \
@@ -928,22 +928,22 @@ N0001_FIELDS='"rounding":"floor:3","metric":"5-fold CV mean ROC-AUC, training sp
 @test "P2 numbers add: a revision that takes another row's macro is refused (whichever ID sorts first)" {
     run check numbers add '{"macro":"\\GbAucTest","rounding":"round:3","metric":"held-out ROC-AUC","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/test_auc","data_origin":"synthetic-generated","evaluation":"held-out","exp":"EXP-LEAK","inputs":["research/data/raw/gb_scores.csv"]}'
     [ "$status" -eq 0 ]
-    [[ "$output" == *"appended N-0002 rev 1"* ]]
+    [[ "$output" == *"appended N-0002 rev 1"* ]] || false
     local n
     n="$(wc -l < "$P/research/ledger/numbers.jsonl")"
     # A new row (it sorts after N-0001) reusing N-0001's macro: refused.
     run check numbers add "{\"macro\":\"\\\\GbAucCv\",${N0001_FIELDS}}"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"N-0003: macro \\GbAucCv is also used by N-0001"* ]]
+    [[ "$output" == *"N-0003: macro \\GbAucCv is also used by N-0001"* ]] || false
     # A revision of N-0001 (it sorts before N-0002) taking N-0002's macro: refused too.
     run check numbers add "{\"id\":\"N-0001\",\"macro\":\"\\\\GbAucTest\",${N0001_FIELDS}}"
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"N-0001: macro \\GbAucTest is also used by N-0002"* ]]
-    [[ "$output" == *"refused"* ]]
+    [[ "$output" == *"N-0001: macro \\GbAucTest is also used by N-0002"* ]] || false
+    [[ "$output" == *"refused"* ]] || false
     [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$n" ]
     run check numbers
-    [[ "$output" != *"is also used by"* ]]
+    [[ "$output" != *"is also used by"* ]] || false
 }
 
 @test "P2 macros: valid rows are written, invalid rows are reported and skipped" {
@@ -952,7 +952,7 @@ N0001_FIELDS='"rounding":"floor:3","metric":"5-fold CV mean ROC-AUC, training sp
     run check macros
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"skipped N-0002"* ]]
+    [[ "$output" == *"skipped N-0002"* ]] || false
     grep -q '^\\newcommand{\\GbAucCv}{0.912}$' "$P/paper/generated/numbers.tex"
     run grep -q 'Bad' "$P/paper/generated/numbers.tex"
     [ "$status" -ne 0 ]
@@ -988,28 +988,28 @@ EOF
     run check slop
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" != *" S1 "* ]]
+    [[ "$output" != *" S1 "* ]] || false
     printf '\nTo the best of our knowledge, no prior work predicts recovery.\n' >> "$P/paper/main.tex"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"S1 'best' needs a verified claim"* ]]
+    [[ "$output" == *"S1 'best' needs a verified claim"* ]] || false
 }
 
 @test "P2 gates: each gate names the unbuilt checks that belong to it (design status line)" {
     run check gate hypothesis
-    [[ "$output" != *"not checked yet"* ]]
+    [[ "$output" != *"not checked yet"* ]] || false
     run check gate literature_review
     echo "$output"
-    [[ "$output" == *"note: not checked yet: the BibTeX metadata cross-check (6.3 step 6) and \`bib verify --online\`"* ]]
-    [[ "$output" != *"environment lock"* ]]
+    [[ "$output" == *"note: not checked yet: the BibTeX metadata cross-check (6.3 step 6) and \`bib verify --online\`"* ]] || false
+    [[ "$output" != *"environment lock"* ]] || false
     run check gate data_collection
-    [[ "$output" == *"note: not checked yet: whether the environment lock pins every package"* ]]
-    [[ "$output" == *"the Dockerfile check"* ]]
-    [[ "$output" != *"not checked yet: slop"* ]]
+    [[ "$output" == *"note: not checked yet: whether the environment lock pins every package"* ]] || false
+    [[ "$output" == *"the Dockerfile check"* ]] || false
+    [[ "$output" != *"not checked yet: slop"* ]] || false
     run check gate publication
-    [[ "$output" == *"BibTeX metadata cross-check"* ]]
-    [[ "$output" == *"environment lock pins every package"* ]]
-    [[ "$output" == *"not checked yet: slop rules S3"* ]]
+    [[ "$output" == *"BibTeX metadata cross-check"* ]] || false
+    [[ "$output" == *"environment lock pins every package"* ]] || false
+    [[ "$output" == *"not checked yet: slop rules S3"* ]] || false
 }
 
 @test "P2 gate note: with a KB, the note quotes the first line of uws kb stats" {
@@ -1017,21 +1017,21 @@ EOF
         --claim "Grouped splits lower the AUC" --evidence observed --source file:paper/main.tex:9 >/dev/null)
     local first
     first="$(cd "$P" && "${PROJECT_ROOT}/bin/uws" kb stats | head -1)"
-    [[ "$first" == "KB docs/kb: 1 active"* ]]
+    [[ "$first" == "KB docs/kb: 1 active"* ]] || false
     run check gate literature_review
     echo "$output"
-    [[ "$output" == *"note: KB available (advisory): \`uws kb stats\` says: ${first};"* ]]
-    [[ "$output" != *"No KB yet"* ]]
+    [[ "$output" == *"note: KB available (advisory): \`uws kb stats\` says: ${first};"* ]] || false
+    [[ "$output" != *"No KB yet"* ]] || false
 }
 
 @test "P2 gate note: the KB note agrees with uws kb stats" {
     local stats
     stats="$(cd "$P" && "${PROJECT_ROOT}/bin/uws" kb stats)"
-    [[ "$stats" == "No KB yet"* ]]
+    [[ "$stats" == "No KB yet"* ]] || false
     run check gate literature_review
     echo "$output"
-    [[ "$output" == *"note: No KB yet"* ]]
-    [[ "$output" != *"KB available"* ]]
+    [[ "$output" == *"note: No KB yet"* ]] || false
+    [[ "$output" != *"KB available"* ]] || false
 }
 
 @test "P2 init: empty scaffold directories get .gitkeep so they are committed" {
@@ -1050,7 +1050,7 @@ EOF
     run check data
     [ "$status" -eq 0 ]
     run check init
-    [[ "$output" == *"nothing changed"* ]]
+    [[ "$output" == *"nothing changed"* ]] || false
 }
 
 # ── Re-run of the gates on the audit: a miss and a false positive it found ──
@@ -1062,7 +1062,7 @@ EOF
     run check slop
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:${l} S1 'First predictive models' needs a verified claim"* ]]
+    [[ "$output" == *"paper/main.tex:${l} S1 'First predictive models' needs a verified claim"* ]] || false
     [ "$(printf '%s\n' "$output" | grep -c ' S1 ' || true)" -eq 1 ]
 }
 
@@ -1075,8 +1075,8 @@ EOF
     run check numbers
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL hand-typed number 0.912 is N-0001"* ]]
-    [[ "$output" != *"NUM-WHERE"* ]]
+    [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL hand-typed number 0.912 is N-0001"* ]] || false
+    [[ "$output" != *"NUM-WHERE"* ]] || false
 }
 
 @test "re-run numbers add: a misprinted value is recorded as printed and reported; a malformed row is still refused" {
@@ -1086,16 +1086,16 @@ EOF
     run check numbers add '{"macro":"\\GbAucAsPrinted","printed":"0.913","rounding":"floor:3","metric":"5-fold CV mean ROC-AUC as the manuscript prints it","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/cv_auc_mean","data_origin":"synthetic-generated","evaluation":"cross-validation","exp":"EXP-LEAK","inputs":["research/data/raw/gb_scores.csv"]}'
     echo "$output"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"NUM-ROUND N-0002: printed '0.913' is not floor:3 applied to raw 0.9125 (expected 0.912)"* ]]
-    [[ "$output" == *"appended N-0002 rev 1"* ]]
-    [[ "$output" == *"note: the findings above are about its printed value"* ]]
+    [[ "$output" == *"NUM-ROUND N-0002: printed '0.913' is not floor:3 applied to raw 0.9125 (expected 0.912)"* ]] || false
+    [[ "$output" == *"appended N-0002 rev 1"* ]] || false
+    [[ "$output" == *"note: the findings above are about its printed value"* ]] || false
     [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$((n + 1))" ]
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-ROUND N-0002"* ]]
+    [[ "$output" == *"NUM-ROUND N-0002"* ]] || false
     run check numbers add '{"macro":"\\NoRounding","printed":"0.913","metric":"m","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/cv_auc_mean","data_origin":"measured","evaluation":"cross-validation","exp":"exploratory","inputs":[]}'
     [ "$status" -eq 1 ]
-    [[ "$output" == *"missing 'rounding'"* ]]
-    [[ "$output" == *"refused"* ]]
+    [[ "$output" == *"missing 'rounding'"* ]] || false
+    [[ "$output" == *"refused"* ]] || false
     [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$((n + 1))" ]
 }

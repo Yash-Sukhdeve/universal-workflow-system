@@ -73,7 +73,7 @@ teardown() { teardown_test_environment; }
     printf 'skills:\n  testing:\n    description: "x"\n' > .workflow/skills/catalog.yaml
     run "${SCRIPTS_DIR}/migrate_state.sh" --clean
     assert_success
-    [[ "$output" == *"removed retired agents/active.yaml"* ]]
+    [[ "$output" == *"removed retired agents/active.yaml"* ]] || false
     [ ! -e .workflow/agents/active.yaml ]
     [ ! -e .workflow/skills/enabled.yaml ]
     [ ! -e .workflow/skills/catalog.yaml ]

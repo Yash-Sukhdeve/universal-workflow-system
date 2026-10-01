@@ -19,7 +19,7 @@ teardown() {
 # =============================================================================
 
 @test "settings.json exists in .claude directory" {
-    [[ -f "${PROJECT_ROOT}/.claude/settings.json" ]]
+    [[ -f "${PROJECT_ROOT}/.claude/settings.json" ]] || false
 }
 
 @test "settings.json is valid JSON" {
@@ -37,7 +37,7 @@ teardown() {
     if command -v jq &> /dev/null; then
         run jq '.hooks' "${PROJECT_ROOT}/.claude/settings.json"
         assert_success
-        [[ "$output" != "null" ]]
+        [[ "$output" != "null" ]] || false
     else
         grep -q '"hooks"' "${PROJECT_ROOT}/.claude/settings.json"
     fi
@@ -51,7 +51,7 @@ teardown() {
     if command -v jq &> /dev/null; then
         run jq '.hooks.SessionStart' "${PROJECT_ROOT}/.claude/settings.json"
         assert_success
-        [[ "$output" != "null" ]]
+        [[ "$output" != "null" ]] || false
     else
         grep -q 'SessionStart' "${PROJECT_ROOT}/.claude/settings.json"
     fi
@@ -79,7 +79,7 @@ teardown() {
     if command -v jq &> /dev/null; then
         run jq '.hooks.PreCompact' "${PROJECT_ROOT}/.claude/settings.json"
         assert_success
-        [[ "$output" != "null" ]]
+        [[ "$output" != "null" ]] || false
     else
         grep -q 'PreCompact' "${PROJECT_ROOT}/.claude/settings.json"
     fi
@@ -131,7 +131,7 @@ teardown() {
     output=$(./scripts/recover_context.sh 2>&1) || true
 
     # Should produce some output
-    [[ -n "$output" ]] || [[ $? -eq 0 ]]
+    [[ -n "$output" ]] || [[ $? -eq 0 ]] || false
 }
 
 @test "PreCompact hook captures checkpoint output" {
@@ -142,7 +142,7 @@ teardown() {
     output=$(./scripts/checkpoint.sh create "test" 2>&1) || true
 
     # Should produce some output
-    [[ -n "$output" ]] || [[ $? -eq 0 ]]
+    [[ -n "$output" ]] || [[ $? -eq 0 ]] || false
 }
 
 # =============================================================================

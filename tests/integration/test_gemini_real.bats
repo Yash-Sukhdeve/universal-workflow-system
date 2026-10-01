@@ -41,7 +41,7 @@ teardown() {
     version=$(get_gemini_version)
 
     # Should return something
-    [[ -n "$version" ]]
+    [[ -n "$version" ]] || false
 }
 
 # =============================================================================
@@ -62,7 +62,7 @@ teardown() {
     output=$(run_gemini_with_uws_context "${TEST_TMP_DIR}" "status" "" 10)
 
     # Should produce output
-    [[ -n "$output" ]]
+    [[ -n "$output" ]] || false
 }
 
 @test "Gemini can read .workflow/handoff.md" {
@@ -75,7 +75,7 @@ teardown() {
     local output
     output=$(run_gemini_with_uws_context "${TEST_TMP_DIR}" "review handoff" "" 10)
 
-    [[ -n "$output" ]]
+    [[ -n "$output" ]] || false
 }
 
 # =============================================================================
@@ -90,7 +90,7 @@ teardown() {
     local output
     output=$(run_gemini_workflow "Review the workflow state and provide status" 15)
 
-    [[ -n "$output" ]]
+    [[ -n "$output" ]] || false
 }
 
 @test "Gemini output includes UWS context markers" {
@@ -157,7 +157,7 @@ teardown() {
     after_updated=$(grep "last_updated" .workflow/state.yaml | head -1)
 
     # Should be different
-    [[ "$before_updated" != "$after_updated" ]] || [[ -n "$after_updated" ]]
+    [[ "$before_updated" != "$after_updated" ]] || [[ -n "$after_updated" ]] || false
 }
 
 @test "Gemini creates valid checkpoints" {
@@ -196,7 +196,7 @@ teardown() {
     local output
     output=$(run_gemini_workflow "status")
 
-    [[ "$output" == *"Status"* ]] || [[ "$output" == *"Workflow"* ]]
+    [[ "$output" == *"Status"* ]] || [[ "$output" == *"Workflow"* ]] || false
 
     disable_gemini_mock
 }
@@ -209,7 +209,7 @@ teardown() {
     for action in "${actions[@]}"; do
         local output
         output=$(run_gemini_workflow "$action")
-        [[ -n "$output" ]]
+        [[ -n "$output" ]] || false
     done
 
     disable_gemini_mock

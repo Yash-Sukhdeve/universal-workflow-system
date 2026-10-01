@@ -23,8 +23,8 @@ teardown() {
 # ============================================================================
 
 @test "init_workflow.sh exists and is executable" {
-    [[ -f "${SCRIPTS_DIR}/init_workflow.sh" ]]
-    [[ -x "${SCRIPTS_DIR}/init_workflow.sh" ]]
+    [[ -f "${SCRIPTS_DIR}/init_workflow.sh" ]] || false
+    [[ -x "${SCRIPTS_DIR}/init_workflow.sh" ]] || false
 }
 
 @test "init_workflow.sh creates .workflow directory" {
@@ -34,7 +34,7 @@ teardown() {
     # Use echo with newline to simulate selection "3" for software
     run bash -c "echo '3' | ${SCRIPTS_DIR}/init_workflow.sh"
 
-    [[ -d "${TEST_TMP_DIR}/.workflow" ]] || [[ "$output" =~ "Workflow" ]]
+    [[ -d "${TEST_TMP_DIR}/.workflow" ]] || [[ "$output" =~ "Workflow" ]] || false
 }
 
 @test "init_workflow.sh creates state.yaml" {
@@ -42,7 +42,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -f "${TEST_TMP_DIR}/.workflow/state.yaml" ]]
+    [[ -f "${TEST_TMP_DIR}/.workflow/state.yaml" ]] || false
 }
 
 @test "init_workflow.sh creates config.yaml" {
@@ -50,7 +50,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -f "${TEST_TMP_DIR}/.workflow/config.yaml" ]]
+    [[ -f "${TEST_TMP_DIR}/.workflow/config.yaml" ]] || false
 }
 
 @test "init_workflow.sh creates agents directory" {
@@ -58,7 +58,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -d "${TEST_TMP_DIR}/.workflow/agents" ]]
+    [[ -d "${TEST_TMP_DIR}/.workflow/agents" ]] || false
 }
 
 @test "init_workflow.sh creates no retired agent/skill artifacts" {
@@ -86,7 +86,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
     grep -q "software" "${TEST_TMP_DIR}/.workflow/state.yaml" || \
     grep -q "software" "${TEST_TMP_DIR}/.workflow/config.yaml"
 }
@@ -96,7 +96,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "research"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 @test "init_workflow.sh accepts 'ml' project type" {
@@ -104,7 +104,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "ml"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 @test "init_workflow.sh accepts 'llm' project type" {
@@ -112,7 +112,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "llm"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 # ============================================================================
@@ -162,7 +162,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -d "${TEST_TMP_DIR}/workspace" ]]
+    [[ -d "${TEST_TMP_DIR}/workspace" ]] || false
 }
 
 @test "init_workflow.sh creates phases directory" {
@@ -171,7 +171,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -d "${TEST_TMP_DIR}/phases" ]]
+    [[ -d "${TEST_TMP_DIR}/phases" ]] || false
 }
 
 @test "init_workflow.sh creates artifacts directory" {
@@ -180,7 +180,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -d "${TEST_TMP_DIR}/artifacts" ]]
+    [[ -d "${TEST_TMP_DIR}/artifacts" ]] || false
 }
 
 # ============================================================================
@@ -195,7 +195,7 @@ teardown() {
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
     # Should either succeed with warning or fail gracefully
-    [[ "$status" -eq 0 ]] || [[ "$output" =~ "already" ]] || [[ "$output" =~ "exists" ]]
+    [[ "$status" -eq 0 ]] || [[ "$output" =~ "already" ]] || [[ "$output" =~ "exists" ]] || false
 }
 
 @test "init_workflow.sh does not overwrite existing state" {
@@ -210,7 +210,7 @@ teardown() {
 
     # Check modification is preserved (or file wasn't overwritten)
     grep -q "Modified" "${TEST_TMP_DIR}/.workflow/state.yaml" || \
-    [[ "$output" =~ "already" ]] || [[ "$output" =~ "exists" ]]
+    [[ "$output" =~ "already" ]] || [[ "$output" =~ "exists" ]] || false
 }
 
 # ============================================================================
@@ -238,7 +238,7 @@ EOF
 
     # Script should succeed - git features are optional
     # Either succeeds and creates workflow, or output mentions git issue
-    [[ -d "${TEST_TMP_DIR}/.workflow" ]] || [[ "$output" =~ "git" ]] || [[ "$output" =~ "Git" ]]
+    [[ -d "${TEST_TMP_DIR}/.workflow" ]] || [[ "$output" =~ "git" ]] || [[ "$output" =~ "Git" ]] || false
 }
 
 @test "init_workflow.sh creates checkpoints.log" {
@@ -246,7 +246,7 @@ EOF
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -f "${TEST_TMP_DIR}/.workflow/checkpoints.log" ]]
+    [[ -f "${TEST_TMP_DIR}/.workflow/checkpoints.log" ]] || false
 }
 
 # ============================================================================
@@ -258,7 +258,7 @@ EOF
 
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ -f "${TEST_TMP_DIR}/.workflow/agents/registry.yaml" ]]
+    [[ -f "${TEST_TMP_DIR}/.workflow/agents/registry.yaml" ]] || false
 }
 
 @test "agent registry contains researcher agent" {
@@ -289,16 +289,16 @@ EOF
 
     run "${TEST_TMP_DIR}/uws" agent researcher
     [ "$status" -ne 0 ]
-    [[ "$output" == *"retired"* ]]
-    [[ "$output" == *"orchestrate dispatch"* ]]
+    [[ "$output" == *"retired"* ]] || false
+    [[ "$output" == *"orchestrate dispatch"* ]] || false
 
     run "${TEST_TMP_DIR}/uws" skill testing
     [ "$status" -ne 0 ]
-    [[ "$output" == *"Skills are native Claude Code skills"* ]]
+    [[ "$output" == *"Skills are native Claude Code skills"* ]] || false
 
     run "${TEST_TMP_DIR}/uws" orchestrate help
     [ "$status" -eq 0 ]
-    [[ "$output" == *"dispatch"* ]]
+    [[ "$output" == *"dispatch"* ]] || false
 }
 
 # ============================================================================
@@ -314,8 +314,8 @@ EOF
     cd "${TEST_TMP_DIR}"
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
-    [[ "$status" -eq 0 ]]
-    [[ -d "${TEST_TMP_DIR}/.workflow" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ -d "${TEST_TMP_DIR}/.workflow" ]] || false
 }
 
 @test "init_workflow.sh works in non-git directory" {
@@ -326,5 +326,5 @@ EOF
     run "${SCRIPTS_DIR}/init_workflow.sh" <<< "software"
 
     # Should either succeed or give helpful message about git
-    [[ "$status" -eq 0 ]] || [[ "$output" =~ "git" ]]
+    [[ "$status" -eq 0 ]] || [[ "$output" =~ "git" ]] || false
 }

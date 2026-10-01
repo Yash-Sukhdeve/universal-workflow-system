@@ -66,7 +66,7 @@ teardown() {
 
     grep -q 'test_key:' test.yaml
     # File should not be corrupted
-    [[ -s test.yaml ]]
+    [[ -s test.yaml ]] || false
 }
 
 # ============================================================================
@@ -76,21 +76,21 @@ teardown() {
 @test "checkpoint handles message with forward slashes" {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Fixed bug in src/lib/utils.js"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
     grep -q "src/lib/utils.js" "${TEST_TMP_DIR}/.workflow/checkpoints.log"
 }
 
 @test "checkpoint handles message with ampersand" {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Updated R&D module"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
     grep -q "R&D" "${TEST_TMP_DIR}/.workflow/checkpoints.log"
 }
 
 @test "checkpoint handles message with special regex characters" {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Fixed [issue] with (regex)"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
     grep -q "issue" "${TEST_TMP_DIR}/.workflow/checkpoints.log"
 }
 
@@ -100,7 +100,7 @@ teardown() {
     run "${SCRIPTS_DIR}/checkpoint.sh" "${malicious_msg}"
 
     # Should not have created the file
-    [[ ! -f /tmp/pwned ]]
+    [[ ! -f /tmp/pwned ]] || false
 
     # Cleanup just in case
     rm -f /tmp/pwned 2>/dev/null || true
@@ -110,7 +110,7 @@ teardown() {
     local malicious_msg='`touch /tmp/pwned2`'
     run "${SCRIPTS_DIR}/checkpoint.sh" "${malicious_msg}"
 
-    [[ ! -f /tmp/pwned2 ]]
+    [[ ! -f /tmp/pwned2 ]] || false
     rm -f /tmp/pwned2 2>/dev/null || true
 }
 
@@ -128,7 +128,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/sdlc.sh" fail "Bug in /path/to/file"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 @test "sdlc.sh does not execute embedded commands" {
@@ -140,7 +140,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/sdlc.sh" fail '$(touch /tmp/sdlc_pwned)'
 
-    [[ ! -f /tmp/sdlc_pwned ]]
+    [[ ! -f /tmp/sdlc_pwned ]] || false
     rm -f /tmp/sdlc_pwned 2>/dev/null || true
 }
 
@@ -157,7 +157,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" reject "p < 0.05 & CI overlaps"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 @test "research.sh does not execute embedded commands" {
@@ -169,7 +169,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" reject '$(touch /tmp/research_pwned)'
 
-    [[ ! -f /tmp/research_pwned ]]
+    [[ ! -f /tmp/research_pwned ]] || false
     rm -f /tmp/research_pwned 2>/dev/null || true
 }
 
@@ -184,19 +184,19 @@ teardown() {
     "${SCRIPTS_DIR}/checkpoint.sh" "Test/with/slashes"
 
     # State file should still be parseable
-    [[ -f "${TEST_TMP_DIR}/.workflow/state.yaml" ]]
+    [[ -f "${TEST_TMP_DIR}/.workflow/state.yaml" ]] || false
 
     # Should be able to read a value
     local phase
     phase=$(yaml_get "${TEST_TMP_DIR}/.workflow/state.yaml" "current_phase")
-    [[ -n "$phase" ]]
+    [[ -n "$phase" ]] || false
 }
 
 @test "checkpoints.log remains valid after special character operations" {
     "${SCRIPTS_DIR}/checkpoint.sh" "Message & with / special < chars >"
 
     # Log file should still exist and have content
-    [[ -s "${TEST_TMP_DIR}/.workflow/checkpoints.log" ]]
+    [[ -s "${TEST_TMP_DIR}/.workflow/checkpoints.log" ]] || false
 
     # Should be readable
     wc -l < "${TEST_TMP_DIR}/.workflow/checkpoints.log"

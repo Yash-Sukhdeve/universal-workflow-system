@@ -61,7 +61,7 @@ expected_default() {
         n="$(frontmatter_model "$f" | wc -l | tr -d ' ')"
         [ "$n" -eq 1 ]
         got="$(frontmatter_model "$f")"
-        [[ "$got" =~ ^(opus|sonnet|haiku|fable|inherit)$ ]]
+        [[ "$got" =~ ^(opus|sonnet|haiku|fable|inherit)$ ]] || false
     done
 }
 
@@ -92,7 +92,7 @@ expected_default() {
 
     UWS_AGENT_MODEL_DEPLOYER=gpt-4 run "${GEN_ROOT}/scripts/gen_subagents.sh"
     assert_failure
-    [[ "$output" == *"invalid model"* ]]
+    [[ "$output" == *"invalid model"* ]] || false
     [ "$(cat "${AGENTS}/uws-deployer.md")" = "$before" ]
 }
 
@@ -197,7 +197,9 @@ expected_default() {
 }
 
 @test "gen_subagents: quoting round-trips colons, quotes and backslashes" {
-    source <(sed -n '/^yaml_dq()/,/^}/p' "${GEN_ROOT}/scripts/gen_subagents.sh")
+    # bash 3.2 cannot `source <(...)` (it reads nothing), so load the function from a file
+    sed -n '/^yaml_dq()/,/^}/p' "${GEN_ROOT}/scripts/gen_subagents.sh" > "${TEST_TMP_DIR}/yaml_dq.sh"
+    source "${TEST_TMP_DIR}/yaml_dq.sh"
     python3 -c 'import yaml' 2>/dev/null || skip "PyYAML not installed"
     local raw='Scout: finds "primary" sources \ caches text'
     run python3 -c 'import sys, yaml; print(yaml.safe_load("d: " + sys.argv[1])["d"])' "$(yaml_dq "$raw")"
