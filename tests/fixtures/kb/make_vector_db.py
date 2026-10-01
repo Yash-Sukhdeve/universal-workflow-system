@@ -8,7 +8,11 @@ the real databases. The vec0 module is not available here, so the virtual table
 is written straight into sqlite_master (PRAGMA writable_schema); opening the file
 without the extension then behaves as it does for the importer on a real store.
 
-Usage: make_vector_db.py <local|global> <output.db>
+Usage: make_vector_db.py <local|global> <output.db> [--wal]
+       make_vector_db.py rows <output.db> [--wal] <content>...
+The first form writes the fixed LOCAL or GLOBAL rows below; `rows` writes one row per
+<content> argument (category "learning"), for tests that need their own text. --wal leaves
+the database in WAL journal mode (closed cleanly, so no -wal or -shm file remains).
 The rows are synthetic; none come from a real memory store.
 """
 
@@ -67,11 +71,18 @@ GLOBAL = [
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("local", "global"):
+    args = sys.argv[1:]
+    wal = "--wal" in args
+    args = [a for a in args if a != "--wal"]
+    if len(args) < 2 or args[0] not in ("local", "global", "rows") \
+            or (args[0] != "rows" and len(args) != 2):
         sys.stderr.write(__doc__)
         return 2
-    rows = LOCAL if sys.argv[1] == "local" else GLOBAL
-    conn = sqlite3.connect(sys.argv[2])
+    if args[0] == "rows":
+        rows = [(content, "learning", []) for content in args[2:]]
+    else:
+        rows = LOCAL if args[0] == "local" else GLOBAL
+    conn = sqlite3.connect(args[1])
     conn.executescript(SCHEMA)
     conn.execute("PRAGMA writable_schema = ON")
     conn.execute(
@@ -86,6 +97,8 @@ def main():
             "updated_at) VALUES (?, ?, ?, ?, ?, ?)",
             ("h%04d" % i, content, category, json.dumps(tags), ts, ts))
     conn.commit()
+    if wal:
+        conn.execute("PRAGMA journal_mode = WAL")
     conn.close()
     return 0
 

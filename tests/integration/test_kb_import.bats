@@ -151,6 +151,27 @@ init_global() {
     [ -z "$(git status --porcelain)" ]
 }
 
+@test "import vector: a WAL database in a writable directory is left exactly as it was, dry run or not" {
+    # The fixtures above sit in a read-only directory; a real store's directory is writable,
+    # and a read-only connection to a WAL database would create -wal and -shm files there
+    local W="${SRC}/wal" before
+    chmod 755 "$SRC"
+    mkdir -p "$W"
+    python3 "$MAKE_DB" global "${W}/vm.db" --wal
+    [ "$(python3 -c 'import sys; print(open(sys.argv[1], "rb").read(20)[18])' "${W}/vm.db")" = "2" ]
+    before="$(cd "$W" && ls -A && ls -l vm.db | cut -c1-10 && git hash-object vm.db)"
+    [ "$(cd "$W" && ls -A)" = "vm.db" ]
+    run "$UWS" kb import vector --db "${W}/vm.db" --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"4 row(s) in memory_metadata"* ]] || false
+    [ "$(cd "$W" && ls -A && ls -l vm.db | cut -c1-10 && git hash-object vm.db)" = "$before" ]
+    run "$UWS" kb import vector --db "${W}/vm.db"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"added 4 candidate(s)"* ]] || false
+    [ "$(cd "$W" && ls -A && ls -l vm.db | cut -c1-10 && git hash-object vm.db)" = "$before" ]
+    chmod 555 "$SRC"
+}
+
 @test "import vector: bad input is refused with exit 2" {
     run "$UWS" kb import vector --db "${SRC}/missing.db"
     [ "$status" -eq 2 ]

@@ -3,12 +3,16 @@
 
 Python 3 standard library only. The sources are never written:
 
-- A vector-memory database is opened through a read-only URI connection
-  (`mode=ro`) and copied into memory with SQLite's backup API. When that is not
-  possible (for example a WAL database without its -shm file), the database
-  file and any -journal/-wal/-shm files are copied byte for byte into a
-  temporary directory and the copy is opened. Only the `memory_metadata` table
-  is read, so the `vec0` extension of the vector index is not needed.
+- A vector-memory database in rollback-journal mode, with no journal beside it,
+  is opened through a read-only URI connection (`mode=ro`) and copied into
+  memory with SQLite's backup API. A WAL database (header bytes 18-19), or one
+  with a -wal or -journal file beside it, is never opened in place: even a
+  read-only connection to a WAL database creates -wal and -shm files next to
+  it. The database file and its -wal or -journal file are copied byte for byte
+  into a temporary directory and the copy is opened (SQLite rebuilds the -shm
+  index from the copied -wal). The same copy is the fallback when the
+  read-only open fails. Only the `memory_metadata` table is read, so the
+  `vec0` extension of the vector index is not needed.
 - Auto-memory topic files are only read. MEMORY.md, the index Claude Code
   loads every session, is not opened unless --include-index asks for its
   entries (each top-level list item or paragraph, except lines that only link a
@@ -220,24 +224,41 @@ def fixture_flags(project, text):
 # ── Vector-memory database ──────────────────────────────────────────────────
 
 
-def open_readonly_copy(path):
-    """An in-memory (or temporary) copy of the database; the source is only read."""
-    uri = "file:%s?mode=ro" % urllib.parse.quote(os.path.abspath(path))
+def is_wal(path):
+    """True when the database header says WAL: file format write or read version (bytes 18, 19) is 2."""
     try:
-        src = sqlite3.connect(uri, uri=True, timeout=5)
+        with open(path, "rb") as fh:
+            head = fh.read(20)
+    except OSError:
+        return False
+    return len(head) == 20 and head.startswith(b"SQLite format 3\0") and 2 in (head[18], head[19])
+
+
+def open_readonly_copy(path):
+    """An in-memory (or temporary) copy of the database; the source directory is left as it was.
+
+    Only a rollback-journal database with no journal beside it is opened in place
+    (read-only URI connection, then the backup API). A WAL database, or one with a
+    -wal or -journal file, is copied with that file into a temporary directory first.
+    """
+    if not is_wal(path) and not any(os.path.exists(path + s) for s in ("-wal", "-journal")):
+        uri = "file:%s?mode=ro" % urllib.parse.quote(os.path.abspath(path))
         try:
-            mem = sqlite3.connect(":memory:")
-            src.backup(mem)
-            return mem, None
-        finally:
-            src.close()
-    except sqlite3.Error:
-        pass
+            src = sqlite3.connect(uri, uri=True, timeout=5)
+            try:
+                mem = sqlite3.connect(":memory:")
+                src.backup(mem)
+                return mem, None
+            finally:
+                src.close()
+        except sqlite3.Error:
+            pass
     tmp = tempfile.mkdtemp(prefix="uws-kb-import.")
     dst = os.path.join(tmp, "copy.db")
     try:
         shutil.copyfile(path, dst)
-        for suffix in ("-journal", "-wal", "-shm"):
+        # not -shm: it indexes the live -wal and SQLite rebuilds it from the copy
+        for suffix in ("-journal", "-wal"):
             if os.path.exists(path + suffix):
                 shutil.copyfile(path + suffix, dst + suffix)
         return sqlite3.connect(dst), tmp

@@ -787,11 +787,15 @@ imports only read their sources; no import was run on the real stores.
 
 **Imports** (section 7). `uws kb import vector --db <path> [--scope project|global] [--dry-run]`;
 `uws kb import automemory --dir <path> [--include-index] [--dry-run]` (project only).
-- Read-only: `kb_import.py` opens the database through a `mode=ro` URI connection and copies it
-  into memory with SQLite's backup API (fallback: a byte copy in a temporary directory). It reads
-  only `memory_metadata`, so the `vec0` extension is not needed. Auto-memory files are only read,
-  and `MEMORY.md` is not opened unless `--include-index` asks for it. The tests make the fixtures
-  read-only and compare hashes and directory listings before and after.
+- Read-only: `kb_import.py` opens a rollback-journal database through a `mode=ro` URI connection
+  and copies it into memory with SQLite's backup API. A WAL database (header bytes 18-19), or one
+  with a `-wal` or `-journal` file beside it, is byte-copied with that file into a temporary
+  directory and the copy is opened, because even a read-only connection to a WAL database
+  creates `-wal` and `-shm` files next to it; the same copy is the fallback when the read-only
+  open fails. It reads only `memory_metadata`, so the `vec0` extension is not needed. Auto-memory
+  files are only read, and `MEMORY.md` is not opened unless `--include-index` asks for it. The
+  tests make the fixtures read-only and compare hashes and directory listings before and after,
+  and import a WAL fixture from a writable directory.
 - `--include-index`: on a machine like this one most project facts sit in `MEMORY.md` itself
   (2.1: 93 lines, 17.9 KB) rather than in topic files, so importing topic files alone would
   leave them out of the triage that D2 needs. With the flag, each top-level list item or
