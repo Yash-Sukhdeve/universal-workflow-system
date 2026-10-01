@@ -18,8 +18,9 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
 - Global KB at `<global memory dir>/kb` (`UWS_GLOBAL_MEMORY_DIR`, `global_memory_dir` in
   `~/.config/uws/config.yaml`, or `~/uws-global-knowledge`): `uws kb init --global` creates it
   and runs `git init`; every global write is refused (exit 2) unless it is its own git
-  repository. `--global`, `--scope global` or a `global:K-...` ID select it, also outside a UWS
-  project. It keeps its own PI (`uws kb pi --set <email> --global`, `<global kb>/config.yaml`).
+  repository. `--global`, `--scope global` or a `global:K-...` ID (as an ID argument, or the
+  value of `--supersedes`, `--contradicts` or `--by`) select it, also outside a UWS project;
+  `add --global` prints the new ID as `global:K-...`. It keeps its own PI (`uws kb pi --set <email> --global`, `<global kb>/config.yaml`).
   Global claims may not name project or home paths (`add`/`import` refuse; `lint` I8)
 - `uws kb search` ranks trusted project and global items together in the same 5-line,
   1000-byte budget; global lines read `global:K-...`; `--scope project|global` narrows it.

@@ -401,7 +401,7 @@ write to it otherwise.
 uws kb init --global                     # create it and run git init (never commits)
 uws kb pi --set you@example.com --global # its own PI, in your own terminal
 uws kb add --global --type lesson --claim "macOS ships bash 3.2" --evidence reported \
-  --source url:https://... --quote "..."
+  --source url:https://... --quote "..."  # prints global:K-20260930-1a2b3c
 uws kb search bash                       # project and global items, one 5-line budget
 uws kb approve global:K-20260930-1a2b3c  # global:ID reaches the global KB from any project
 ```

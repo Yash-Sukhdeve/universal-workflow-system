@@ -9,6 +9,7 @@
 #       [--contradicts ID]... [--no-conflict] [--falsifier TEXT]
 #       [--body TEXT] [--quote TEXT] [--escaped-from PHASE]
 #                              create a candidate; prints its ID on stdout
+#                              (global:K-... with --global)
 #                              (--escaped-from, lessons only: a bug found after
 #                              PHASE's gate passed; recorded as an `escape` outcome)
 #   search <words> [--type T] [--status S] [--include-stale] [--all] [--limit N]
@@ -997,8 +998,8 @@ EOF
         if [[ "$(kb_normalize_claim "$(kb_fm_get "$f" claim)")" == "$norm" ]]; then
             local dupid
             dupid="$(kb_fm_get "$f" id)"
-            printf '%s\n' "$dupid"
-            die 3 "add: duplicate of ${dupid} (R7)"
+            printf '%s%s\n' "$(id_prefix)" "$dupid"
+            die 3 "add: duplicate of $(id_prefix)${dupid} (R7)"
         fi
     done
 
@@ -1022,8 +1023,8 @@ EOF
         id="K-$(printf '%s' "$TODAY" | tr -d '-')-${hex}"
         [[ -e "${KB}/items/${id}.md" || -e "${KB}/retired/${id}.md" ]] || break
         if [[ -f "${KB}/retired/${id}.md" && "$(kb_normalize_claim "$(kb_fm_get "${KB}/retired/${id}.md" claim)")" == "$norm" ]]; then
-            printf '%s\n' "$id"
-            die 3 "add: this claim was retired as ${id}; use 'uws kb restore ${id}'"
+            printf '%s%s\n' "$(id_prefix)" "$id"
+            die 3 "add: this claim was retired as $(id_prefix)${id}; use 'uws kb restore $(id_prefix)${id}'"
         fi
         n=$((n + 2))
         (( n <= 12 )) || die 2 "add: cannot mint a unique ID"
@@ -1095,7 +1096,8 @@ EOF
         retire_item "$l" "superseded-by:${id}"
     done
     rebuild_stats_cache
-    printf '%s\n' "$id"
+    # global:K-... for the global KB, the form the other verbs take from a project
+    printf '%s%s\n' "$(id_prefix)" "$id"
 }
 
 # ── verify ──────────────────────────────────────────────────────────────────

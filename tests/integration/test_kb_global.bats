@@ -32,7 +32,9 @@ teardown() {
 }
 
 field() { grep -E "^$2:" "$1" | head -1 | sed -e "s/^$2:[[:space:]]*//" -e 's/^"//' -e 's/"$//'; }
-gid() { KB_OUT="$("$UWS" kb "$@" 2>/dev/null)"; }
+# gid <kb args>: KB_RAW is what the command printed, KB_OUT the bare ID (add --global
+# prints global:K-..., the form the other verbs take from a project)
+gid() { KB_RAW="$("$UWS" kb "$@" 2>/dev/null)"; KB_OUT="${KB_RAW#global:}"; }
 
 init_global() {
     "$UWS" kb init --global >/dev/null
@@ -108,7 +110,7 @@ EOF
     [[ "$output" == *"already initialised"* ]]
     gid add --global --type lesson --claim "Pin tool versions" --evidence reported \
         --source url:https://example.org --quote "pin"
-    [[ "$KB_OUT" =~ ^K-20260924-[0-9a-f]{6}$ ]]
+    [[ "$KB_RAW" =~ ^global:K-20260924-[0-9a-f]{6}$ ]]
     [ "$(field "$GKB/items/${KB_OUT}.md" scope)" = "global" ]
     grep -q "	${KB_OUT}	-	candidate	add	" "$GKB/events.tsv"
     # nothing went to the project KB, and nothing was committed for the user
@@ -330,6 +332,28 @@ EOF
     rm -rf "$elsewhere"
 }
 
+@test "global: add --global prints a global:K-... ID that the other verbs take as it is from a project" {
+    init_global
+    run "$UWS" kb add --global --type lesson --claim "Retries need a jittered backoff" --evidence reported \
+        --source url:https://example.org/doc --quote "a verbatim line"
+    [ "$status" -eq 0 ]
+    local id
+    id="$(printf '%s\n' "$output" | tail -1)"
+    [[ "$id" =~ ^global:K-20260924-[0-9a-f]{6}$ ]] || false
+    run "$UWS" kb approve "$id"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "${id}: candidate -> trusted (approved by ${PI})" ]] || false
+    # a duplicate prints the existing item's ID in the same form
+    run "$UWS" kb add --global --type lesson --claim "Retries need a jittered backoff" --evidence reported \
+        --source url:https://example.org/doc --quote "a verbatim line"
+    [ "$status" -eq 3 ]
+    [[ "$output" == "${id}"$'\n'* ]] || false
+    # in the project KB the ID stays bare
+    run "$UWS" kb add --type fact --claim "f has one line" --evidence observed --source file:f:1
+    [ "$status" -eq 0 ]
+    [[ "$(printf '%s\n' "$output" | tail -1)" =~ ^K-20260924-[0-9a-f]{6}$ ]] || false
+}
+
 @test "search: project and global items are ranked together in one budget; global hits are marked" {
     init_global
     local i
@@ -403,7 +427,7 @@ EOF
     [[ "$output" == "Global KB ${GKB}: 0 active"*"1 retired"* ]]
 }
 
-@test "uws kb --global works outside any UWS project; project verbs still need one" {
+@test "uws kb <verb> --global works outside any UWS project; project verbs still need one" {
     local elsewhere="${TEST_TMP_DIR}-elsewhere"
     mkdir -p "$elsewhere"
     cd "$elsewhere"

@@ -66,7 +66,7 @@ environment variables.
 ## Global KB and imports
 
 A lesson that holds in any project goes to the global KB: add `--global` to `add`, and use
-`global:K-...` IDs with the other verbs. Global claims name no project or home paths, and only
+`global:K-...` IDs with the other verbs (`add --global` prints the new ID in that form). Global claims name no project or home paths, and only
 its PI promotes them. Writes fail until the user runs `./bin/uws kb init --global` (the global
 KB must be its own git repository).
 

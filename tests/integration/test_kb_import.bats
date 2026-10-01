@@ -237,7 +237,10 @@ init_global() {
         --evidence reported --source url:https://git-scm.com/docs/git-stash \
         --quote "Applying the state can fail with conflicts; in this case, it is not removed from the stash list" \
         --contradicts "$stash" 2>/dev/null)"
+    [[ "$c" == global:K-* ]] || false
+    # the printed global:K-... form is taken as it is
     run env CLAUDECODE=1 "$UWS" kb dispute "global:${stash}" --by "$c" "the git manual says the opposite"
+    c="${c#global:}"
     [ "$status" -eq 0 ]
     [ "$(field "${GKB}/items/${stash}.md" status)" = "disputed" ]
     run "$UWS" kb search --scope global --status disputed stash

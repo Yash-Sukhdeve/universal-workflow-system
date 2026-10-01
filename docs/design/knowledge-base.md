@@ -770,8 +770,11 @@ imports only read their sources; no import was run on the real stores.
   `uws_resolve_global_memory_dir`). `uws kb init --global` creates it and runs `git init`. Every
   global write (items, events, caches, `pi --set`) is refused with exit 2 unless the directory is
   the top level of its own git repository (risk 13). Nothing commits.
-- A verb runs on it with `--global`, `--scope global`, or an ID written `global:K-...`; `uws kb
-  --global ...` works outside a UWS project. Sources resolve against the global repository, so
+- A verb runs on it with `--global`, `--scope global`, or an ID written `global:K-...` in an ID
+  position (the first positional argument, or the value of `--supersedes`, `--contradicts` or
+  `--by`; other values, such as a `--quote` text, are never read as IDs); `uws kb <verb>
+  --global ...` (or a `global:K-...` ID) works outside a UWS project. `add --global` prints the
+  new ID as `global:K-...`, as `import --scope global` and `review --global` do. Sources resolve against the global repository, so
   `url:` and `item:` are the practical kinds. `learn` and `proposals` are project-only.
 - PI: `<global kb>/config.yaml` holds its own `kb.pi` (`uws kb pi --set <email> --global`); the
   gate of section 16 applies unchanged, with the global repository's `git config user.email`.
