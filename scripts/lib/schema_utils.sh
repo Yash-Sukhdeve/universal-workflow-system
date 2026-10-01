@@ -17,6 +17,9 @@ YELLOW="${YELLOW:-\033[1;33m}"
 GREEN="${GREEN:-\033[0;32m}"
 BLUE="${BLUE:-\033[0;34m}"
 NC="${NC:-\033[0m}"
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''; }
 
 # Schema directory
 SCHEMA_DIR="${SCHEMA_DIR:-.workflow/schemas}"

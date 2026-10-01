@@ -19,6 +19,9 @@ if [[ -z "${RED:-}" ]]; then
     CYAN='\033[0;36m'
     NC='\033[0m'
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; CYAN=''; NC=''; }
 
 # Source config resolution library
 _VMS_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -330,9 +333,9 @@ if changed:
     with open(mcp_json_path, 'w') as f:
         json.dump(data, f, indent=2)
         f.write('\n')
-    print("  \033[0;32m✓\033[0m .mcp.json updated with vector memory servers")
+    print("  ✓ .mcp.json updated with vector memory servers")
 else:
-    print("  \033[0;32m✓\033[0m .mcp.json already configured")
+    print("  ✓ .mcp.json already configured")
 
 PYEOF
 

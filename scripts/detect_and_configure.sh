@@ -25,12 +25,15 @@ if [[ -f "${SCRIPT_DIR}/lib/workflow_routing.sh" ]]; then
 fi
 
 # Color codes for output
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly BOLD='\033[1m'
-readonly NC='\033[0m' # No Color
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; BOLD=''; NC=''; }
 
 # Configuration
 DETECTED_TYPE=""

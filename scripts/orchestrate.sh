@@ -42,6 +42,9 @@ source "${SCRIPT_DIR}/lib/kb_utils.sh" 2>/dev/null || true
 
 PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''; }
 
 M=""; PHASE=""; AGENT=""
 METHODOLOGY_OVERRIDE=""; AGENT_OVERRIDE=""

@@ -25,6 +25,9 @@ if [[ -z "${RED:-}" ]]; then
     BLUE='\033[0;34m'
     NC='\033[0m'
 fi
+# No colour unless stdout is a terminal (and NO_COLOR or TERM=dumb is not set): output an
+# agent or a slash command captures must not carry raw ANSI escapes.
+[[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''; }
 
 # Completeness thresholds
 COMPLETENESS_THRESHOLD_GOOD="${COMPLETENESS_THRESHOLD_GOOD:-80}"

@@ -238,3 +238,16 @@ EOF
     run claude plugin validate "$PROJECT_ROOT"
     [ "$status" -eq 0 ]
 }
+
+@test "output: piped output carries no ANSI escapes, and init prints no yq notice" {
+    cd "$PROJ"
+    run bash -c "UWS_SKIP_VECTOR_MEMORY=true PATH='/usr/bin:/bin' '${PROJECT_ROOT}/bin/uws' init software </dev/null 2>&1 | cat"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *$'\033'* ]] || false
+    [[ "$output" != *"yq not found"* ]] || false
+    local c
+    for c in "status" "sdlc status" "checkpoint list" "recover"; do
+        run bash -c "'${PROJECT_ROOT}/bin/uws' $c </dev/null 2>&1 | cat"
+        [[ "$output" != *$'\033'* && "$output" != *'\033'* ]] || false
+    done
+}
