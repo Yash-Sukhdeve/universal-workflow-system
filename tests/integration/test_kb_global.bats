@@ -243,6 +243,32 @@ EOF
     rm -rf "$elsewhere"
 }
 
+@test "--scope global selects the global KB for add, search and show, as --global does" {
+    init_global
+    gid add --scope global --type lesson --claim "Scoped lesson about retry jitter" --evidence reported \
+        --source url:https://example.org/doc --quote "a verbatim line"
+    local id="$KB_OUT"
+    [[ "$id" =~ ^K-20260924-[0-9a-f]{6}$ ]]
+    [ -f "$GKB/items/${id}.md" ]
+    [ "$(field "$GKB/items/${id}.md" scope)" = "global" ]
+    [ ! -e "$KB/items/${id}.md" ]
+    run "$UWS" kb show --scope global "$id"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"id: ${id}"* ]]
+    [[ "$output" == *"scope: global"* ]]
+    run "$UWS" kb show --scope=global "$id"
+    [ "$status" -eq 0 ]
+    # candidates are searched with --status; the hit is marked global
+    run "$UWS" kb search --scope global --status candidate jitter
+    [ "$status" -eq 0 ]
+    [[ "$output" == "global:${id} [lesson|candidate|reported|"* ]]
+    run "$UWS" kb search --scope project --status candidate jitter
+    [ "$status" -eq 1 ]
+    # a project-only verb is refused with the global scope
+    run "$UWS" kb proposals --scope global
+    [ "$status" -eq 2 ]
+}
+
 @test "stats lists the global KB next to the project KB" {
     init_global
     add_global_lesson "Caches must be rebuildable"

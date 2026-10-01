@@ -58,7 +58,7 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
 - Test isolation: `tests/helpers/test_helper.bash` exports `UWS_KB_GUARD_ROOT` and a
   non-existent `UWS_GLOBAL_MEMORY_DIR`; while it is set, no KB write (items, outcomes, usage,
   caches) lands in the UWS checkout unless a test sets `UWS_KB_ALLOW_GUARDED_WRITE=1`
-- Tests: `tests/integration/test_kb_global.bats` (7), `test_kb_import.bats` (12) and
+- Tests: `tests/integration/test_kb_global.bats` (8), `test_kb_import.bats` (12) and
   `test_kb_usage.bats` (14), on synthetic SQLite fixtures built with the vector-memory schema
   (`tests/fixtures/kb/make_vector_db.py`)
 
