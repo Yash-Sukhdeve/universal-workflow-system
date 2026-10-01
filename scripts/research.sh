@@ -135,6 +135,7 @@ show_usage() {
     echo "  check retraction [--online]        Retraction notices (Crossref) for bib_sources/"
     echo "  check manuscript-hash      The hash a red-team review must name"
     echo "  check macros               Write the number macros from the number ledger"
+    echo "  check help                 The checker's own help (each command: check <name> --help)"
     echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
     echo "  bib build                  Write references.bib from bib_sources/ only"
     echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"
@@ -162,6 +163,18 @@ show_usage() {
 # installation that resolve_project.sh falls back to.
 case "${1:-status}" in
     check)
+        case "${2:-}" in
+            help|-h|--help)
+                run_checker --help
+                ;;
+            "")
+                # A bare `check` lists the deliverables to tick when there is workflow
+                # state; without it, it can only mean the evidence checks.
+                if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" || ! -f "$STATE_FILE" ]]; then
+                    run_checker --help
+                fi
+                ;;
+        esac
         if [[ -n "${2:-}" && "$RESEARCH_CHECK_COMMANDS" == *" ${2} "* ]]; then
             shift
             run_checker "$@"

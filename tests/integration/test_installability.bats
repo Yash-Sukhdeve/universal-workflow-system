@@ -400,3 +400,20 @@ no_stale_hint() {
     grep -q 'CLAUDE_PLUGIN_ROOT}/bin/uws orchestrate dispatch' "$PLUGIN_DIR/commands/orchestrate.md"
     rm -rf "$(dirname "$MAT")"
 }
+
+@test "research help and check help work outside a UWS project" {
+    cd "$PROJ"
+    run "${PROJECT_ROOT}/bin/uws" research --help </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"goal"*"deliverables"*"check <n>"* ]] || false
+    local a
+    for a in "check --help" "check help" "check -h" "check"; do
+        run "${PROJECT_ROOT}/bin/uws" research $a </dev/null
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"usage: research_check.py"* ]] || false
+        [[ "$output" == *"gate"* ]] || false
+    done
+    # ticking a numbered deliverable still needs workflow state, and says so
+    run "${PROJECT_ROOT}/bin/uws" research check 1 </dev/null
+    [ "$status" -ne 0 ]
+}

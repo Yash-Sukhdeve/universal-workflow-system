@@ -132,11 +132,12 @@ kb_args_global() {
     [[ "$KB_SCAN_SCOPE" == "global" ]]
 }
 
-# research_needs_no_state <research args>: true for `bib ...` and for `check <name>` (a
-# checker command, not the number of a deliverable to tick).
+# research_needs_no_state <research args>: true for `bib ...`, for help, and for
+# `check` unless it ticks a numbered deliverable (`check <n>`): `check <name>` runs a
+# checker command, and a bare `check` or `check help` prints the checks' usage.
 research_needs_no_state() {
     case "${1:-}" in
-        bib) return 0 ;;
+        bib|help|-h|--help) return 0 ;;
         check)
             [[ ! "${2:-}" =~ ^[0-9]+$ ]] && return 0
             ;;
