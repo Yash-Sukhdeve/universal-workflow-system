@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Research team (field-test fixes)
+
+The first real use of the research checks, an audit of the PROMISE 2026 paper, found
+integrity gaps, misses, false positives and friction. Each fix has a regression test in
+`tests/integration/test_research_team_fieldtest.bats` (32 tests) that fails on the code
+before it; the paper's lines are verbatim fixtures in `tests/fixtures/research/promise/`.
+Details, decisions, the before/after re-run on the audit and what was consciously not
+fixed: `docs/design/research-team.md` section 11b.
+
+#### Added
+- `research check numbers add '<json>'` and `research check claims add '<json>'` append one
+  validated row; `id`, `rev` and `supersedes` are filled in (numbers also `output_sha256`,
+  `raw` read at `pointer`, and `printed` from `rounding`), and existing lines are never
+  touched. A row is refused for its own errors (schema, references, value at the pointer,
+  links); a printed value that its evidence contradicts is appended and reported, so an
+  audit can record a misprint.
+- `run --code <file>` records the scripts a command runs as code (versioned by the run's
+  commit, not by the data manifest); code missing from the recorded commit is `RUN-CODE`.
+- `run --output` takes a glob for timestamped names; the run records the file the command
+  wrote and the repro job finds the re-run's file by the same pattern.
+- `run.json` records the command's interpreter (resolved path, kind, version) and
+  `env_lock` (hash of `research/env/requirements.lock` or `--env-lock` files).
+- Structured split declarations in the data manifest (`data add --split` JSON:
+  `{train, validation, test, group_key}` or `{column, group_key}`): `DATA-LEAK` fails when one
+  group is on both sides, `DATA-SPLIT` reports a malformed declaration, a free-text split is
+  a warning.
+- `BIB-UNDEFINED`: a `\cite` key that neither `references.bib` nor `bib_sources/` defines.
+- Number rows may name `unrounded` {run, output, pointer}: the full-precision value that
+  decides `NUM-ROUND` when the output file stores a pre-rounded value.
+- A number row's `where` (`file:line; file:l1,l2; file#label`; text in parentheses is a
+  note) links hand-typed values to the row: `NUM-LITERAL` names the row and its macro,
+  `NUM-SPLIT`, C3 and C6 judge the value like a macro use, and a named place that does not
+  show the value is a `NUM-WHERE` warning. A claim row's `where` attaches the claim to those
+  lines for C6.
+
+#### Changed
+- `PLAN-ORDER` orders against when a result existed: the first commit of its output file, of
+  that content under any name, of its run record, and the commit the run executed on, not
+  only the ledger row.
+- Sentences are split LaTeX-aware (`recover\_context.sh`, `0.912`, `Fig.~3`, `et al.\ ` and
+  common abbreviations end nothing), so C6 now catches "ground truth" at the PROMISE
+  introduction (line 33) and approach (line 120). Only ledger macro names count as number
+  uses (never `\textit` or `\paragraph`). C6 blocks when evidence tied to the sentence rests
+  on generated data or generator-rule labels and warns otherwise.
+- `NUM-LITERAL` catches numbers with units (`1.1ms`, `1.1\,ms`, `30\%`) and covers the
+  introduction, evaluation, experiments and discussion as well.
+- `NUM-ROUND` warns "pre-rounded; cannot judge" instead of blocking when the stored value
+  could print either way, unless `unrounded` decides.
+- S1: a narrow idiom allowlist (best practice(s), best effort, best case, at best), and
+  "First <contribution noun>" (as in "First predictive models") counts as a novelty claim.
+- `REPRO` accepts only the repro job's re-run of a number's recorded run: a hand-written
+  pass (an external reproduction) does not count.
+- `research check <name>` and `research bib` need no `.workflow/state.yaml`, from `uws` and
+  from `research.sh`; a fallback to UWS's own `.workflow` is never used as the project's.
+- `macros` writes the valid rows and reports each skipped invalid row (exit 1) instead of
+  refusing all.
+- The gate's KB note quotes `uws kb stats`; `init` puts `.gitkeep` in empty scaffold
+  directories.
+- The engineer, methodologist, scout and verifier personas and the `uws-research-lead`
+  skill use the new commands.
+
+#### Fixed
+- Code given as a run input is no longer reported as unmanifested data, and a gate no
+  longer prints the same number-ledger schema error once per check.
+
+#### Not fixed
+- A number measured under generated conditions (the PROMISE recovery times) has no
+  `data_origin` of its own: labelled `synthetic-generated` it draws C3 findings (7 in the
+  re-run), labelled `measured` it draws none. Changing the vocabulary is a PI decision.
+- `NUM-LITERAL` still skips method sections; statements that need reading (wrong
+  directions, a count with the wrong unit, citations of another paper) remain the
+  verifier's and red team's work; the BibTeX metadata cross-check is still not built; a
+  complete forged repro report is not detected (reports are not signed); `numbers add`
+  cannot record a number that has no output file.
+
 ### Meta-learning
 
 Increment 3 of `docs/design/knowledge-base.md` (section 6), built before the global KB and
