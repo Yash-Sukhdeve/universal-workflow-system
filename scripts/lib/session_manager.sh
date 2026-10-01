@@ -7,7 +7,15 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/portable.sh"
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# The project is the one whose .workflow/ is in use (WORKFLOW_DIR, set by bin/uws and
+# the dashboard server; else the current directory or the git root), never the UWS
+# installation that holds this script
+source "${SCRIPT_DIR}/resolve_project.sh"
+if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" ]]; then
+    echo "session_manager.sh: no .workflow/ in this project (set WORKFLOW_DIR or run it from the project)" >&2
+    exit 1
+fi
+PROJECT_ROOT="$(cd "$(dirname "$WORKFLOW_DIR")" && pwd)"
 
 # Sessions file
 SESSIONS_FILE="${PROJECT_ROOT}/.workflow/agents/sessions.yaml"
