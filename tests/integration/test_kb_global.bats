@@ -396,6 +396,11 @@ EOF
         [ "$status" -eq 0 ]
         budget_ok "$output"
     done
+    # every line is 200 bytes: the 1000-byte cap of the merged search, not its 5-line
+    # limit, leaves four, and both KBs share them
+    run "$UWS" kb search alpha
+    [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 4 ]
+    [[ "$output" == *"global:K-"* ]] || false
     # the subagent brief's search (orchestrate.sh kb_brief_section)
     run env UWS_KB_USAGE_VIA=task "$UWS" kb search --min-terms 2 -- "Write up the alpha project note padding"
     [ "$status" -eq 0 ]

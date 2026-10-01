@@ -7,6 +7,10 @@
 
 load '../helpers/test_helper'
 
+# The global memory directory the helper sets when this file loads, before setup()
+# points it at a per-test directory: the default for tests that never call setup
+HELPER_GLOBAL="${UWS_GLOBAL_MEMORY_DIR:-}"
+
 UWS="${PROJECT_ROOT}/bin/uws"
 PI="pi@lab.example"
 
@@ -354,6 +358,46 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ ! -e "$t" ]
 }
 
+@test "TASK.md: the 1000-byte cap, not the 5-line limit, cuts long leads" {
+    local i pad="and the limiter keys on the account, the client address and the device together, so one noisy client cannot lock out every other client of the same account or the same office"
+    for i in 1 2 3 4 5 6; do
+        seed "K-20260101-00000${i}" lesson "Login rate limiter lesson ${i}: ${pad}"
+    done
+    [ "$(LC_ALL=C awk 'length($0) > m { m = length($0) } END { print m }' "${KB}"/items/K-20260101-000001.md)" -ge 200 ]
+    "$UWS" sdlc start >/dev/null
+    run "$UWS" orchestrate dispatch "Implement the login rate limiter"
+    [ "$status" -eq 0 ]
+    local block
+    block="$(awk '/^```text$/ { f = 1; next } f && /^```$/ { exit } f' workspace/researcher/TASK.md)"
+    # five 200-byte lines would be 1005 bytes: the byte cap leaves four
+    [ "$(printf '%s\n' "$block" | wc -l | tr -d ' ')" -eq 4 ]
+    [ "$(printf '%s\n' "$block" | LC_ALL=C wc -c | tr -d ' ')" -le 1000 ]
+}
+
+@test "TASK.md: an item that shares only one content word with the task is no lead" {
+    seed K-20260101-0000f2 fact "Only the login word matches here"
+    "$UWS" sdlc start >/dev/null
+    run "$UWS" orchestrate dispatch "Implement the login rate limiter"
+    [ "$status" -eq 0 ]
+    run grep -c 'Knowledge base leads' workspace/researcher/TASK.md
+    [ "$output" = "0" ]
+}
+
+@test "TASK.md: stale and disputed items are no leads, even as the only matches" {
+    seed K-20260101-0000e1 lesson "Login rate limiter lesson that went stale"
+    seed K-20260101-0000e2 lesson "Login rate limiter lesson under dispute"
+    local f
+    f="${KB}/items/K-20260101-0000e1.md"; sed -e 's/^status: trusted$/status: stale/' "$f" > "$f.new" && mv "$f.new" "$f"
+    f="${KB}/items/K-20260101-0000e2.md"; sed -e 's/^status: trusted$/status: disputed/' "$f" > "$f.new" && mv "$f.new" "$f"
+    "$UWS" sdlc start >/dev/null
+    run "$UWS" orchestrate dispatch "Implement the login rate limiter"
+    [ "$status" -eq 0 ]
+    run grep -c 'Knowledge base leads' workspace/researcher/TASK.md
+    [ "$output" = "0" ]
+    run grep -c 'K-20260101-0000e' workspace/researcher/TASK.md
+    [ "$output" = "0" ]
+}
+
 @test "TASK.md: a task that starts with dashes or matches nothing still dispatches" {
     seed K-20260101-000001 lesson "Login rate limiter lesson"
     "$UWS" sdlc start >/dev/null
@@ -394,8 +438,12 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ "$status" -eq 1 ]
     run env -u UWS_KB_GUARD_ROOT bash -c 'source "$1/scripts/lib/kb_utils.sh"; kb_guarded "$1/docs/kb"' _ "$PROJECT_ROOT"
     [ "$status" -eq 1 ]
-    # The global KB of the tests is never the user's real one
-    [[ "$UWS_GLOBAL_MEMORY_DIR" != "${HOME}/uws-global-knowledge" ]]
+    # The global KB of the tests is never the user's real one: the helper's file-level
+    # default (for tests without setup_test_environment) and setup()'s per-test directory
+    [ "$HELPER_GLOBAL" = "${BATS_RUN_TMPDIR:-${TMPDIR:-/tmp}}/uws-test-no-global-memory" ]
+    [ "$UWS_GLOBAL_MEMORY_DIR" = "${TEST_TMP_DIR}-global" ]
+    run bash -c 'source "$1/scripts/lib/kb_utils.sh"; kb_global_dir' _ "$PROJECT_ROOT"
+    [ "$output" = "${TEST_TMP_DIR}-global/kb" ]
 }
 
 @test "guard: nothing is recorded or written in a guarded checkout's KB unless the test opts in" {

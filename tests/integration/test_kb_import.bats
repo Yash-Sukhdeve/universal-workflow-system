@@ -151,6 +151,26 @@ init_global() {
     [ -z "$(git status --porcelain)" ]
 }
 
+@test "import: an identifier in tracked code is part of the project; one only in a README is not" {
+    mkdir -p lib
+    printf 'refill_token_bucket() { :; }\n' > lib/limiter.sh
+    printf '# Notes\nWe tried warmup_scheduler_v2 once.\n' > README.md
+    git add lib/limiter.sh README.md && git commit -qm "code and prose" >/dev/null
+    python3 "$MAKE_DB" rows "${TEST_TMP_DIR}/rows.db" \
+        "The limiter calls refill_token_bucket every second" \
+        "Training uses warmup_scheduler_v2 for the first epoch"
+    run "$UWS" kb import vector --db "${TEST_TMP_DIR}/rows.db"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"added 2 candidate(s) (1 flagged suspected-fixture)"* ]] || false
+    local code prose
+    code="$(item_with "$KB" 'refill_token_bucket')"
+    prose="$(item_with "$KB" 'warmup_scheduler_v2')"
+    run grep -q '^flags:' "$code"
+    [ "$status" -eq 1 ]
+    grep -q '^flags: \[suspected-fixture\]$' "$prose"
+    [[ "$(field "$prose" flag_detail)" == *"warmup_scheduler_v2"* ]] || false
+}
+
 @test "import vector: a WAL database in a writable directory is left exactly as it was, dry run or not" {
     # The fixtures above sit in a read-only directory; a real store's directory is writable,
     # and a read-only connection to a WAL database would create -wal and -shm files there
