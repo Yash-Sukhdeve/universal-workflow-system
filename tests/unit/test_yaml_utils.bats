@@ -28,7 +28,7 @@ teardown() {
 # ============================================================================
 
 @test "yaml_utils.sh exists and is sourceable" {
-    [[ -f "${SCRIPTS_DIR}/lib/yaml_utils.sh" ]]
+    [[ -f "${SCRIPTS_DIR}/lib/yaml_utils.sh" ]] || false
     source "${SCRIPTS_DIR}/lib/yaml_utils.sh"
 }
 
@@ -57,7 +57,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "name")
 
-    [[ "$result" == "test-project" ]] || [[ "$result" == '"test-project"' ]]
+    [[ "$result" == "test-project" ]] || [[ "$result" == '"test-project"' ]] || false
 }
 
 @test "yaml_get retrieves nested value" {
@@ -72,7 +72,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "project.name")
 
-    [[ "$result" == "nested-test" ]] || [[ "$result" == '"nested-test"' ]] || [[ "$result" =~ "nested" ]]
+    [[ "$result" == "nested-test" ]] || [[ "$result" == '"nested-test"' ]] || [[ "$result" =~ "nested" ]] || false
 }
 
 @test "yaml_get returns null for missing key" {
@@ -85,7 +85,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "nonexistent")
 
-    [[ "$result" == "null" ]] || [[ -z "$result" ]] || [[ "$result" == "" ]]
+    [[ "$result" == "null" ]] || [[ -z "$result" ]] || [[ "$result" == "" ]] || false
 }
 
 @test "yaml_get handles numeric values" {
@@ -99,7 +99,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "count")
 
-    [[ "$result" == "42" ]]
+    [[ "$result" == "42" ]] || false
 }
 
 @test "yaml_get handles boolean values" {
@@ -113,7 +113,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "enabled")
 
-    [[ "$result" == "true" ]]
+    [[ "$result" == "true" ]] || false
 }
 
 # ============================================================================
@@ -144,7 +144,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "name")
 
-    [[ "$result" == "new-name" ]] || [[ "$result" == '"new-name"' ]]
+    [[ "$result" == "new-name" ]] || [[ "$result" == '"new-name"' ]] || false
 }
 
 # ============================================================================
@@ -169,7 +169,7 @@ version: "1.0.0"
 EOF
 
     run yaml_validate test.yaml
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 # ============================================================================
@@ -184,7 +184,7 @@ EOF
     local result
     result=$(yaml_get empty.yaml "key" 2>/dev/null || echo "null")
 
-    [[ "$result" == "null" ]] || [[ -z "$result" ]]
+    [[ "$result" == "null" ]] || [[ -z "$result" ]] || false
 }
 
 @test "yaml_get handles file with comments" {
@@ -200,7 +200,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "name")
 
-    [[ "$result" == "commented" ]] || [[ "$result" == '"commented"' ]]
+    [[ "$result" == "commented" ]] || [[ "$result" == '"commented"' ]] || false
 }
 
 @test "yaml_get handles special characters in values" {
@@ -214,7 +214,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "path")
 
-    [[ "$result" =~ "/usr/local/bin" ]]
+    [[ "$result" =~ "/usr/local/bin" ]] || false
 }
 
 @test "yaml_get handles multiword values" {
@@ -227,7 +227,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "description")
 
-    [[ "$result" =~ "multi word" ]] || [[ "$result" =~ "description" ]]
+    [[ "$result" =~ "multi word" ]] || [[ "$result" =~ "description" ]] || false
 }
 
 # ============================================================================
@@ -247,7 +247,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "name")
 
-    [[ "$result" =~ "fallback" ]] || [[ -n "$result" ]]
+    [[ "$result" =~ "fallback" ]] || [[ -n "$result" ]] || false
 }
 
 # ============================================================================
@@ -268,7 +268,7 @@ EOF
     local result
     result=$(yaml_get test.yaml "items" 2>/dev/null || echo "array")
 
-    [[ -n "$result" ]]
+    [[ -n "$result" ]] || false
 }
 
 # ============================================================================
@@ -290,5 +290,5 @@ EOF
     end_time=$(date +%s)
     elapsed=$((end_time - start_time))
 
-    [[ "$elapsed" -lt 2 ]]
+    [[ "$elapsed" -lt 2 ]] || false
 }

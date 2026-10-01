@@ -24,8 +24,8 @@ teardown() {
 # ============================================================================
 
 @test "research.sh exists and is executable" {
-    [[ -f "${SCRIPTS_DIR}/research.sh" ]]
-    [[ -x "${SCRIPTS_DIR}/research.sh" ]]
+    [[ -f "${SCRIPTS_DIR}/research.sh" ]] || false
+    [[ -x "${SCRIPTS_DIR}/research.sh" ]] || false
 }
 
 @test "research.sh has proper shebang and strict mode" {
@@ -39,14 +39,14 @@ teardown() {
 @test "research status shows 'not started' initially" {
     run "${SCRIPTS_DIR}/research.sh" status
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "Not started" ]] || [[ "$output" =~ "none" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "Not started" ]] || [[ "$output" =~ "none" ]] || false
 }
 
 @test "research status command is default action" {
     run "${SCRIPTS_DIR}/research.sh"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 # ============================================================================
@@ -56,8 +56,8 @@ teardown() {
 @test "research start begins at hypothesis phase" {
     run "${SCRIPTS_DIR}/research.sh" start
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "hypothesis" ]] || [[ "$output" =~ "Hypothesis" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "hypothesis" ]] || [[ "$output" =~ "Hypothesis" ]] || false
 }
 
 @test "research start updates state file" {
@@ -71,7 +71,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" start
 
-    [[ "$status" -ne 0 ]] || [[ "$output" =~ "already" ]]
+    [[ "$status" -ne 0 ]] || [[ "$output" =~ "already" ]] || false
 }
 
 # ============================================================================
@@ -84,20 +84,20 @@ teardown() {
     # hypothesis → literature_review → experiment_design → data_collection → analysis → peer_review → publication
     for i in {1..6}; do
         run "${SCRIPTS_DIR}/research.sh" next
-        [[ "$status" -eq 0 ]]
+        [[ "$status" -eq 0 ]] || false
     done
 
     # Should now be at publication
     run "${SCRIPTS_DIR}/research.sh" status
-    [[ "$output" =~ "publication" ]]
+    [[ "$output" =~ "publication" ]] || false
 }
 
 @test "research next from hypothesis goes to literature_review" {
     "${SCRIPTS_DIR}/research.sh" start
     run "${SCRIPTS_DIR}/research.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "literature_review" ]] || [[ "$output" =~ "Literature" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "literature_review" ]] || [[ "$output" =~ "Literature" ]] || false
 }
 
 @test "research next from literature_review goes to experiment_design" {
@@ -105,8 +105,8 @@ teardown() {
     "${SCRIPTS_DIR}/research.sh" next  # literature_review
     run "${SCRIPTS_DIR}/research.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "experiment_design" ]] || [[ "$output" =~ "Experiment" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "experiment_design" ]] || [[ "$output" =~ "Experiment" ]] || false
 }
 
 @test "research next from experiment_design goes to data_collection" {
@@ -115,8 +115,8 @@ teardown() {
     "${SCRIPTS_DIR}/research.sh" next  # experiment_design
     run "${SCRIPTS_DIR}/research.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "data_collection" ]] || [[ "$output" =~ "Data" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "data_collection" ]] || [[ "$output" =~ "Data" ]] || false
 }
 
 @test "research next from data_collection goes to analysis" {
@@ -126,8 +126,8 @@ teardown() {
     "${SCRIPTS_DIR}/research.sh" next  # data_collection
     run "${SCRIPTS_DIR}/research.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "analysis" ]] || [[ "$output" =~ "Analysis" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "analysis" ]] || [[ "$output" =~ "Analysis" ]] || false
 }
 
 @test "research next from analysis goes to peer_review" {
@@ -138,8 +138,8 @@ teardown() {
     "${SCRIPTS_DIR}/research.sh" next  # analysis
     run "${SCRIPTS_DIR}/research.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "peer_review" ]] || [[ "$output" =~ "Peer" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "peer_review" ]] || [[ "$output" =~ "Peer" ]] || false
 }
 
 @test "research next from peer_review goes to publication" {
@@ -151,14 +151,14 @@ teardown() {
     "${SCRIPTS_DIR}/research.sh" next  # peer_review
     run "${SCRIPTS_DIR}/research.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "publication" ]] || [[ "$output" =~ "Publication" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "publication" ]] || [[ "$output" =~ "Publication" ]] || false
 }
 
 @test "research next fails when not started" {
     run "${SCRIPTS_DIR}/research.sh" next
 
-    [[ "$status" -ne 0 ]] || [[ "$output" =~ "not started" ]]
+    [[ "$status" -ne 0 ]] || [[ "$output" =~ "not started" ]] || false
 }
 
 # ============================================================================
@@ -174,8 +174,8 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" reject "Results inconclusive"
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "experiment_design" ]] || [[ "$output" =~ "refinement" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "experiment_design" ]] || [[ "$output" =~ "refinement" ]] || false
 }
 
 @test "research reject in data_collection returns to experiment_design" {
@@ -186,8 +186,8 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" reject "Data collection issues"
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "experiment_design" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "experiment_design" ]] || false
 }
 
 @test "research reject in publication returns to analysis" {
@@ -201,8 +201,8 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" reject "Paper rejected by reviewers"
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "analysis" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "analysis" ]] || false
 }
 
 @test "research reject at hypothesis stays at hypothesis" {
@@ -210,7 +210,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" reject "Hypothesis unclear"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
     # Should stay at hypothesis phase
 }
 
@@ -223,7 +223,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" reject "p-value not significant (p=0.23)"
 
-    [[ "$output" =~ "p-value" ]] || [[ "$output" =~ "0.23" ]]
+    [[ "$output" =~ "p-value" ]] || [[ "$output" =~ "0.23" ]] || false
 }
 
 # ============================================================================
@@ -236,11 +236,11 @@ teardown() {
 
     run "${SCRIPTS_DIR}/research.sh" reset
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 
     # Should show not started after reset
     run "${SCRIPTS_DIR}/research.sh" status
-    [[ "$output" =~ "Not started" ]] || [[ "$output" =~ "none" ]]
+    [[ "$output" =~ "Not started" ]] || [[ "$output" =~ "none" ]] || false
 }
 
 @test "research reset allows new start" {
@@ -248,7 +248,7 @@ teardown() {
     "${SCRIPTS_DIR}/research.sh" reset
     run "${SCRIPTS_DIR}/research.sh" start
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 # ============================================================================
@@ -258,15 +258,15 @@ teardown() {
 @test "research help shows usage" {
     run "${SCRIPTS_DIR}/research.sh" help
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "Usage" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "Usage" ]] || false
 }
 
 @test "research --help shows usage" {
     run "${SCRIPTS_DIR}/research.sh" --help
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "Usage" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "Usage" ]] || false
 }
 
 # ============================================================================
@@ -276,8 +276,8 @@ teardown() {
 @test "research handles unknown action gracefully" {
     run "${SCRIPTS_DIR}/research.sh" invalid_action
 
-    [[ "$status" -ne 0 ]]
-    [[ "$output" =~ "Unknown" ]] || [[ "$output" =~ "unknown" ]]
+    [[ "$status" -ne 0 ]] || false
+    [[ "$output" =~ "Unknown" ]] || [[ "$output" =~ "unknown" ]] || false
 }
 
 # ============================================================================
@@ -287,21 +287,21 @@ teardown() {
 @test "complete research cycle from hypothesis to publication" {
     # Start
     run "${SCRIPTS_DIR}/research.sh" start
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 
     # Progress through all 7 phases
     for phase in literature_review experiment_design data_collection analysis peer_review publication; do
         run "${SCRIPTS_DIR}/research.sh" next
-        [[ "$status" -eq 0 ]]
+        [[ "$status" -eq 0 ]] || false
     done
 
     # Verify at publication
     run "${SCRIPTS_DIR}/research.sh" status
-    [[ "$output" =~ "publication" ]]
+    [[ "$output" =~ "publication" ]] || false
 
     # Try next at publication - should indicate complete
     run "${SCRIPTS_DIR}/research.sh" next
-    [[ "$output" =~ "complete" ]] || [[ "$output" =~ "Congratulations" ]]
+    [[ "$output" =~ "complete" ]] || [[ "$output" =~ "Congratulations" ]] || false
 }
 
 @test "research cycle with rejection and refinement" {
@@ -316,11 +316,11 @@ teardown() {
 
     # Should be back at experiment_design
     run "${SCRIPTS_DIR}/research.sh" status
-    [[ "$output" =~ "experiment_design" ]]
+    [[ "$output" =~ "experiment_design" ]] || false
 
     # Refine and continue
     run "${SCRIPTS_DIR}/research.sh" next  # back to data_collection
-    [[ "$output" =~ "data_collection" ]]
+    [[ "$output" =~ "data_collection" ]] || false
 }
 
 @test "multiple rejection cycles allowed" {
@@ -339,11 +339,11 @@ teardown() {
 
     # Second rejection
     run "${SCRIPTS_DIR}/research.sh" reject "Second attempt also failed"
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 
     # Should be back at experiment_design again
     run "${SCRIPTS_DIR}/research.sh" status
-    [[ "$output" =~ "experiment_design" ]]
+    [[ "$output" =~ "experiment_design" ]] || false
 }
 
 # ============================================================================
@@ -355,7 +355,7 @@ teardown() {
     run "${SCRIPTS_DIR}/research.sh" next
 
     # Should provide guidance for literature_review phase
-    [[ "$output" =~ "literature" ]] || [[ "$output" =~ "Survey" ]] || [[ "$output" =~ "gaps" ]]
+    [[ "$output" =~ "literature" ]] || [[ "$output" =~ "Survey" ]] || [[ "$output" =~ "gaps" ]] || false
 }
 
 @test "research mentions negative results value on reject" {
@@ -368,5 +368,5 @@ teardown() {
     run "${SCRIPTS_DIR}/research.sh" reject "Null result"
 
     # Should mention that negative results are valuable
-    [[ "$output" =~ "negative results" ]] || [[ "$output" =~ "scientific method" ]] || [[ "$output" =~ "valuable" ]]
+    [[ "$output" =~ "negative results" ]] || [[ "$output" =~ "scientific method" ]] || [[ "$output" =~ "valuable" ]] || false
 }

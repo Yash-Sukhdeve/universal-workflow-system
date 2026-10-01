@@ -33,7 +33,7 @@ teardown() {
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"Python"* ]] || [[ "$output" == *"software"* ]]
+    [[ "$output" == *"Python"* ]] || [[ "$output" == *"software"* ]] || false
 }
 
 @test "detect_and_configure detects Node.js project with package.json" {
@@ -54,7 +54,7 @@ EOF
 
     assert_success
     # Should detect something (Node.js maps to software type)
-    [[ "$output" == *"Node"* ]] || [[ "$output" == *"software"* ]] || [[ "$output" == *"detected"* ]] || [[ "$output" == *"hybrid"* ]]
+    [[ "$output" == *"Node"* ]] || [[ "$output" == *"software"* ]] || [[ "$output" == *"detected"* ]] || [[ "$output" == *"hybrid"* ]] || false
 }
 
 @test "detect_and_configure detects ML project with torch in requirements" {
@@ -74,7 +74,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"ml"* ]] || [[ "$output" == *"ML"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"ml"* ]] || [[ "$output" == *"ML"* ]] || [[ "$output" == *"detected"* ]] || false
 }
 
 @test "detect_and_configure detects Research project with paper directory" {
@@ -91,7 +91,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"research"* ]] || [[ "$output" == *"Research"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"research"* ]] || [[ "$output" == *"Research"* ]] || [[ "$output" == *"detected"* ]] || false
 }
 
 @test "detect_and_configure detects Rust project with Cargo.toml" {
@@ -112,7 +112,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"Rust"* ]] || [[ "$output" == *"software"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"Rust"* ]] || [[ "$output" == *"software"* ]] || [[ "$output" == *"detected"* ]] || false
 }
 
 @test "detect_and_configure detects Go project with go.mod" {
@@ -129,7 +129,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"Go"* ]] || [[ "$output" == *"software"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"Go"* ]] || [[ "$output" == *"software"* ]] || [[ "$output" == *"detected"* ]] || false
 }
 
 @test "detect_and_configure defaults to hybrid for empty project" {
@@ -142,7 +142,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"hybrid"* ]] || [[ "$output" == *"software"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"hybrid"* ]] || [[ "$output" == *"software"* ]] || [[ "$output" == *"detected"* ]] || false
 }
 
 # =============================================================================
@@ -161,7 +161,7 @@ EOF
     assert_success
 
     # Check state was updated
-    [[ -f ".workflow/state.yaml" ]]
+    [[ -f ".workflow/state.yaml" ]] || false
 }
 
 @test "detect_and_configure updates config.yaml with detected type" {
@@ -173,7 +173,7 @@ EOF
 
     assert_success
 
-    [[ -f ".workflow/config.yaml" ]]
+    [[ -f ".workflow/config.yaml" ]] || false
 }
 
 @test "detect_and_configure provides recommendations for research project" {
@@ -185,7 +185,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto
 
     assert_success
-    [[ "$output" == *"researcher"* ]] || [[ "$output" == *"Recommend"* ]]
+    [[ "$output" == *"researcher"* ]] || [[ "$output" == *"Recommend"* ]] || false
 }
 
 # =============================================================================
@@ -199,7 +199,7 @@ EOF
 
     # --help exits with 0
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Usage"* ]]
+    [[ "$output" == *"Usage"* ]] || false
 }
 
 @test "detect_and_configure --verbose shows debug output" {
@@ -210,7 +210,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"DEBUG"* ]] || [[ "$output" == *"Found"* ]] || [[ "$output" == *"score"* ]]
+    [[ "$output" == *"DEBUG"* ]] || [[ "$output" == *"Found"* ]] || [[ "$output" == *"score"* ]] || false
 }
 
 @test "detect_and_configure --force skips existing config check" {
@@ -230,7 +230,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto
 
     assert_success
-    [[ "$output" == *"Auto-detected"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"Auto-detected"* ]] || [[ "$output" == *"detected"* ]] || false
 }
 
 # =============================================================================
@@ -252,7 +252,7 @@ EOF
 
     assert_success
     # Should detect something (ml, hybrid, or software)
-    [[ "$output" == *"detected"* ]] || [[ "$output" == *"Detected"* ]]
+    [[ "$output" == *"detected"* ]] || [[ "$output" == *"Detected"* ]] || false
 }
 
 # =============================================================================
@@ -277,7 +277,7 @@ EOF
     assert_success
 
     # Original file should still be valid
-    [[ -f ".workflow/config.yaml" ]]
+    [[ -f ".workflow/config.yaml" ]] || false
 }
 
 # =============================================================================
@@ -323,7 +323,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"Docker"* ]] || [[ "$output" == *"deployment"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"Docker"* ]] || [[ "$output" == *"deployment"* ]] || [[ "$output" == *"detected"* ]] || false
 }
 
 # =============================================================================
@@ -347,7 +347,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"CI"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"CI"* ]] || [[ "$output" == *"detected"* ]] || false
 }
 
 # =============================================================================
@@ -369,7 +369,7 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --invalid-flag
 
     assert_failure
-    [[ "$output" == *"Error"* ]] || [[ "$output" == *"Unknown"* ]]
+    [[ "$output" == *"Error"* ]] || [[ "$output" == *"Unknown"* ]] || false
 }
 
 # =============================================================================
@@ -392,5 +392,5 @@ EOF
     run "${SCRIPTS_DIR}/detect_and_configure.sh" --auto --verbose
 
     assert_success
-    [[ "$output" == *"llm"* ]] || [[ "$output" == *"LLM"* ]] || [[ "$output" == *"ml"* ]] || [[ "$output" == *"detected"* ]]
+    [[ "$output" == *"llm"* ]] || [[ "$output" == *"LLM"* ]] || [[ "$output" == *"ml"* ]] || [[ "$output" == *"detected"* ]] || false
 }

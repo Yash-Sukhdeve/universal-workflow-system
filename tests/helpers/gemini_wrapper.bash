@@ -27,8 +27,8 @@ GEMINI_MOCK_MODE="${GEMINI_MOCK_MODE:-false}"
 verify_gemini_available() {
     # Return cached result if available
     if [[ -n "$GEMINI_AVAILABLE" ]]; then
-        [[ "$GEMINI_AVAILABLE" == "true" ]]
-        return $?
+        [[ "$GEMINI_AVAILABLE" == "true" ]] || return 1
+        return 0
     fi
 
     # Check for mock mode

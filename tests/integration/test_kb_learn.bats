@@ -149,7 +149,7 @@ seed_cr_rejections() {
     [ "$status" -eq 0 ]
     [ "$(rows)" -eq 2 ]
     cr="$(col 2 8)"
-    [[ "$cr" =~ ^CR-[0-9]{8}-[0-9]{6}$ ]]
+    [[ "$cr" =~ ^CR-[0-9]{8}-[0-9]{6}$ ]] || false
     [ "$(col 2 2)" = "dispatch" ]
     [ "$(col 2 3)" = "sdlc:requirements" ]
     [ "$(col 2 6)" = "docs/req.md" ]
@@ -184,7 +184,7 @@ seed_cr_rejections() {
     kb_id add --type lesson --claim "A null token crashed login after verification passed" \
         --evidence observed --source file:f:1 --escaped-from verification
     local id="$KB_OUT"
-    [[ "$id" =~ ^K-20260924-[0-9a-f]{6}$ ]]
+    [[ "$id" =~ ^K-20260924-[0-9a-f]{6}$ ]] || false
     [ "$(rows)" -eq 1 ]
     [ "$(col 1 2)" = "escape" ]
     [ "$(col 1 3)" = "sdlc:verification" ]
@@ -240,7 +240,7 @@ seed_cr_rejections() {
     [ ! -e docs ]
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"nothing to learn"* ]]
+    [[ "$output" == *"nothing to learn"* ]] || false
 }
 
 @test "a recording failure goes to stderr and never changes the caller's exit code" {
@@ -249,7 +249,7 @@ seed_cr_rejections() {
     "$UWS" sdlc goto verification >/dev/null
     run "$UWS" sdlc fail "tests fail"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"could not record the 'gate_fail' outcome"* ]]
+    [[ "$output" == *"could not record the 'gate_fail' outcome"* ]] || false
     grep -Eq '^sdlc_phase: "?implementation"?$' .workflow/state.yaml
     run "$UWS" sdlc next
     [ "$status" -eq 0 ]
@@ -268,7 +268,7 @@ seed_cr_rejections() {
     for i in 1 2 3 4; do first_pass "$T0" implementer sonnet "rejected: tests missing" "CR-$i"; done
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"cr-first-pass-rejection role=implementer,model=sonnet: 4 of 4 (100%) -> n < 5: no proposal"* ]]
+    [[ "$output" == *"cr-first-pass-rejection role=implementer,model=sonnet: 4 of 4 (100%) -> n < 5: no proposal"* ]] || false
     [ "$(proposal_count)" -eq 0 ]
     [ ! -d "${KB}/items" ]
 }
@@ -279,7 +279,7 @@ seed_cr_rejections() {
     row "$T0" cr_decision sdlc:implementation implementer sonnet draft "rejected: again" CR-6
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"role=implementer,model=sonnet: 3 of 5 (60%) -> over the threshold"* ]]
+    [[ "$output" == *"role=implementer,model=sonnet: 3 of 5 (60%) -> over the threshold"* ]] || false
     [ "$(proposal_count)" -eq 1 ]
     local p
     p="$(proposal_files)"
@@ -292,7 +292,7 @@ seed_cr_rejections() {
     [ "$(field "$p" metric_before)" = "0.60" ]
     [ "$(field "$p" target)" = "docs/personas/implementer.md" ]
     [ "$(field "$p" proposal_kind)" = "change" ]
-    [[ "$(field "$p" falsifier)" == "Revert if the first-pass CR rejection rate of implementer (any model) does not fall below 60% over its next 10 first-pass CR decisions." ]]
+    [[ "$(field "$p" falsifier)" == "Revert if the first-pass CR rejection rate of implementer (any model) does not fall below 60% over its next 10 first-pass CR decisions." ]] || false
     grep -qF -- '+- [ ] Not a repeat of a first-pass CR rejection (3 of 5 recent CRs): tests missing' "$p"
     grep -qF -- '- Rows behind the count: CR-1,CR-3,CR-4' "$p"
     grep -q '^- Small n: 5 samples' "$p"
@@ -313,7 +313,7 @@ seed_cr_rejections() {
     local p
     p="$(proposal_files)"
     [ -n "$p" ]
-    [[ "$(field "$p" claim)" == *"no reasons were recorded; proposal: route implementer to opus."* ]]
+    [[ "$(field "$p" claim)" == *"no reasons were recorded; proposal: route implementer to opus."* ]] || false
     grep -q '^+model: opus$' "$p"
     grep -q '^-model: ' "$p"
     grep -qF 'UWS_AGENT_MODEL_IMPLEMENTER=opus ./scripts/gen_subagents.sh' "$p"
@@ -337,14 +337,14 @@ seed_cr_rejections() {
     # Candidates never feed a metric
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"2 escape row(s) not counted"* ]]
-    [[ "$output" == *"gate-escape-rate phase=sdlc:verification: 0 of 5 (0%) -> within the threshold"* ]]
+    [[ "$output" == *"2 escape row(s) not counted"* ]] || false
+    [[ "$output" == *"gate-escape-rate phase=sdlc:verification: 0 of 5 (0%) -> within the threshold"* ]] || false
     [ "$(proposal_count)" -eq 0 ]
     "$UWS" kb approve "$l1" >/dev/null
     "$UWS" kb approve "$l2" >/dev/null
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"gate-escape-rate phase=sdlc:verification: 2 of 5 (40%) -> over the threshold"* ]]
+    [[ "$output" == *"gate-escape-rate phase=sdlc:verification: 2 of 5 (40%) -> over the threshold"* ]] || false
     local p
     p="$(proposal_files)"
     [ "$(field "$p" metric)" = "gate-escape-rate" ]
@@ -363,13 +363,13 @@ seed_cr_rejections() {
     done
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"disproven-rate evidence=observed: 2 of 5 (40%) -> over the threshold"* ]]
-    [[ "$output" == *"disproven-rate captured_by=cli: 2 of 5 (40%) -> over the threshold"* ]]
+    [[ "$output" == *"disproven-rate evidence=observed: 2 of 5 (40%) -> over the threshold"* ]] || false
+    [[ "$output" == *"disproven-rate captured_by=cli: 2 of 5 (40%) -> over the threshold"* ]] || false
     [ "$(proposal_count)" -eq 2 ]
     local p q
     p="$(grep -l '^metric_key: "evidence=observed"$' "${KB}"/items/*.md)"
     q="$(grep -l '^metric_key: "captured_by=cli"$' "${KB}"/items/*.md)"
-    [[ "$(field "$p" claim)" == *"lower its search trust weight 0.6 -> 0.36."* ]]
+    [[ "$(field "$p" claim)" == *"lower its search trust weight 0.6 -> 0.36."* ]] || false
     [ "$(field "$p" target)" = "scripts/kb.sh" ]
     grep -q '^+.*trust\["observed"\] = 0.36;' "$p"
     grep -q '^-.*trust\["observed"\] = 0.6;' "$p"
@@ -390,8 +390,8 @@ seed_cr_rejections() {
     "$UWS" sdlc fail "health check returned 500" >/dev/null
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"repeated-gate-fail reason=tests fail: 3 of 5 (60%) -> over the threshold"* ]]
-    [[ "$output" == *"repeated-gate-fail reason=docker build broke: 1 of 5 (20%) -> within the threshold"* ]]
+    [[ "$output" == *"repeated-gate-fail reason=tests fail: 3 of 5 (60%) -> over the threshold"* ]] || false
+    [[ "$output" == *"repeated-gate-fail reason=docker build broke: 1 of 5 (20%) -> within the threshold"* ]] || false
     [ "$(proposal_count)" -eq 1 ]
     local p
     p="$(proposal_files)"
@@ -419,11 +419,11 @@ seed_cr_rejections() {
     local cand="$KB_OUT"
     # inferred (trusted) and candidate escapes: neither counts
     run "$UWS" kb learn
-    [[ "$output" == *"gate-escape-rate phase=sdlc:verification: 0 of 5 (0%)"* ]]
-    [[ "$output" == *"2 escape row(s) not counted"* ]]
+    [[ "$output" == *"gate-escape-rate phase=sdlc:verification: 0 of 5 (0%)"* ]] || false
+    [[ "$output" == *"2 escape row(s) not counted"* ]] || false
     "$UWS" kb approve "$cand" >/dev/null
     run "$UWS" kb learn
-    [[ "$output" == *"gate-escape-rate phase=sdlc:verification: 1 of 5 (20%) -> within the threshold"* ]]
+    [[ "$output" == *"gate-escape-rate phase=sdlc:verification: 1 of 5 (20%) -> within the threshold"* ]] || false
     # retirements of inferred items or of candidates do not count either
     for i in 1 2 3 4 5; do
         row "$T0" kb_retire - a - "K-20260924-0000a${i}" "disproven evidence=inferred captured_by=cli from=trusted type=fact" -
@@ -431,9 +431,9 @@ seed_cr_rejections() {
     done
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"10 retirement(s) not counted"* ]]
-    [[ "$output" != *"evidence=inferred"* ]]
-    [[ "$output" != *"disproven-rate"* ]]
+    [[ "$output" == *"10 retirement(s) not counted"* ]] || false
+    [[ "$output" != *"evidence=inferred"* ]] || false
+    [[ "$output" != *"disproven-rate"* ]] || false
     [ "$(proposal_count)" -eq 0 ]
 }
 
@@ -445,9 +445,9 @@ seed_cr_rejections() {
     events_before="$(cat "${KB}/events.tsv" 2>/dev/null || true)"
     run "$UWS" kb learn --dry-run
     [ "$status" -eq 0 ]
-    [[ "$output" == *"would propose: First-pass CR rejections for implementer (model sonnet): 3 of 5 (60%)"* ]]
-    [[ "$output" == *"| +- [ ] Not a repeat of a first-pass CR rejection"* ]]
-    [[ "$output" == *"(dry run: nothing written)"* ]]
+    [[ "$output" == *"would propose: First-pass CR rejections for implementer (model sonnet): 3 of 5 (60%)"* ]] || false
+    [[ "$output" == *"| +- [ ] Not a repeat of a first-pass CR rejection"* ]] || false
+    [[ "$output" == *"(dry run: nothing written)"* ]] || false
     [ "$(proposal_count)" -eq 0 ]
     [ "$(cat "${KB}/events.tsv" 2>/dev/null || true)" = "$events_before" ]
     run "$UWS" kb learn
@@ -458,7 +458,7 @@ seed_cr_rejections() {
     events="$(cat "${KB}/events.tsv")"
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"already proposed (K-20260924-"* ]]
+    [[ "$output" == *"already proposed (K-20260924-"* ]] || false
     [ "$(ls "${KB}/items")" = "$listing" ]
     [ "$(cat "${KB}/events.tsv")" = "$events" ]
     run "$UWS" kb learn extra
@@ -482,8 +482,8 @@ seed_cr_rejections() {
     [ "$(field "$p" status)" = "candidate" ]
     run "$UWS" kb approve "$id"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Acceptance recorded; nothing was changed in scripts/sdlc.sh."* ]]
-    [[ "$output" == *"propose a revert if it does not improve"* ]]
+    [[ "$output" == *"Acceptance recorded; nothing was changed in scripts/sdlc.sh."* ]] || false
+    [[ "$output" == *"propose a revert if it does not improve"* ]] || false
     [ "$(git hash-object scripts/sdlc.sh)" = "$before" ]
     [ -z "$(git status --porcelain scripts)" ]
     [ "$(field "$p" status)" = "trusted" ]
@@ -491,8 +491,8 @@ seed_cr_rejections() {
     [ "$(field "$p" approved_ts)" = "$T0" ]
     run "$UWS" kb proposals
     [ "$status" -eq 0 ]
-    [[ "$output" == *"No proposals waiting for the PI."* ]]
-    [[ "$output" == *"Adopted, being measured:"*"${id} [repeated-gate-fail] approved 2026-09-24"* ]]
+    [[ "$output" == *"No proposals waiting for the PI."* ]] || false
+    [[ "$output" == *"Adopted, being measured:"*"${id} [repeated-gate-fail] approved 2026-09-24"* ]] || false
     run "$UWS" kb lint
     [ "$status" -eq 0 ]
 }
@@ -512,11 +512,11 @@ seed_cr_rejections() {
     [ "$(field "$p" status)" = "candidate" ]
     [ -z "$(field "$p" approved_ts)" ]
     run "$UWS" kb proposals
-    [[ "$output" == *"Waiting for the PI"*"${id}"* ]]
-    [[ "$output" != *"Adopted, being measured"* ]]
+    [[ "$output" == *"Waiting for the PI"*"${id}"* ]] || false
+    [[ "$output" != *"Adopted, being measured"* ]] || false
     run "$UWS" status -v
     [ "$status" -eq 0 ]
-    [[ "$output" == *"KB: 1 meta-learning proposal awaits the PI"* ]]
+    [[ "$output" == *"KB: 1 meta-learning proposal awaits the PI"* ]] || false
 }
 
 @test "learn tracks an approved change and proposes a revert when the metric does not improve" {
@@ -533,14 +533,14 @@ seed_cr_rejections() {
     first_pass "$T1" implementer opus approved CR-14
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"tracking ${id} (cr-first-pass-rejection, role=implementer): 4 of 10 events since approval"* ]]
+    [[ "$output" == *"tracking ${id} (cr-first-pass-rejection, role=implementer): 4 of 10 events since approval"* ]] || false
     [ "$(proposal_count)" -eq 1 ]
     for i in 5 6 7 8; do first_pass "$T1" implementer opus "rejected: tests missing" "CR-1${i}"; done
     first_pass "$T1" implementer opus approved CR-19
     first_pass "$T1" implementer opus approved CR-20
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"${id}: did not improve (60% -> 70% over 10 events)"* ]]
+    [[ "$output" == *"${id}: did not improve (60% -> 70% over 10 events)"* ]] || false
     [ "$(proposal_count)" -eq 2 ]
     local r rid
     r="$(grep -l '^proposal_kind: revert$' "${KB}"/items/*.md)"
@@ -549,7 +549,7 @@ seed_cr_rejections() {
     [ "$(field "$r" status)" = "candidate" ]
     [ "$(field "$r" metric_before)" = "0.60" ]
     [ "$(field "$r" metric_after)" = "0.70" ]
-    [[ "$(field "$r" claim)" == "Revert ${id}: cr-first-pass-rejection for role=implementer went 60% -> 70% over the 10 events after its approval (no improvement)." ]]
+    [[ "$(field "$r" claim)" == "Revert ${id}: cr-first-pass-rejection for role=implementer went 60% -> 70% over the 10 events after its approval (no improvement)." ]] || false
     # the revert is the proposal's diff reversed
     grep -qF -- '-- [ ] Not a repeat of a first-pass CR rejection (3 of 5 recent CRs): tests missing' "$r"
     grep -q '^@@ -87,7 +87,6 @@$' "$r"
@@ -560,10 +560,10 @@ seed_cr_rejections() {
     # Idempotent: no second revert, no new change proposal for the same key
     run "$UWS" kb learn
     [ "$(proposal_count)" -eq 2 ]
-    [[ "$output" == *"already proposed (${rid})"* ]]
+    [[ "$output" == *"already proposed (${rid})"* ]] || false
     run "$UWS" kb proposals
-    [[ "$output" == *"${rid} [cr-first-pass-rejection|revert]"* ]]
-    [[ "$output" != *"Adopted, being measured"* ]]
+    [[ "$output" == *"${rid} [cr-first-pass-rejection|revert]"* ]] || false
+    [[ "$output" != *"Adopted, being measured"* ]] || false
 }
 
 @test "learn closes the tracking without a revert when the metric improves" {
@@ -579,7 +579,7 @@ seed_cr_rejections() {
     for i in 1 2 3 4 5 6 7 8 9; do first_pass "$T1" implementer sonnet approved "CR-2${i}"; done
     run "$UWS" kb learn
     [ "$status" -eq 0 ]
-    [[ "$output" == *"${id}: improved (60% -> 10% over 10 events); tracking closed"* ]]
+    [[ "$output" == *"${id}: improved (60% -> 10% over 10 events); tracking closed"* ]] || false
     [ "$(proposal_count)" -eq 1 ]
     [ "$(field "$p" followup)" = "improved 0.60 -> 0.10 over 10 events" ]
     [ "$(field "$p" metric_after)" = "0.10" ]
@@ -600,7 +600,7 @@ seed_cr_rejections() {
     } > .workflow/handoff.md
     for i in 1 2 3; do echo "2026-09-2${i}T10:00:00 | CP_1_00${i} | checkpoint ${i} with a long description of the work done" >> .workflow/checkpoints.log; done
     run "${PROJECT_ROOT}/scripts/recover_context.sh" --hook
-    [[ "$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')" != *"meta-learning"* ]]
+    [[ "$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')" != *"meta-learning"* ]] || false
     seed_cr_rejections
     "$UWS" kb learn >/dev/null
     git add -A >/dev/null && git commit -qm "kb" >/dev/null
@@ -609,15 +609,15 @@ seed_cr_rejections() {
     run "${PROJECT_ROOT}/scripts/recover_context.sh" --hook
     [ "$status" -eq 0 ]
     ctx="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-    [[ "$ctx" == *"KB: 1 meta-learning proposal awaits the PI (uws kb proposals)."* ]]
+    [[ "$ctx" == *"KB: 1 meta-learning proposal awaits the PI (uws kb proposals)."* ]] || false
     [ "$(printf '%s' "$ctx" | LC_ALL=C wc -c | tr -d ' ')" -le 1200 ]
     [ "$(git status --porcelain)" = "$before" ]
     run "$UWS" kb stats --short
     [ "$status" -eq 0 ]
     [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 2 ]
-    [[ "$output" == *"KB: 1 meta-learning proposal awaits the PI"* ]]
+    [[ "$output" == *"KB: 1 meta-learning proposal awaits the PI"* ]] || false
     run "$UWS" kb proposals
-    [[ "$output" == *"Waiting for the PI"*"[cr-first-pass-rejection|change] First-pass CR rejections"* ]]
+    [[ "$output" == *"Waiting for the PI"*"[cr-first-pass-rejection|change] First-pass CR rejections"* ]] || false
     run "$UWS" kb lint
     [ "$status" -eq 0 ]
 }
@@ -627,14 +627,14 @@ seed_cr_rejections() {
     seed_cr_rejections
     run "$UWS" kb learn --dry-run
     [ "$status" -eq 0 ]
-    [[ "$output" == *"1 malformed row(s) in outcomes.tsv skipped"* ]]
-    [[ "$output" == *"3 of 5 (60%)"* ]]
+    [[ "$output" == *"1 malformed row(s) in outcomes.tsv skipped"* ]] || false
+    [[ "$output" == *"3 of 5 (60%)"* ]] || false
     run env UWS_KB_LEARN_MIN_N=0 "$UWS" kb learn
     [ "$status" -eq 2 ]
     run env UWS_KB_LEARN_CR_REJECT_RATE=2 "$UWS" kb learn
     [ "$status" -eq 2 ]
     run env UWS_KB_LEARN_MIN_N=6 "$UWS" kb learn --dry-run
-    [[ "$output" == *"3 of 5 (60%) -> n < 6: no proposal"* ]]
+    [[ "$output" == *"3 of 5 (60%) -> n < 6: no proposal"* ]] || false
 }
 
 @test "meta-learning scripts are ShellCheck-clean and free of GNU-only / bash 4 constructs" {

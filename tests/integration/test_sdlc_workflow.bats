@@ -24,8 +24,8 @@ teardown() {
 # ============================================================================
 
 @test "sdlc.sh exists and is executable" {
-    [[ -f "${SCRIPTS_DIR}/sdlc.sh" ]]
-    [[ -x "${SCRIPTS_DIR}/sdlc.sh" ]]
+    [[ -f "${SCRIPTS_DIR}/sdlc.sh" ]] || false
+    [[ -x "${SCRIPTS_DIR}/sdlc.sh" ]] || false
 }
 
 @test "sdlc.sh has proper shebang and strict mode" {
@@ -39,14 +39,14 @@ teardown() {
 @test "sdlc status shows 'not started' initially" {
     run "${SCRIPTS_DIR}/sdlc.sh" status
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "Not started" ]] || [[ "$output" =~ "none" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "Not started" ]] || [[ "$output" =~ "none" ]] || false
 }
 
 @test "sdlc status command is default action" {
     run "${SCRIPTS_DIR}/sdlc.sh"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 # ============================================================================
@@ -56,8 +56,8 @@ teardown() {
 @test "sdlc start begins at requirements phase" {
     run "${SCRIPTS_DIR}/sdlc.sh" start
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "requirements" ]] || [[ "$output" =~ "Requirements" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "requirements" ]] || [[ "$output" =~ "Requirements" ]] || false
 }
 
 @test "sdlc start updates state file" {
@@ -71,7 +71,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/sdlc.sh" start
 
-    [[ "$status" -ne 0 ]] || [[ "$output" =~ "already" ]]
+    [[ "$status" -ne 0 ]] || [[ "$output" =~ "already" ]] || false
 }
 
 # ============================================================================
@@ -86,20 +86,20 @@ teardown() {
     # Start at requirements, advance through each
     for i in {1..5}; do
         run "${SCRIPTS_DIR}/sdlc.sh" next
-        [[ "$status" -eq 0 ]]
+        [[ "$status" -eq 0 ]] || false
     done
 
     # Should now be at maintenance
     run "${SCRIPTS_DIR}/sdlc.sh" status
-    [[ "$output" =~ "maintenance" ]]
+    [[ "$output" =~ "maintenance" ]] || false
 }
 
 @test "sdlc next from requirements goes to design" {
     "${SCRIPTS_DIR}/sdlc.sh" start
     run "${SCRIPTS_DIR}/sdlc.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "design" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "design" ]] || false
 }
 
 @test "sdlc next from design goes to implementation" {
@@ -107,8 +107,8 @@ teardown() {
     "${SCRIPTS_DIR}/sdlc.sh" next  # design
     run "${SCRIPTS_DIR}/sdlc.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "implementation" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "implementation" ]] || false
 }
 
 @test "sdlc next from implementation goes to verification" {
@@ -117,14 +117,14 @@ teardown() {
     "${SCRIPTS_DIR}/sdlc.sh" next  # implementation
     run "${SCRIPTS_DIR}/sdlc.sh" next
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "verification" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "verification" ]] || false
 }
 
 @test "sdlc next fails when not started" {
     run "${SCRIPTS_DIR}/sdlc.sh" next
 
-    [[ "$status" -ne 0 ]] || [[ "$output" =~ "not started" ]]
+    [[ "$status" -ne 0 ]] || [[ "$output" =~ "not started" ]] || false
 }
 
 # ============================================================================
@@ -139,8 +139,8 @@ teardown() {
 
     run "${SCRIPTS_DIR}/sdlc.sh" fail "Tests failed"
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "implementation" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "implementation" ]] || false
 }
 
 @test "sdlc fail in deployment regresses to verification" {
@@ -152,8 +152,8 @@ teardown() {
 
     run "${SCRIPTS_DIR}/sdlc.sh" fail "Deployment crashed"
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "verification" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "verification" ]] || false
 }
 
 @test "sdlc fail in early phase doesn't regress" {
@@ -161,9 +161,9 @@ teardown() {
 
     run "${SCRIPTS_DIR}/sdlc.sh" fail "Requirements unclear"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
     # Should not mention reverting
-    [[ ! "$output" =~ "Reverting" ]] || [[ "$output" =~ "No regression" ]] || [[ "$output" =~ "blocking" ]]
+    [[ ! "$output" =~ "Reverting" ]] || [[ "$output" =~ "No regression" ]] || [[ "$output" =~ "blocking" ]] || false
 }
 
 @test "sdlc fail includes details message" {
@@ -174,7 +174,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/sdlc.sh" fail "Custom error message 12345"
 
-    [[ "$output" =~ "Custom error message 12345" ]] || [[ "$output" =~ "12345" ]]
+    [[ "$output" =~ "Custom error message 12345" ]] || [[ "$output" =~ "12345" ]] || false
 }
 
 # ============================================================================
@@ -187,11 +187,11 @@ teardown() {
 
     run "${SCRIPTS_DIR}/sdlc.sh" reset
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 
     # Should show not started after reset
     run "${SCRIPTS_DIR}/sdlc.sh" status
-    [[ "$output" =~ "Not started" ]] || [[ "$output" =~ "none" ]]
+    [[ "$output" =~ "Not started" ]] || [[ "$output" =~ "none" ]] || false
 }
 
 @test "sdlc reset allows new start" {
@@ -199,7 +199,7 @@ teardown() {
     "${SCRIPTS_DIR}/sdlc.sh" reset
     run "${SCRIPTS_DIR}/sdlc.sh" start
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 # ============================================================================
@@ -209,15 +209,15 @@ teardown() {
 @test "sdlc help shows usage" {
     run "${SCRIPTS_DIR}/sdlc.sh" help
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "Usage" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "Usage" ]] || false
 }
 
 @test "sdlc --help shows usage" {
     run "${SCRIPTS_DIR}/sdlc.sh" --help
 
-    [[ "$status" -eq 0 ]]
-    [[ "$output" =~ "Usage" ]]
+    [[ "$status" -eq 0 ]] || false
+    [[ "$output" =~ "Usage" ]] || false
 }
 
 # ============================================================================
@@ -227,8 +227,8 @@ teardown() {
 @test "sdlc handles unknown action gracefully" {
     run "${SCRIPTS_DIR}/sdlc.sh" invalid_action
 
-    [[ "$status" -ne 0 ]]
-    [[ "$output" =~ "Unknown" ]] || [[ "$output" =~ "unknown" ]]
+    [[ "$status" -ne 0 ]] || false
+    [[ "$output" =~ "Unknown" ]] || [[ "$output" =~ "unknown" ]] || false
 }
 
 # ============================================================================
@@ -238,21 +238,21 @@ teardown() {
 @test "complete SDLC cycle from start to maintenance" {
     # Start
     run "${SCRIPTS_DIR}/sdlc.sh" start
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 
     # Progress through all phases
     for phase in design implementation verification deployment maintenance; do
         run "${SCRIPTS_DIR}/sdlc.sh" next
-        [[ "$status" -eq 0 ]]
+        [[ "$status" -eq 0 ]] || false
     done
 
     # Verify at maintenance
     run "${SCRIPTS_DIR}/sdlc.sh" status
-    [[ "$output" =~ "maintenance" ]]
+    [[ "$output" =~ "maintenance" ]] || false
 
     # Try next at maintenance - should indicate complete
     run "${SCRIPTS_DIR}/sdlc.sh" next
-    [[ "$output" =~ "complete" ]] || [[ "$output" =~ "maintenance" ]]
+    [[ "$output" =~ "complete" ]] || [[ "$output" =~ "maintenance" ]] || false
 }
 
 @test "SDLC cycle with failure and recovery" {
@@ -266,9 +266,9 @@ teardown() {
 
     # Should be back at implementation
     run "${SCRIPTS_DIR}/sdlc.sh" status
-    [[ "$output" =~ "implementation" ]]
+    [[ "$output" =~ "implementation" ]] || false
 
     # Fix and continue
     run "${SCRIPTS_DIR}/sdlc.sh" next  # back to verification
-    [[ "$output" =~ "verification" ]]
+    [[ "$output" =~ "verification" ]] || false
 }

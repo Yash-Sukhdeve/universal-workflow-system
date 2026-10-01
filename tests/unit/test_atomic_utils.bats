@@ -58,7 +58,7 @@ teardown() {
 
     local tmp_count
     tmp_count=$(find "${TEST_TMP_DIR}" -name "*.tmp.*" | wc -l)
-    [[ "$tmp_count" -eq 0 ]]
+    [[ "$tmp_count" -eq 0 ]] || false
 }
 
 @test "atomic_write reads from stdin with -" {
@@ -102,7 +102,7 @@ teardown() {
 
     local line_count
     line_count=$(wc -l < "$test_file")
-    [[ "$line_count" -ge 2 ]]
+    [[ "$line_count" -ge 2 ]] || false
 }
 
 # ===========================================
@@ -116,8 +116,8 @@ teardown() {
     local backup_path
     backup_path=$(safe_backup "$test_file")
 
-    [[ -n "$backup_path" ]]
-    [[ -f "$backup_path" ]]
+    [[ -n "$backup_path" ]] || false
+    [[ -f "$backup_path" ]] || false
     assert_file_contains "$backup_path" "original content"
 }
 
@@ -125,7 +125,7 @@ teardown() {
     local backup_path
     backup_path=$(safe_backup "${TEST_TMP_DIR}/nonexistent.txt")
 
-    [[ -z "$backup_path" ]]
+    [[ -z "$backup_path" ]] || false
 }
 
 @test "safe_backup preserves file permissions" {
@@ -140,7 +140,7 @@ teardown() {
     original_perms=$(stat -c %a "$test_file" 2>/dev/null || stat -f %Lp "$test_file")
     backup_perms=$(stat -c %a "$backup_path" 2>/dev/null || stat -f %Lp "$backup_path")
 
-    [[ "$original_perms" == "$backup_perms" ]]
+    [[ "$original_perms" == "$backup_perms" ]] || false
 }
 
 # ===========================================
@@ -152,9 +152,9 @@ teardown() {
     atomic_begin "test transaction"
     local status=$?
 
-    [[ $status -eq 0 ]]
-    [[ "$ATOMIC_TRANSACTION_ACTIVE" == "true" ]]
-    [[ -n "$ATOMIC_TRANSACTION_ID" ]]
+    [[ $status -eq 0 ]] || false
+    [[ "$ATOMIC_TRANSACTION_ACTIVE" == "true" ]] || false
+    [[ -n "$ATOMIC_TRANSACTION_ID" ]] || false
 
     # Clean up
     atomic_rollback "test cleanup" 2>/dev/null || true
@@ -178,7 +178,7 @@ teardown() {
 
     local backup_count
     backup_count=$(find "${TEST_TMP_DIR}" -name "*.atomic_backup.*" | wc -l)
-    [[ "$backup_count" -eq 0 ]]
+    [[ "$backup_count" -eq 0 ]] || false
 }
 
 @test "atomic_commit fails without active transaction" {
@@ -209,7 +209,7 @@ teardown() {
 
     local tmp_count
     tmp_count=$(find "${TEST_TMP_DIR}" -name "*.tmp.*" | wc -l)
-    [[ "$tmp_count" -eq 0 ]]
+    [[ "$tmp_count" -eq 0 ]] || false
 }
 
 @test "atomic_rollback returns success after rollback" {
@@ -251,7 +251,7 @@ EOF
     # Verify the change
     local value
     value=$(yaml_get "$yaml_file" "project.type")
-    [[ "$value" == "research" ]]
+    [[ "$value" == "research" ]] || false
 }
 
 @test "atomic_yaml_set fails on non-existent file" {
@@ -286,7 +286,7 @@ EOF
     local checksum
     checksum=$(atomic_get_checksum "$test_file")
 
-    [[ -n "$checksum" ]]
+    [[ -n "$checksum" ]] || false
     [[ ${#checksum} -eq 64 ]]  # SHA256 is 64 hex chars
 }
 
@@ -294,7 +294,7 @@ EOF
     local checksum
     checksum=$(atomic_get_checksum "${TEST_TMP_DIR}/nonexistent.txt")
 
-    [[ -z "$checksum" ]]
+    [[ -z "$checksum" ]] || false
 }
 
 @test "atomic_verify_checksum succeeds with correct hash" {
@@ -351,7 +351,7 @@ EOF
 
     if [[ "$start_time" != "0" ]]; then
         duration=$(( (end_time - start_time) / 1000000 ))
-        [[ $duration -lt 100 ]]
+        [[ $duration -lt 100 ]] || false
     fi
 }
 
@@ -369,7 +369,7 @@ EOF
 
     if [[ "$start_time" != "0" ]]; then
         duration=$(( (end_time - start_time) / 1000000 ))
-        [[ $duration -lt 500 ]]
+        [[ $duration -lt 500 ]] || false
     fi
 }
 
@@ -390,7 +390,7 @@ EOF
     ) 2>/dev/null || true
 
     # Transaction should have been rolled back
-    [[ "$ATOMIC_TRANSACTION_ACTIVE" != "true" ]]
+    [[ "$ATOMIC_TRANSACTION_ACTIVE" != "true" ]] || false
 }
 
 @test "multiple safe_backup calls in transaction are tracked" {
@@ -403,7 +403,7 @@ EOF
     safe_backup "$file1"
     safe_backup "$file2"
 
-    [[ ${#ATOMIC_BACKUPS[@]} -eq 2 ]]
+    [[ ${#ATOMIC_BACKUPS[@]} -eq 2 ]] || false
 
     atomic_rollback "cleanup"
 }

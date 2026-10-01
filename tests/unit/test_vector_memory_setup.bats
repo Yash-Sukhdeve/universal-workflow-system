@@ -48,7 +48,7 @@ teardown() {
     export UWS_SKIP_VECTOR_MEMORY=true
     run setup_vector_memory "${TEST_TMP_DIR}"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"skipped"* ]]
+    [[ "$output" == *"skipped"* ]] || false
 }
 
 # ============================================================================
@@ -58,7 +58,7 @@ teardown() {
 @test "uws_vm_check_python returns 0 or 1 without crashing" {
     run uws_vm_check_python
     # Should return 0 (python found) or 1 (not found) — both are valid
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]] || false
 }
 
 # ============================================================================
@@ -67,7 +67,7 @@ teardown() {
 
 @test "uws_vm_check_disk_space returns 0 or 1 without crashing" {
     run uws_vm_check_disk_space "${TEST_TMP_DIR}"
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]] || false
 }
 
 # ============================================================================
@@ -152,7 +152,7 @@ EOF
     # Run again — should not change
     run uws_vm_configure_mcp_json "${TEST_TMP_DIR}"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"already configured"* ]]
+    [[ "$output" == *"already configured"* ]] || false
 
     local second_content
     second_content="$(cat "${TEST_TMP_DIR}/.mcp.json")"
@@ -260,7 +260,7 @@ EOF
     run bash -c "unset _VECTOR_MEMORY_SETUP_LOADED UWS_VECTOR_MEMORY; source '${SCRIPTS_DIR}/lib/vector_memory_setup.sh'; uws_vm_is_installed() { return 1; }; setup_vector_memory '${TEST_TMP_DIR}'" < /dev/null
     # Must not hang, and must NOT start the ~1.5GB install without explicit opt-in
     [ "$status" -eq 0 ]
-    [[ "$output" == *"non-interactive"* ]]
+    [[ "$output" == *"non-interactive"* ]] || false
     [ ! -f "${TEST_TMP_DIR}/.mcp.json" ]
 }
 
@@ -281,5 +281,5 @@ SCRIPTEOF
 
     run bash "$wrapper"
     # Returns 1 (graceful) but does not crash (exit code 2+ would mean crash)
-    [[ "$status" -le 1 ]]
+    [[ "$status" -le 1 ]] || false
 }

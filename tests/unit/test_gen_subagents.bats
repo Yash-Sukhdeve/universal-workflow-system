@@ -61,7 +61,7 @@ expected_default() {
         n="$(frontmatter_model "$f" | wc -l | tr -d ' ')"
         [ "$n" -eq 1 ]
         got="$(frontmatter_model "$f")"
-        [[ "$got" =~ ^(opus|sonnet|haiku|fable|inherit)$ ]]
+        [[ "$got" =~ ^(opus|sonnet|haiku|fable|inherit)$ ]] || false
     done
 }
 
@@ -92,7 +92,7 @@ expected_default() {
 
     UWS_AGENT_MODEL_DEPLOYER=gpt-4 run "${GEN_ROOT}/scripts/gen_subagents.sh"
     assert_failure
-    [[ "$output" == *"invalid model"* ]]
+    [[ "$output" == *"invalid model"* ]] || false
     [ "$(cat "${AGENTS}/uws-deployer.md")" = "$before" ]
 }
 
