@@ -127,6 +127,16 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [[ "$output" == *"K-20260101-000002"* ]]
     run "$UWS" kb search --min-terms x login
     [ "$status" -eq 2 ]
+    # an option at the end without its value is a usage error (2), not "no match" (1)
+    local opt
+    for opt in --min-terms --limit --type --status; do
+        run "$UWS" kb search login "$opt"
+        [ "$status" -eq 2 ]
+        [[ "$output" == *"search: ${opt} needs a value"* ]] || false
+    done
+    run "$UWS" kb links login --type
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"links: --type needs a value"* ]] || false
 }
 
 @test "search --min-terms counts whole words, so fragments of other words are not a lead" {

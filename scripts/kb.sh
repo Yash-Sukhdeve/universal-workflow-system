@@ -684,12 +684,15 @@ cmd_search() {
     local -a words=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --type) type="${2:-}"; shift 2 ;;
-            --status) status="${2:-}"; shift 2 ;;
+            --type|--status|--limit|--min-terms) [[ $# -ge 2 ]] || die 2 "search: $1 needs a value" ;;
+        esac
+        case "$1" in
+            --type) type="$2"; shift 2 ;;
+            --status) status="$2"; shift 2 ;;
             --include-stale) stale=true; shift ;;
             --all) all=true; shift ;;
-            --limit) limit="${2:-}"; shift 2 ;;
-            --min-terms) minm="${2:-}"; shift 2 ;;
+            --limit) limit="$2"; shift 2 ;;
+            --min-terms) minm="$2"; shift 2 ;;
             --) shift; words+=("$@"); break ;;
             -*) die 2 "search: unknown option $1" ;;
             *) words+=("$1"); shift ;;
@@ -738,7 +741,7 @@ cmd_links() {
     local -a words=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --type) type="${2:-}"; shift 2 ;;
+            --type) [[ $# -ge 2 ]] || die 2 "links: --type needs a value"; type="$2"; shift 2 ;;
             -*) die 2 "links: unknown option $1" ;;
             *) words+=("$1"); shift ;;
         esac
