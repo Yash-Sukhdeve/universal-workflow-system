@@ -84,7 +84,7 @@ ingest_wakefield() {
         [[ "$output" != *"increment 2"* ]]
     done
     run check gate experiment_design
-    [[ "$output" != *"not checked yet"* ]]
+    [[ "$output" != *"not checked yet: slop"* ]]
     run check gate analysis
     [[ "$output" == *"not checked yet: slop rules S3"* ]]
 }

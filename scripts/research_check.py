@@ -5055,10 +5055,15 @@ def kb_note(project):
             "and raise them as Q-IDs" % first)
 
 
-# Rules of design section 6.5 that no check implements yet. The gates say so instead of
-# passing silently.
-NOT_CHECKED = ("slop rules S3 (fabricated precision), S5 (padding), S7 ('significant' without a test), "
-               "C2 (untested path) and C4 (fragile paths); the research/INVENTORY.md report")
+# Checks of the design that no code implements yet (its status line), each with the first
+# phase whose gate would run it. The gates say so instead of passing silently.
+NOT_CHECKED = (
+    ("literature_review", "the BibTeX metadata cross-check (6.3 step 6) and `bib verify --online`"),
+    ("data_collection", "whether the environment lock pins every package (a run records the lock's hash only) "
+                        "and the Dockerfile check"),
+    ("analysis", "slop rules S3 (fabricated precision), S5 (padding), S7 ('significant' without a test), "
+                 "C2 (untested path) and C4 (fragile paths); the research/INVENTORY.md report"),
+)
 
 
 def run_gate(project, phase, allow_missing_cache=None):
@@ -5096,9 +5101,7 @@ def run_gate(project, phase, allow_missing_cache=None):
     if phase == "publication":
         findings.extend(check_pi_approval(project))
     findings = dedupe(findings)
-    notes = []
-    if idx >= PHASES.index("analysis"):
-        notes.append("not checked yet: " + NOT_CHECKED)
+    notes = ["not checked yet: " + text for first, text in reversed(NOT_CHECKED) if idx >= PHASES.index(first)]
     if phase in ("literature_review", "analysis"):
         notes.append(kb_note(project))
     return findings, notes

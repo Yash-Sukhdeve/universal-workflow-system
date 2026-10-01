@@ -995,6 +995,23 @@ EOF
     [[ "$output" == *"S1 'best' needs a verified claim"* ]]
 }
 
+@test "P2 gates: each gate names the unbuilt checks that belong to it (design status line)" {
+    run check gate hypothesis
+    [[ "$output" != *"not checked yet"* ]]
+    run check gate literature_review
+    echo "$output"
+    [[ "$output" == *"note: not checked yet: the BibTeX metadata cross-check (6.3 step 6) and \`bib verify --online\`"* ]]
+    [[ "$output" != *"environment lock"* ]]
+    run check gate data_collection
+    [[ "$output" == *"note: not checked yet: whether the environment lock pins every package"* ]]
+    [[ "$output" == *"the Dockerfile check"* ]]
+    [[ "$output" != *"not checked yet: slop"* ]]
+    run check gate publication
+    [[ "$output" == *"BibTeX metadata cross-check"* ]]
+    [[ "$output" == *"environment lock pins every package"* ]]
+    [[ "$output" == *"not checked yet: slop rules S3"* ]]
+}
+
 @test "P2 gate note: with a KB, the note quotes the first line of uws kb stats" {
     (cd "$P" && env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT "${PROJECT_ROOT}/bin/uws" kb add --type fact \
         --claim "Grouped splits lower the AUC" --evidence observed --source file:paper/main.tex:9 >/dev/null)
