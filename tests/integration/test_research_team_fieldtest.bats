@@ -200,6 +200,17 @@ EOF
     [[ "$output" == *"paper/main.tex:${l} C6 'ground-truth', but C-0004"* ]]
 }
 
+@test "P0 sentences: e.g., et al. and Fig. do not end a sentence, so a citation and a C-ID still attach to it" {
+    printf '\nStudies show, e.g. in recovery, gains \\cite{sandve2013}.\n' >> "$P/paper/main.tex"
+    printf '\nOurs is the best model, as Smith et al.\nreport in their survey. %% C-0001\n' >> "$P/paper/main.tex"
+    printf '\nThe best model is the one in Fig.\n3 of the survey. %% C-0001\n' >> "$P/paper/main.tex"
+    run check slop
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *" S2 "* ]]
+    [[ "$output" != *" S1 "* ]]
+}
+
 @test "P0 sentences: a dot inside a file name neither ends the sentence nor drops its start" {
     printf '\nAs \\cite{sandve2013} notes, running \\texttt{recover\\_context.sh} helps; studies show it.\n' >> "$P/paper/main.tex"
     run check slop
@@ -219,6 +230,22 @@ EOF
     echo "$output"
     [ "$status" -eq 1 ]
     [[ "$output" == *"paper/main.tex:${l} NUM-SPLIT hand-typed 0.912 (N-0001) is a cross-validation value"* ]]
+}
+
+@test "P0 C3/C6: a hand-typed number linked by where is judged by the slop check like a macro use" {
+    printf '\nGradient Boosting reaches 0.912 on unseen scenarios.\n\nOn ground-truth outcomes the score is 0.912.\n' >> "$P/paper/main.tex"
+    local l3 l6
+    l3="$(line_of 'reaches 0.912 on unseen')"
+    l6="$(line_of 'On ground-truth outcomes')"
+    run check slop
+    [ "$status" -eq 0 ]
+    add_revision N-0001 "{\"where\": \"paper/main.tex:${l3}; paper/main.tex:${l6}\"}"
+    run check slop
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"paper/main.tex:${l3} C3 hand-typed 0.912 (N-0001) is synthetic-generated"* ]]
+    [[ "$output" == *"paper/main.tex:${l6} C6 'ground-truth', but N-0001 is synthetic-generated data"* ]]
+    [[ "$output" != *"C6 [warn]"* ]]
 }
 
 @test "P0 NUM-LITERAL: a hand-typed number at its row's where names the row and its macro; a missing value warns" {
@@ -542,6 +569,42 @@ for run, invoked in (("RUN-0001", os.path.join(root, ".venv/bin/python")), ("RUN
     assert it["invoked"] == invoked, (run, it)
     assert it["path"] == os.path.realpath(invoked), (run, it)
 EOF
+}
+
+# forge_report <tool> <run>: a report whose latest entry passes N-0001 with the correct row
+# and run hashes, but with the given tool and run.
+forge_report() {
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$CHECK" "$P" "$1" "$2" << 'EOF'
+import hashlib, importlib.util, json, os, sys
+spec = importlib.util.spec_from_file_location("rc", sys.argv[1])
+rc = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(rc)
+root, tool, run = sys.argv[2], sys.argv[3], sys.argv[4]
+rows = [json.loads(l) for l in open(os.path.join(root, "research/ledger/numbers.jsonl")) if l.strip()]
+row = [r for r in rows if r["id"] == "N-0001"][-1]
+run_sha = hashlib.sha256(open(os.path.join(root, "research/runs/RUN-0001/run.json"), "rb").read()).hexdigest()
+rep = {"created_at": "2999-01-01T00:00:00Z", "tool": tool, "selection": ["N-0001"],
+       "results": [{"id": "N-0001", "rev": row["rev"], "status": "pass", "row_sha256": rc.canonical_sha(row), "run": run,
+                    "run_sha256": run_sha, "expected": row["raw"], "observed": row["raw"]}]}
+with open(os.path.join(root, "research/repro/report-29990101T000000Z.json"), "w") as fh:
+    json.dump(rep, fh)
+EOF
+}
+
+@test "P1 repro: a pass from another tool, or one naming another run, does not satisfy REPRO" {
+    research_make_reproducible
+    run check gate analysis
+    [[ "$output" != *"REPRO N-0001"* ]]
+    forge_report "my audit script" RUN-0001
+    run check gate analysis
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REPRO N-0001: the passing entry is not a re-run of its recorded run by the repro job (the report was not written by \`uws research check repro\`)"* ]]
+    forge_report "research_check.py repro" RUN-0099
+    run check gate analysis
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REPRO N-0001: the passing entry is not a re-run of its recorded run by the repro job (the entry names run RUN-0099, the row RUN-0001)"* ]]
 }
 
 @test "P1 run: a glob that matches no file the command wrote is an error" {
@@ -918,6 +981,30 @@ EOF
     [ "$status" -eq 0 ]
     python3 -c 'import json,os,sys; it=json.load(open(sys.argv[1]))["interpreter"]; assert it["command"]=="python3.99" and it["path"]==os.path.realpath(sys.argv[2]), it' \
         "$P/research/runs/RUN-0002/run.json" "$P/fakebin/python3.99"
+}
+
+@test "P1 S1: the idiom list stays narrow: 'to the best of our knowledge' still needs a claim; best-effort and at best do not" {
+    printf '\nThe retry is best-effort, and the bound is at best a heuristic.\n' >> "$P/paper/main.tex"
+    run check slop
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *" S1 "* ]]
+    printf '\nTo the best of our knowledge, no prior work predicts recovery.\n' >> "$P/paper/main.tex"
+    run check slop
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"S1 'best' needs a verified claim"* ]]
+}
+
+@test "P2 gate note: with a KB, the note quotes the first line of uws kb stats" {
+    (cd "$P" && env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT "${PROJECT_ROOT}/bin/uws" kb add --type fact \
+        --claim "Grouped splits lower the AUC" --evidence observed --source file:paper/main.tex:9 >/dev/null)
+    local first
+    first="$(cd "$P" && "${PROJECT_ROOT}/bin/uws" kb stats | head -1)"
+    [[ "$first" == "KB docs/kb: 1 active"* ]]
+    run check gate literature_review
+    echo "$output"
+    [[ "$output" == *"note: KB available (advisory): \`uws kb stats\` says: ${first};"* ]]
+    [[ "$output" != *"No KB yet"* ]]
 }
 
 @test "P2 gate note: the KB note agrees with uws kb stats" {
