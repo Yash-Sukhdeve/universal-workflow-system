@@ -31,6 +31,8 @@ bats tests/unit/test_checkpoint.bats       # one file
 ./scripts/checkpoint.sh create "msg"    # also: list, restore, status
 ./scripts/sdlc.sh status|start|next|goto|fail|goal|check|deliverables|reset
 ./scripts/research.sh status|start|next|reject|goal|check|deliverables|reset
+./scripts/research.sh check <name>      # evidence checks (init|ledger|numbers|gate <phase>|...)
+./scripts/research.sh bib fetch|build   # BibTeX into bib_sources/, references.bib from it
 ./scripts/orchestrate.sh dispatch|collect|status   # route a phase to its subagent
 ./scripts/gen_subagents.sh              # regenerate .claude/agents/uws-*.md from docs/personas/
 ```
@@ -48,7 +50,8 @@ analysis → peer_review → publication`. Once a goal is declared (`sdlc.sh goa
   the `methodology_progress:` deliverable ledger
 - `checkpoints.log` - `TIMESTAMP | CP_ID | DESC`
 - `handoff.md` - human-readable handoff for the next session
-- `agents/registry.yaml` - agent definitions and transition rules
+- `agents/registry.yaml` - descriptions and capabilities of the seven roles (no transition
+  rules: `validate_agent_transition` allows any transition when none are defined)
 - `active_agent:` in `state.yaml` - last agent `orchestrate.sh` dispatched (`record_active_agent`)
 - `checkpoints/snapshots/<CP_ID>/` - state snapshots (gitignored)
 - Knowledge base: `docs/kb/` (tracked; `scripts/kb.sh` + `lib/kb_utils.sh`, `uws kb`); only the PI (`kb.pi` in `config.yaml`) promotes items to trusted
@@ -77,6 +80,11 @@ phase_4_delivery → phase_5_maintenance`; SDLC/research phases map onto them
   hooks into a user's project.
 - `.claude/` in this repo - commands, skills, agents and hooks for developing UWS itself.
 
+User-facing hints ("run ... next") go through `uws_hint` in `scripts/lib/uws_ui.sh`: the
+plugin prints `/uws:<command>`, the CLI `uws ...` (or its path when `uws` on PATH is another
+install). Never print `./scripts/...`, `$0` or a bare `uws` from a script. The release
+number is in `VERSION` (with `plugin.json` and the installers' literals; a test checks them).
+
 Verify integration changes against real Claude Code, not only BATS: install into a scratch
 project with an isolated `CLAUDE_CONFIG_DIR` and run `claude -p ... --output-format
 stream-json --verbose`; `claude plugin validate .` checks the manifests.
@@ -90,6 +98,11 @@ Scripts must run on macOS (`/bin/bash` 3.2, BSD sed/date) as well as Linux:
 - empty arrays under `set -u`: `${arr[@]+"${arr[@]}"}`
 - `grep -c pat || echo 0` prints `0` twice on no match - use `|| true`
 - yq is optional: code and tests must accept both quoted (sed) and unquoted (yq) scalars
+- no `source <(...)` (it reads nothing on bash 3.2): write a temp file and source that
+- in bats, a line that is only `[[ ... ]]` never fails under bash 3.2: write `[[ ... ]] || false`
+- colour codes only when stdout is a terminal (the colour blocks reset them otherwise)
+- `scripts/research_check.py`, `scripts/kb_import.py` and `tests/fixtures/kb/make_vector_db.py`:
+  Python standard library only
 
 ## Test Infrastructure
 
@@ -104,15 +117,17 @@ A bare `! cmd` line never fails a bats test - use `run` and check `$status`.
 2. Checkpoint at milestones: `./scripts/checkpoint.sh create "description"`.
 3. Update `handoff.md` before ending a session.
 
-This repository's own `.git/hooks/pre-commit` stages `.workflow/state.yaml` into every
-commit; use `git commit --no-verify` for code-only commits.
+A checkout where `init` was run has a UWS pre-commit hook. Older versions of it staged
+`.workflow/state.yaml` into every commit (re-running init replaces it); use
+`git commit --no-verify` for code-only commits.
 
 ## Vector Memory Protocol
 
-This repository uses two vector-memory MCP servers (`mcp__vector_memory_local`,
-`mcp__vector_memory_global`). The full protocol (what to store and when, categories, tag
-format, maintenance, recovery) is in the `vector-memory` skill
-(`.claude/skills/vector-memory/SKILL.md`). Markdown/YAML files remain the source of truth.
+Optional: when the vector-memory MCP servers (`mcp__vector_memory_local`,
+`mcp__vector_memory_global`) are configured (set up by `UWS_VECTOR_MEMORY=true` init; the
+tracked `.mcp.json` points at the maintainer's install), follow the `vector-memory` skill
+(`.claude/skills/vector-memory/SKILL.md`): what to store and when, categories, tag format,
+maintenance, recovery. Markdown/YAML files remain the source of truth.
 
 ## Key Conventions
 
@@ -122,7 +137,8 @@ format, maintenance, recovery) is in the `vector-memory` skill
 
 ## graphify
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+Only when `graphify-out/` exists (it is gitignored and built locally with `graphify`): it holds
+a knowledge graph with god nodes, community structure, and cross-file relationships.
 
 Rules:
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
