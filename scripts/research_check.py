@@ -951,9 +951,9 @@ def expected_references(project):
     return "\n".join(chunks)
 
 
-# A LaTeX citation command: \\cite and every command with "cite" in its name (natbib
-# \\citep, \\citet, \\Citet, \\citeauthor; biblatex \\parencite, \\textcite, \\autocite,
-# \\footcite, \\Parencite; a user's \\mycite). Two natbib commands take no keys.
+# A LaTeX citation command: \cite and every command with "cite" in its name (natbib
+# \citep, \citet, \Citet, \citeauthor; biblatex \parencite, \textcite, \autocite,
+# \footcite, \Parencite; a user's \mycite). Two natbib commands take no keys.
 CITE_CMD_RE = re.compile(r"\\([A-Za-z]*[Cc]ite[A-Za-z]*)\*?")
 CITE_NOT_KEYS = ("citetext", "citestyle")
 
