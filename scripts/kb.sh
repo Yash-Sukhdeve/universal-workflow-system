@@ -378,19 +378,51 @@ secret_scan() {
     return 1
 }
 
+# path_named_in <text> <dir>: succeed, printing the path as written up to the
+# next blank, when <text> names <dir> or a path under it as a whole path (not
+# as part of a longer name). The text is searched as is, so a <dir> with spaces
+# or non-ASCII bytes is found.
+path_named_in() {
+    local text="$1" d="$2" before after c LC_ALL=C
+    [[ -n "$d" && "$d" != "/" ]] || return 1
+    while [[ "$text" == *"$d"* ]]; do
+        before="${text%%"$d"*}"
+        after="${text#*"$d"}"
+        c="${before#"${before%?}"}"
+        case "$c" in [A-Za-z0-9._/-]) text="$after"; continue ;; esac
+        case "${after:0:1}" in [A-Za-z0-9._-]) text="$after"; continue ;; esac
+        printf '%s%s\n' "$d" "${after%%[[:space:]]*}"
+        return 0
+    done
+    return 1
+}
+
 # project_path_in <text>: print the first project or home path the text names
 # (global claims must not; design 4.2) and succeed, else fail. A path is
-# "~/..." or "$HOME...", an absolute path under /home, /Users, /root, $HOME or
-# the project, or a relative path with a slash that exists in the project the
-# command runs in. URLs are not paths.
+# "~/...", "$HOME..." or "${HOME}...", an absolute path under /home, /Users,
+# /root, $HOME or the project (a file:// URL included), the project or home
+# directory written anywhere in the text (so one with spaces or non-ASCII bytes
+# is found), or a relative path with a slash that exists in the project the
+# command runs in. A token in the KB's source notation counts as the path it
+# names: a file:, cmd: or commit: prefix, an @<ref> suffix and a
+# :<line>[-<line>] suffix are removed before the checks. Other URLs are not paths.
 project_path_in() {
-    local tok rel root="$PROJ_ROOT" rp="" home="${HOME:-}"
+    local text tok rel root="$PROJ_ROOT" rp="" home="${HOME:-}" d
     [[ -n "$root" && -d "$root" ]] && rp="$(cd "$root" && pwd -P)"
+    # file://[host]/path is a local path; ${HOME} is $HOME
+    text="$(printf '%s' "$1" | LC_ALL=C sed -e 's|file://[A-Za-z0-9.-]*/|/|g' -e 's/\${HOME}/$HOME/g')"
+    for d in "$root" "$rp" "$home"; do
+        path_named_in "$text" "$d" && return 0
+    done
     while IFS= read -r tok; do
         tok="${tok%[.:!?]}"
         [[ -n "$tok" ]] || continue
+        case "$tok" in *://*) continue ;; esac
+        case "$tok" in file:*|cmd:*|commit:*) tok="${tok#*:}" ;; esac
+        [[ "$tok" == *@* ]] && tok="${tok%@*}"
+        [[ "$tok" =~ :[0-9]+(-[0-9]+)?$ ]] && tok="${tok%:*}"
+        [[ -n "$tok" ]] || continue
         case "$tok" in
-            *://*) continue ;;
             \~/*|\$HOME*) printf '%s\n' "$tok"; return 0 ;;
             /*)
                 case "$tok" in /home/?*|/Users/?*|/root/*) printf '%s\n' "$tok"; return 0 ;; esac
@@ -407,7 +439,7 @@ project_path_in() {
                 ;;
         esac
     done <<EOF
-$(printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._/~$:+@-' '\n')
+$(printf '%s' "$text" | LC_ALL=C tr -c 'A-Za-z0-9._/~$:+@\200-\377-' '\n')
 EOF
     return 1
 }

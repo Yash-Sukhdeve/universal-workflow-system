@@ -134,6 +134,75 @@ EOF
     [ "$status" -eq 2 ]
 }
 
+@test "global: a path in source notation, with a line or ref suffix, \${HOME} or a file:// URL is a path too" {
+    init_global
+    # scripts/kb.sh is tracked in the project (setup copies scripts/ and commits)
+    local claims=(
+        "Use file:scripts/kb.sh to check the KB"
+        "See scripts/kb.sh:1 for the usage text"
+        'Keys live in ${HOME}/.ssh/config always'
+        "Open file:///home/alice/proj/notes.txt for detail"
+        "Check with scripts/kb.sh@HEAD today"
+        "See file:scripts/kb.sh:3-4@HEAD for the verbs"
+    )
+    local c i=0
+    for c in "${claims[@]}"; do
+        run "$UWS" kb add --global --type fact --claim "$c" --evidence reported \
+            --source url:https://example.org/d --quote "q" --no-conflict
+        [ "$status" -eq 2 ]
+        [[ "$output" == *"must not name a project or home path"* ]] || false
+    done
+    [ ! -d "$GKB/items" ] || [ -z "$(ls "$GKB/items")" ]
+    # import --scope global skips the same claims
+    python3 "${PROJECT_ROOT}/tests/fixtures/kb/make_vector_db.py" rows "${TEST_TMP_DIR}/g.db" "${claims[@]}"
+    run "$UWS" kb import vector --db "${TEST_TMP_DIR}/g.db" --scope global --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"would add 0 candidate(s)"*"${#claims[@]} skipped."* ]] || false
+    for i in 1 2 3 4 5 6; do
+        [[ "$output" == *"skip import:vector-global#${i}: names a project or home path"* ]] || false
+    done
+    # lint I8 reports them in hand-edited items
+    i=0
+    for c in "${claims[@]}"; do
+        i=$((i + 1))
+        seed_item "$GKB" "K-20260924-0000b${i}" "$c" reported global
+    done
+    run "$UWS" kb lint --global
+    [ "$status" -eq 1 ]
+    for i in 1 2 3 4 5 6; do
+        [[ "$output" == *"I8 K-20260924-0000b${i}: global claim names a project or home path"* ]] || false
+    done
+    # still not paths: URLs other than file://, and words with slashes that name nothing here
+    add_global_lesson "See https://example.org/scripts/kb.sh:1 and use either/or carefully@home"
+    [[ "$KB_OUT" =~ K-20260924-[0-9a-f]{6}$ ]] || false
+}
+
+@test "global: a project path with a space or non-ASCII bytes in it is refused too" {
+    init_global
+    local p n=0
+    for p in "${TEST_TMP_DIR}/my proj" "${TEST_TMP_DIR}/übung"; do
+        n=$((n + 1))
+        mkdir -p "$p/.workflow"
+        cp .workflow/state.yaml "$p/.workflow/"
+        (cd "$p" && git init -q && git config user.email "$PI" && git config user.name PI \
+            && printf 'x\n' > f && git add -A && git commit -qm init)
+        cd "$p"
+        run "$UWS" kb add --global --type fact --claim "It is in ${p}/f" --evidence reported \
+            --source url:https://example.org --quote "q"
+        [ "$status" -eq 2 ]
+        [[ "$output" == *"must not name a project or home path (${p}/f)"* ]] || false
+        run "$UWS" kb add --global --type fact --claim "The checkout is ${p} itself" --evidence reported \
+            --source url:https://example.org --quote "q"
+        [ "$status" -eq 2 ]
+        seed_item "$GKB" "K-20260924-0000c${n}" "It is in ${p}/f" reported global
+        run "$UWS" kb lint --global
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"I8 K-20260924-0000c${n}: global claim names a project or home path (${p}/f)"* ]] || false
+        rm -f "$GKB/items/K-20260924-0000c${n}.md"
+        cd "$TEST_TMP_DIR"
+    done
+}
+
 @test "global: only the global KB's PI promotes, never from inside an agent; global:ID reaches it from a project" {
     "$UWS" kb init --global >/dev/null
     git -C "$GKB" config user.email "$PI"

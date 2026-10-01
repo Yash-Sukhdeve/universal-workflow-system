@@ -776,9 +776,12 @@ imports only read their sources; no import was run on the real stores.
 - PI: `<global kb>/config.yaml` holds its own `kb.pi` (`uws kb pi --set <email> --global`); the
   gate of section 16 applies unchanged, with the global repository's `git config user.email`.
 - 4.2 "no project paths": `add` and `import` refuse, and `lint` reports as I8, a global claim
-  naming `~/...` or `$HOME...`, an absolute path under /home, /Users, /root, `$HOME` or the
-  project, or a relative path with a slash that exists in the project the command runs in. URLs
-  are not paths. Only claims are checked, as 4.2 says.
+  naming `~/...`, `$HOME...` or `${HOME}...`, an absolute path under /home, /Users, /root, `$HOME`
+  or the project (a `file://` URL included), the project or home directory written anywhere in
+  the claim (so a path with spaces or non-ASCII bytes is caught), or a relative path with a slash
+  that exists in the project the command runs in. A path in the KB's source notation counts as
+  the path: a `file:`, `cmd:` or `commit:` prefix, an `@<ref>` suffix and a `:<line>[-<line>]`
+  suffix are removed first. Other URLs are not paths. Only claims are checked, as 4.2 says.
 - Global retirements write no `outcomes.tsv` row (outcomes describe one project's process), and
   `--escaped-from` is project-only.
 - `search` ranks trusted project and global items together (same score, one budget: 5 lines,
