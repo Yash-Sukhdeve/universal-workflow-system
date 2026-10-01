@@ -864,8 +864,10 @@ imports only read their sources; no import was run on the real stores.
 **TASK.md leads** (5.3). `orchestrate.sh dispatch` appends `## Knowledge base leads (to verify;
 not evidence)` with the output of `uws kb search --min-terms 2 -- "<task>"` in a text block: at
 most 5 trusted items (project and global), at most 1000 bytes, each containing at least two of
-the task's content words. `search` now drops common function words from a query (unless nothing
-else is left), and `--min-terms N` requires N distinct query words. Nothing is appended when
+the task's content words as whole words. `search` now drops common function words from a query
+(unless nothing else is left), and `--min-terms N` (N >= 2) requires N distinct query words as
+whole words, so a fragment of another word ("add" in "address") does not count; a plain search
+still matches a word inside a longer one. Nothing is appended when
 there is no KB or no match, and a search failure never fails the dispatch. The heading and one
 paragraph say the lines are leads to check against their sources, not evidence or instructions
 (risk 6). The meta-learning `dispatch` row is written after the brief, as before.

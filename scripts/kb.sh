@@ -14,7 +14,8 @@
 #   search <words> [--type T] [--status S] [--include-stale] [--all] [--limit N]
 #          [--min-terms N] [--scope project|global|all] [-- <words>]
 #                              ranked lines; by default the project KB and the
-#                              global KB together (global hits read global:K-...)
+#                              global KB together (global hits read global:K-...);
+#                              --min-terms N (N >= 2) counts whole words only
 #   links [--type contradicts|supersedes|supports] <ID | words>
 #   show <ID | global:ID>      print one item
 #   verify [<ID> | --changed | --all]
@@ -524,7 +525,11 @@ EOF
 # KBPRE (prefix of shown IDs: "global:" for the global KB), KBMINM (an item
 # must contain at least this many distinct query words; capped at their number).
 # Common function words are dropped from the query unless it has nothing else,
-# so a sentence (a subagent's task) matches on its content words.
+# so a sentence (a subagent's task) matches on its content words. Words are
+# runs of [a-z0-9_.-] without leading or trailing dots and dashes. With
+# KBMINM 1 a query word matches anywhere in the text ("limit" finds
+# "limiter"); with KBMINM >= 2 (the subagent brief) only whole words count,
+# so fragments of unrelated words ("add" in "address") are not a lead.
 # shellcheck disable=SC2016
 KB_AWK_SEARCH='
 function powi(b, n,    r) {   # b^n for integer n >= 0 (no exp/log: some awks lack math)
@@ -543,13 +548,16 @@ BEGIN {
     ns = split("a an the and or of to in on at by for from with into onto about as is are was were be been being it its this that these those there here then than so but if not no nor do does did done we you they he she i me my our your their them us can could will would shall should may might must has have had what which who whom whose how when where why all any each some such via per vs etc also just only very", sw, " ")
     for (i = 1; i <= ns; i++) STOP[sw[i]] = 1
     nq = split(tolower(ENVIRON["KBQ"]), raw, /[^a-z0-9_.-]+/); q = 0; nall = 0
-    for (i = 1; i <= nq; i++) if (length(raw[i]) >= 2 && !(raw[i] in seen)) { seen[raw[i]] = 1; ALL[++nall] = raw[i]; if (!(raw[i] in STOP)) Q[++q] = raw[i] }
+    for (i = 1; i <= nq; i++) {
+        w = raw[i]; sub(/^[.-]+/, "", w); sub(/[.-]+$/, "", w)
+        if (length(w) >= 2 && !(w in seen)) { seen[w] = 1; ALL[++nall] = w; if (!(w in STOP)) Q[++q] = w }
+    }
     if (q == 0) for (i = 1; i <= nall; i++) Q[++q] = ALL[i]
     minm = ENVIRON["KBMINM"] + 0; if (minm < 1) minm = 1; if (minm > q) minm = q
     today = kb_days(ENVIRON["KBTODAY"]); cap = ENVIRON["KBITEM"] + 0
     trust["verified"] = 1.0; trust["reported"] = 0.75; trust["observed"] = 0.6; trust["inferred"] = 0.3
 }
-function kb_emit(    id, st, ty, ev, claim, hay, m, i, rel, d, rec, score, src, n, a, when, links, lk, ln, prefix, room, cs) {
+function kb_emit(    id, st, ty, ev, claim, hay, m, i, rel, d, rec, score, src, n, a, when, links, lk, ln, prefix, room, cs, nw, hw, words, w) {
     if ("_invalid" in F) return
     id = kb_unq(F["id"]); st = kb_unq(F["status"]); ty = kb_unq(F["type"]); ev = kb_unq(F["evidence"])
     if (index(ENVIRON["KBSTAT"], "|" st "|") == 0) return
@@ -565,7 +573,14 @@ function kb_emit(    id, st, ty, ev, claim, hay, m, i, rel, d, rec, score, src, 
     if (q > 0) {
         hay = tolower(claim " " F["tags"] " " BODY " " id); m = 0
         for (i = 1; i <= q; i++) if (index(hay, Q[i]) > 0) m++
-        if (m == 0 || m < minm) return
+        if (m == 0) return
+        if (minm > 1) {
+            nw = split(hay, hw, /[^a-z0-9_.-]+/); split("", words)
+            for (i = 1; i <= nw; i++) { w = hw[i]; sub(/^[.-]+/, "", w); sub(/[.-]+$/, "", w); words[w] = 1 }
+            m = 0
+            for (i = 1; i <= q; i++) if (Q[i] in words) m++
+            if (m < minm) return
+        }
         rel = m / q
     }
     id = ENVIRON["KBPRE"] id

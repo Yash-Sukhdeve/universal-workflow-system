@@ -129,6 +129,25 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ "$status" -eq 2 ]
 }
 
+@test "search --min-terms counts whole words, so fragments of other words are not a lead" {
+    seed K-20260101-0000c1 fact "The address field is stable across releases"
+    # "add" is inside "address" and "table" inside "stable": no whole word is shared
+    run "$UWS" kb search --min-terms 2 -- "Add an index to the users table"
+    [ "$status" -eq 1 ]
+    "$UWS" sdlc start >/dev/null
+    run "$UWS" orchestrate dispatch "Add an index to the users table"
+    [ "$status" -eq 0 ]
+    run grep -c 'Knowledge base leads' workspace/researcher/TASK.md
+    [ "$output" = "0" ]
+    # whole words count, with sentence punctuation around them
+    run "$UWS" kb search --min-terms 2 -- "Is the address field stable."
+    [ "$status" -eq 0 ]
+    [[ "$output" == "K-20260101-0000c1 "* ]] || false
+    # a plain search still finds a word inside a longer one
+    run "$UWS" kb search addr
+    [ "$status" -eq 0 ]
+}
+
 # ── R4 ──────────────────────────────────────────────────────────────────────
 
 @test "R4: prune proposes, and never applies, retiring old trusted items unused in the last N sessions" {

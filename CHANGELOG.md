@@ -23,7 +23,7 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
   Global claims may not name project or home paths (`add`/`import` refuse; `lint` I8)
 - `uws kb search` ranks trusted project and global items together in the same 5-line,
   1000-byte budget; global lines read `global:K-...`; `--scope project|global` narrows it.
-  Queries drop common function words, and `--min-terms N` asks for N matching words;
+  Queries drop common function words, and `--min-terms N` asks for N matching whole words;
   `search -- <words>` takes words that start with a dash. `show` finds global IDs; `stats` lists
   the global KB and this machine's usage
 - `uws kb import vector --db <path> [--scope project|global] [--dry-run]` and

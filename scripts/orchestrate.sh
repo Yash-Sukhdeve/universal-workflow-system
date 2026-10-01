@@ -119,7 +119,7 @@ resolve_context() {
 
 # The brief's knowledge-base section (docs/design/knowledge-base.md 5.3, section 18):
 # at most UWS_KB_SEARCH_LIMIT (5) trusted items of the project and global KBs that
-# contain at least two of the task's content words, within UWS_KB_BRIEF_BYTES (1000)
+# contain at least two of the task's content words (whole words), within UWS_KB_BRIEF_BYTES (1000)
 # bytes, found by `uws kb search` (which records the retrieval as `task` in the usage
 # log). Prints nothing when there is no KB or no match; never fails the dispatch.
 kb_brief_section() {
