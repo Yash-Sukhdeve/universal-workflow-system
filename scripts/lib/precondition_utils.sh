@@ -126,21 +126,22 @@ require_checkpoint_exists() {
         return 1
     fi
 
-    # Check log entry
-    if [[ ! -f ".workflow/checkpoints.log" ]]; then
+    # Check log entry. Lines are "TIMESTAMP | CP_ID | DESCRIPTION" (spaces around the bars)
+    local wf="${WORKFLOW_DIR:-.workflow}"
+    if [[ ! -f "${wf}/checkpoints.log" ]]; then
         precondition_add_failure "Checkpoint log missing"
         echo -e "${RED}Error: No checkpoints exist${NC}" >&2
         return 1
     fi
 
-    if ! grep -q "|${checkpoint_id}|" ".workflow/checkpoints.log" 2>/dev/null; then
+    if ! grep -qE "^[^|]*\|[[:space:]]*${checkpoint_id}[[:space:]]*\|" "${wf}/checkpoints.log" 2>/dev/null; then
         precondition_add_failure "Checkpoint not found in log: ${checkpoint_id}"
         echo -e "${RED}Error: Checkpoint ${checkpoint_id} not found${NC}" >&2
         return 1
     fi
 
     # Check snapshot directory
-    local snapshot_dir=".workflow/checkpoints/snapshots/${checkpoint_id}"
+    local snapshot_dir="${wf}/checkpoints/snapshots/${checkpoint_id}"
     if [[ ! -d "$snapshot_dir" ]]; then
         precondition_add_failure "Checkpoint snapshot missing: ${checkpoint_id}"
         echo -e "${YELLOW}Warning: Snapshot directory missing for ${checkpoint_id}${NC}" >&2

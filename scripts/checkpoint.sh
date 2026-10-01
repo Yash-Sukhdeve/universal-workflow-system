@@ -448,9 +448,12 @@ list_checkpoints() {
         fi
     done
     
-    # Show statistics
-    local total=$(wc -l < ${WORKFLOW_DIR}/checkpoints.log)
-    local today=$(grep "$(date +%Y-%m-%d)" ${WORKFLOW_DIR}/checkpoints.log | wc -l)
+    # Show statistics: real checkpoints only. The log also holds comments and
+    # INIT/AUTO/RESTORED/PHASE_TRANSITION/AGENT_DISPATCHED events.
+    local cp_re='^[^#|][^|]*\|[[:space:]]*CP_[0-9]+_[0-9]+[[:space:]]*\|'
+    local total today
+    total=$({ grep -E "$cp_re" "${WORKFLOW_DIR}/checkpoints.log" || true; } | wc -l | tr -d '[:space:]')
+    today=$({ grep -E "$cp_re" "${WORKFLOW_DIR}/checkpoints.log" || true; } | { grep "^$(date +%Y-%m-%d)" || true; } | wc -l | tr -d '[:space:]')
     
     echo -e "${BLUE}─────────────────────────────────────────${NC}"
     echo -e "Total checkpoints: ${GREEN}${total}${NC}"
@@ -494,10 +497,10 @@ restore_checkpoint() {
 
     # Check both old and new snapshot locations for backwards compatibility
     local snapshot_dir=""
-    if [[ -d ".workflow/checkpoints/snapshots/${checkpoint_id}" ]]; then
-        snapshot_dir=".workflow/checkpoints/snapshots/${checkpoint_id}"
-    elif [[ -d ".workflow/snapshots/${checkpoint_id}" ]]; then
-        snapshot_dir=".workflow/snapshots/${checkpoint_id}"
+    if [[ -d "${WORKFLOW_DIR}/checkpoints/snapshots/${checkpoint_id}" ]]; then
+        snapshot_dir="${WORKFLOW_DIR}/checkpoints/snapshots/${checkpoint_id}"
+    elif [[ -d "${WORKFLOW_DIR}/snapshots/${checkpoint_id}" ]]; then
+        snapshot_dir="${WORKFLOW_DIR}/snapshots/${checkpoint_id}"
     else
         echo -e "${RED}Error: Checkpoint ${checkpoint_id} not found${NC}"
         echo -e "${YELLOW}Available checkpoints:${NC}"
@@ -571,7 +574,7 @@ restore_checkpoint() {
     fi
 
     # Backup current state before restoration
-    local backup_dir=".workflow/checkpoints/snapshots/backup_${timestamp//[:-]/}"
+    local backup_dir="${WORKFLOW_DIR}/checkpoints/snapshots/backup_${timestamp//[:-]/}"
     mkdir -p "$backup_dir" || {
         echo -e "${RED}Error: Failed to create backup directory${NC}"
         exit 1
@@ -966,16 +969,18 @@ toggle_auto_checkpoint() {
 setup_auto_checkpoint() {
     echo -e "${CYAN}Setting up auto-checkpoint...${NC}"
     
-    # Create auto-checkpoint script
-    cat > ${WORKFLOW_DIR}/scripts/auto_checkpoint.sh << 'EOF'
+    # Create auto-checkpoint script (calls this install's checkpoint.sh: a user's
+    # project has no scripts/ directory)
+    mkdir -p "${WORKFLOW_DIR}/scripts"
+    cat > ${WORKFLOW_DIR}/scripts/auto_checkpoint.sh << EOF
 #!/bin/bash
 # Auto checkpoint script
 
-cd "$(dirname "$(dirname "$(dirname "${BASH_SOURCE[0]}")")")"
+cd "\$(dirname "\$(dirname "\$(dirname "\${BASH_SOURCE[0]}")")")"
 
 # Check if auto-checkpoint is enabled
 if grep -q "auto_checkpoint: true" .workflow/config.yaml; then
-    ./scripts/checkpoint.sh create "Auto checkpoint"
+    "${SCRIPT_DIR}/checkpoint.sh" create "Auto checkpoint"
 fi
 EOF
     

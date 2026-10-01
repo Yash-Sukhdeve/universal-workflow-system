@@ -417,3 +417,35 @@ no_stale_hint() {
     run "${PROJECT_ROOT}/bin/uws" research check 1 </dev/null
     [ "$status" -ne 0 ]
 }
+
+@test "cli: checkpoint restore finds a checkpoint created in an init'd project" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" checkpoint create "first" </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" sdlc start </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" checkpoint create "second" </dev/null >/dev/null
+    grep -q 'sdlc_phase' "$PROJ/.workflow/state.yaml"
+    # The log separates fields with " | "; restore used to look for "|CP_1_002|"
+    run bash -c "echo y | '${PROJECT_ROOT}/bin/uws' checkpoint restore CP_1_002"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Restored to checkpoint CP_1_002"* ]] || false
+    run grep -c '^sdlc_phase:' "$PROJ/.workflow/state.yaml"
+    [ "$output" = "0" ]
+    grep -Eq 'current_checkpoint: "?CP_1_002"?$' "$PROJ/.workflow/state.yaml"
+    # an ID that was never created is still refused
+    run bash -c "echo y | '${PROJECT_ROOT}/bin/uws' checkpoint restore CP_1_009"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"CP_1_009 not found"* ]] || false
+}
+
+@test "cli: checkpoint list counts checkpoints, not log lines" {
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" checkpoint create "first" </dev/null >/dev/null
+    "${PROJECT_ROOT}/bin/uws" sdlc start </dev/null >/dev/null      # PHASE_TRANSITION-free, but
+    "${PROJECT_ROOT}/bin/uws" orchestrate dispatch "x" </dev/null >/dev/null   # AGENT_DISPATCHED
+    # the log now holds comments, INIT, CP_1_001, CP_1_002 and an AGENT_DISPATCHED line
+    run "${PROJECT_ROOT}/bin/uws" checkpoint list </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Total checkpoints: 2"* ]] || false
+}
