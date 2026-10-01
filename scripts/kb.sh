@@ -2998,7 +2998,7 @@ cmd_import() {
     local idx
     idx="$(claim_index)"
     [[ "$dry" == "true" ]] || ensure_kb
-    local actor tag ref ty tags flags detail text meta orig claim norm hit hitid hitdir hitcb src
+    local actor tag ref ty tags flags detail text meta orig claim norm hit hitid hitdir hitcb hst src
     local n_new=0 n_flag=0 n_dup=0 n_ret=0 n_skip=0 n_rows=0
     actor="$(kb_actor "$ROOT")"
     echo "Import ${kind} from ${src_desc} into the ${SCOPE} KB$([[ "$dry" == "true" ]] && echo " (dry run: nothing written)"):"
@@ -3042,7 +3042,9 @@ cmd_import() {
                     while IFS= read -r s1; do [[ -n "$s1" ]] && srcs+=("$s1"); done <<< "$cur"
                     srcs+=("$src")
                     kb_fm_set "$hf" source "$(kb_list_format --quote "${srcs[@]}")"
-                    kb_event "$KB" "$hitid" candidate candidate "import-duplicate:${src}" "$actor"
+                    # the status is unchanged, whatever it is (a disputed import stays disputed)
+                    hst="$(kb_fm_get "$hf" status)"
+                    kb_event "$KB" "$hitid" "$hst" "$hst" "import-duplicate:${src}" "$actor"
                 fi
                 echo "  ${src}: same claim as $(id_prefix)${hitid} (R7); $([[ "$dry" == "true" ]] && echo "would be collapsed into it" || echo "collapsed into it") (source added)"
             else

@@ -362,6 +362,25 @@ init_global() {
     grep -q "	${b}	candidate	disputed	disputed-by:${a}	" "${KB}/events.tsv"
 }
 
+@test "import: a row collapsed into a disputed import is logged with the item's own status" {
+    "$UWS" kb import vector --db "${SRC}/local.db" >/dev/null
+    local a c mem="${SRC}/automem"
+    a="$(id_of "$(item_with "$KB" 'keeps one Markdown file per item')")"
+    c="$("$UWS" kb add --type fact --claim "Each item is one Markdown file under docs/kb/items" \
+        --evidence observed --source file:f:1 --contradicts "$a" 2>/dev/null)"
+    "$UWS" kb dispute "$a" --by "$c" >/dev/null
+    chmod 755 "$SRC"
+    mkdir -p "$mem"
+    printf -- '---\nname: kb-files\ndescription: "%s"\ntype: project\n---\nBody.\n' \
+        "$(field "$KB/items/${a}.md" claim)" > "$mem/kb-files.md"
+    run "$UWS" kb import automemory --dir "$mem"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"import:automemory#kb-files.md: same claim as ${a} (R7); collapsed into it (source added)"* ]] || false
+    [ "$(field "$KB/items/${a}.md" status)" = "disputed" ]
+    [ "$(tail -1 "$KB/events.tsv" | cut -f 2-5)" = "${a}	disputed	disputed	import-duplicate:import:automemory#kb-files.md" ]
+    chmod 555 "$SRC"
+}
+
 @test "import automemory: project facts become candidates; preferences, feedback and MEMORY.md are not imported or edited" {
     local mem="${TEST_TMP_DIR}-src/automem"
     chmod 755 "$SRC"
