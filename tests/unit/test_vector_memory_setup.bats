@@ -264,6 +264,35 @@ EOF
     [ ! -f "${TEST_TMP_DIR}/.mcp.json" ]
 }
 
+@test "an installed server is not wired into a new project without opt-in (non-interactive)" {
+    # The server is already under ~/.uws/tools: init must still not write .mcp.json
+    # (absolute home paths) or touch .gitignore unless the user opts in
+    printf 'node_modules/\n' > "${TEST_TMP_DIR}/.gitignore"
+    run bash -c "unset _VECTOR_MEMORY_SETUP_LOADED UWS_VECTOR_MEMORY; source '${SCRIPTS_DIR}/lib/vector_memory_setup.sh'; uws_vm_check_python() { return 0; }; uws_vm_check_disk_space() { return 0; }; uws_vm_is_installed() { return 0; }; uws_vm_configure_mcp_json() { echo CONFIGURED > \"\$1/.mcp.json\"; }; setup_vector_memory '${TEST_TMP_DIR}'" < /dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"UWS_VECTOR_MEMORY=true"* ]] || false
+    [ ! -f "${TEST_TMP_DIR}/.mcp.json" ]
+    [ "$(cat "${TEST_TMP_DIR}/.gitignore")" = "node_modules/" ]
+}
+
+@test "with UWS_VECTOR_MEMORY=true an installed server is wired in, and a new .mcp.json is gitignored" {
+    run bash -c "unset _VECTOR_MEMORY_SETUP_LOADED; export UWS_VECTOR_MEMORY=true; source '${SCRIPTS_DIR}/lib/vector_memory_setup.sh'; uws_vm_check_python() { return 0; }; uws_vm_check_disk_space() { return 0; }; uws_vm_is_installed() { return 0; }; uws_vm_configure_mcp_json() { echo CONFIGURED > \"\$1/.mcp.json\"; }; setup_vector_memory '${TEST_TMP_DIR}'" < /dev/null
+    [ "$status" -eq 0 ]
+    [ -f "${TEST_TMP_DIR}/.mcp.json" ]
+    grep -qx 'memory/' "${TEST_TMP_DIR}/.gitignore"
+    # it holds this machine's absolute paths, so it is not committed by accident
+    grep -qx '.mcp.json' "${TEST_TMP_DIR}/.gitignore"
+}
+
+@test "an existing .mcp.json (the project's own servers) is not gitignored" {
+    echo '{"mcpServers": {}}' > "${TEST_TMP_DIR}/.mcp.json"
+    run bash -c "unset _VECTOR_MEMORY_SETUP_LOADED; export UWS_VECTOR_MEMORY=true; source '${SCRIPTS_DIR}/lib/vector_memory_setup.sh'; uws_vm_check_python() { return 0; }; uws_vm_check_disk_space() { return 0; }; uws_vm_is_installed() { return 0; }; uws_vm_configure_mcp_json() { echo CONFIGURED >> \"\$1/.mcp.json\"; }; setup_vector_memory '${TEST_TMP_DIR}'" < /dev/null
+    [ "$status" -eq 0 ]
+    run grep -cx '.mcp.json' "${TEST_TMP_DIR}/.gitignore"
+    [ "$output" = "0" ]
+    [[ "$(cat "${TEST_TMP_DIR}/.mcp.json")" == *"CONFIGURED"* ]] || false
+}
+
 @test "setup_vector_memory returns 0 even when Python is missing (graceful degradation)" {
     # Create a wrapper script so bash can find itself but python is hidden
     local wrapper="${TEST_TMP_DIR}/test_no_python.sh"
