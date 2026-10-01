@@ -38,8 +38,9 @@ jobs:
 
       - name: Check for critical errors
         run: |
-          # Fail on critical errors only
-          find scripts -name "*.sh" -type f -exec shellcheck -x -e SC1091 -S error {} \;
+          # Fail on critical errors only. `-exec ... +` makes find exit non-zero
+          # when shellcheck does; `-exec ... \;` never would.
+          find scripts -name "*.sh" -type f -exec shellcheck -x -e SC1091 -S error {} +
 
       - name: Reject GNU-only constructs (macOS/BSD portability)
         run: |
