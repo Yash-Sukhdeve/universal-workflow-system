@@ -295,6 +295,32 @@ EOF
     [[ "$output" == *"N-0002 pass RUN-0001"* ]]
 }
 
+@test "P1 repro: a hand-written pass (a reproduction made outside the tool) does not satisfy REPRO" {
+    research_make_reproducible
+    # N-0002 was reproduced by some other script, with no run record; attest it in a report.
+    add_number '{"id":"N-0002","macro":"\\Attested","printed":"0.920","raw":0.9199,"rounding":"round:3","metric":"held-out ROC-AUC","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/test_auc","data_origin":"synthetic-generated","evaluation":"held-out","exp":"EXP-LEAK","inputs":["research/data/raw/gb_scores.csv"]}'
+    commit_all "N-0002"
+    python3 - "$CHECK" "$P" << 'EOF'
+import importlib.util, json, os, sys
+spec = importlib.util.spec_from_file_location("rc", sys.argv[1])
+rc = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(rc)
+root = sys.argv[2]
+rows = [json.loads(l) for l in open(os.path.join(root, "research/ledger/numbers.jsonl")) if l.strip()]
+row = [r for r in rows if r["id"] == "N-0002"][-1]
+rep = {"created_at": rc.utc_now(), "tool": "research_check.py repro", "selection": ["N-0002"],
+       "results": [{"id": "N-0002", "rev": 1, "status": "pass", "row_sha256": rc.canonical_sha(row), "run": None,
+                    "run_sha256": None, "expected": 0.9199, "observed": 0.9199, "note": "reproduced by an audit script"}]}
+with open(os.path.join(root, "research/repro/report-29990101T000000Z.json"), "w") as fh:
+    json.dump(rep, fh)
+EOF
+    run check gate analysis
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REPRO N-0002: the passing entry is not a re-run of its recorded run by the repro job (the number has no run record)"* ]]
+    [[ "$output" != *"REPRO N-0001"* ]]
+}
+
 @test "P1 run: a glob that matches no file the command wrote is an error" {
     run check run --exp exploratory --output 'artifacts/none_*.json' -- python3 -c pass
     [ "$status" -eq 1 ]

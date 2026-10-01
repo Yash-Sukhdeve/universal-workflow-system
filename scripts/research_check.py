@@ -3976,7 +3976,7 @@ def cmd_repro(project, args):
             results[nid].update(status="fail", message="the re-run changed files in the original project (%s); "
                                 "restore them from git" % ", ".join(mutated[:5]))
     report = {
-        "created_at": utc_now(), "tool": "research_check.py repro", "git_head": git_head(project),
+        "created_at": utc_now(), "tool": REPRO_TOOL, "git_head": git_head(project),
         "environment": {"python": platform.python_version(), "platform": platform.platform()},
         "selection": wanted, "results": [results[nid] for nid in ids],
         "summary": {"pass": sum(1 for r in results.values() if r.get("status") == "pass"),
@@ -4130,6 +4130,10 @@ def _rmtree(path):
         shutil.rmtree(path, onerror=retry)
 
 
+# The `tool` field the repro job writes into each report.
+REPRO_TOOL = "research_check.py repro"
+
+
 def load_repro_reports(project):
     out, findings = [], []
     d = project.path(REPRO_DIR_REL)
@@ -4173,13 +4177,25 @@ def check_repro_current(project):
         for created, rel, rep in reports:
             for r in rep["results"]:
                 if isinstance(r, dict) and r.get("id") == nid:
-                    entry = (created, rel, r)
+                    entry = (created, rel, r, rep)
         if entry is None:
             out.append(Finding(numbers.rel, lineno, "REPRO", "%s has never been reproduced (`uws research check repro all`)" % nid))
             continue
-        created, rel, r = entry
+        created, rel, r, rep = entry
         if r.get("status") != "pass":
             out.append(Finding(rel, 1, "REPRO", "%s failed its latest repro: %s" % (nid, r.get("message"))))
+            continue
+        # A pass counts only when the repro job re-ran the number's recorded run. The job
+        # never passes a number without a run record, so such a pass was written by hand: a
+        # reproduction made some other way (an audit script, another machine) cannot be
+        # attested into a report. Record the command with `run` and let `repro` re-run it.
+        if rep.get("tool") != REPRO_TOOL or not row.get("run") or r.get("run") != row.get("run"):
+            why = ("the number has no run record" if not row.get("run") else
+                   "the entry names run %s, the row %s" % (r.get("run"), row.get("run")) if r.get("run") != row.get("run")
+                   else "the report was not written by `uws research check repro`")
+            out.append(Finding(rel, 1, "REPRO", "%s: the passing entry is not a re-run of its recorded run by the repro "
+                               "job (%s); a reproduction cannot be attested by hand: record the command with "
+                               "`uws research check run` and re-run `repro`" % (nid, why)))
             continue
         if r.get("row_sha256") != canonical_sha(row):
             out.append(Finding(numbers.rel, lineno, "REPRO", "%s changed after its latest repro (%s); re-run the repro job" % (nid, rel)))
