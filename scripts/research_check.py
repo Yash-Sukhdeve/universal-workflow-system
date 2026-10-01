@@ -3806,7 +3806,11 @@ def command_interpreter(project, cmd, env):
     the project root, where the command runs; a name is looked up on PATH; `env A=B prog`
     is skipped over). A script with a `#!` line is followed to its interpreter. Python is
     asked for its version, executable and prefix (a venv shows up there); a few other known
-    interpreters are asked for `--version`; anything else is recorded by path only."""
+    interpreters are asked for `--version`; anything else is recorded by path only.
+
+    The probe runs the interpreter the command invokes (`invoked`), not its resolved file
+    (`path`): a venv's bin/python is a symlink to the base interpreter, and only when run
+    through the link does Python report the venv as its prefix."""
     words = list(cmd)
     if words and os.path.basename(words[0]) == "env":
         words = words[1:]
@@ -3820,9 +3824,18 @@ def command_interpreter(project, cmd, env):
     if not path or not os.path.isfile(path):
         rec["error"] = "not found"
         return rec
+    invoked = os.path.abspath(path)
     path = os.path.realpath(path)
-    rec["path"] = path
-    name = os.path.basename(path)
+    rec["invoked"], rec["path"] = invoked, path
+
+    def kind_name(link, target):
+        """The interpreter name of a file, by the name it resolves to or is called by."""
+        for n in (os.path.basename(target), os.path.basename(link)):
+            if re.match(r"^(python|pypy)", n, re.I) or n in _VERSION_INTERPRETERS:
+                return n
+        return os.path.basename(target)
+
+    name = kind_name(invoked, path)
     if not re.match(r"^(python|pypy)", name, re.I) and name not in _VERSION_INTERPRETERS:
         try:
             with open(path, "rb") as fh:
@@ -3838,13 +3851,13 @@ def command_interpreter(project, cmd, env):
                 interp = parts[0] if parts else None
             if interp and os.path.isfile(interp):
                 rec["script"] = path
-                path = os.path.realpath(interp)
-                rec["path"] = path
-                name = os.path.basename(path)
+                invoked, path = os.path.abspath(interp), os.path.realpath(interp)
+                rec["invoked"], rec["path"] = invoked, path
+                name = kind_name(invoked, path)
     if re.match(r"^(python|pypy)", name, re.I):
         rec["kind"] = "python"
         try:
-            proc = subprocess.run([path, "-c", _PY_PROBE], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            proc = subprocess.run([invoked, "-c", _PY_PROBE], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                   env=env, timeout=30)
             info = json.loads(proc.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
             rec.update(info)
@@ -3853,7 +3866,7 @@ def command_interpreter(project, cmd, env):
     elif name in _VERSION_INTERPRETERS:
         rec["kind"] = name
         try:
-            proc = subprocess.run([path, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            proc = subprocess.run([invoked, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env, timeout=30)
             lines = proc.stdout.decode("utf-8", "replace").strip().splitlines()
             rec["version"] = lines[0] if lines else ""
@@ -3892,7 +3905,8 @@ def _stat_key(path):
 def _glob_rel(project, pattern):
     """Project paths of the files a glob pattern (relative to the project root) matches."""
     out = []
-    for f in sorted(glob.glob(os.path.join(project.root, pattern), recursive=True)):
+    # The root is escaped: a project at ".../proj [v2]" must not turn into a character class.
+    for f in sorted(glob.glob(os.path.join(glob.escape(project.root), pattern), recursive=True)):
         rel = safe_rel(project, os.path.relpath(f, project.root))
         if rel and os.path.isfile(f):
             out.append(rel)
@@ -4004,6 +4018,8 @@ def cmd_run(project, args):
     before_glob = {}
     for pat in patterns:
         before_glob[pat] = dict((rel, _stat_key(project.path(rel))) for rel in _glob_rel(project, pat))
+        if os.path.isfile(project.path(pat)):
+            before[pat] = _stat_key(project.path(pat))
     os.makedirs(run_dir)
     env = dict(os.environ)
     env.update(env_vars)
@@ -4023,6 +4039,10 @@ def cmd_run(project, args):
         rc, note = 124, "timed out after %s s" % args.timeout
     ended = utc_now()
     out_records, missing, untouched, unmatched = [], [], [], []
+    # A path with glob characters that names a file the command wrote (or that exists) is
+    # that file, not a pattern: `artifacts/res[1].json` is recorded as itself.
+    outputs = outputs + [pat for pat in patterns if os.path.isfile(project.path(pat))]
+    patterns = [pat for pat in patterns if pat not in outputs]
     for rel in outputs:
         path = project.path(rel)
         if os.path.isfile(path):
@@ -4336,7 +4356,7 @@ def _repro_run(project, run_id, rec, members, timeout, keep):
 def _glob_under(base, pattern):
     """Paths relative to `base` of the files `pattern` matches under it."""
     out = []
-    for f in sorted(glob.glob(os.path.join(base, pattern), recursive=True)):
+    for f in sorted(glob.glob(os.path.join(glob.escape(base), pattern), recursive=True)):
         if os.path.isfile(f):
             out.append(os.path.relpath(f, base).replace(os.sep, "/"))
     return out

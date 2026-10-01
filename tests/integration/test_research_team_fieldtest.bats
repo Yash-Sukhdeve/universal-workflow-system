@@ -462,6 +462,65 @@ EOF
     [[ "$output" != *"REPRO N-0001"* ]]
 }
 
+@test "P1 run: an output path with a literal [ (or ? or *) that the command wrote is that file, not a glob" {
+    run check run --exp exploratory --output 'artifacts/res[1].json' -- \
+        python3 -c 'import json; json.dump({"v": 3}, open("artifacts/res[1].json", "w"))'
+    echo "$output"
+    [ "$status" -eq 0 ]
+    python3 -c 'import json,sys; o=json.load(open(sys.argv[1]))["outputs"]; assert len(o)==1 and o[0]["path"]=="artifacts/res[1].json" and len(o[0]["sha256"])==64 and "pattern" not in o[0], o' \
+        "$P/research/runs/RUN-0001/run.json"
+}
+
+@test "P1 run/repro: an output glob works when the project path has glob characters (proj [v2])" {
+    local outer="${TEST_TMP_DIR}/outer"
+    P="${outer}/proj [v2]"
+    mkdir -p "$P"
+    git -C "$outer" init -q
+    git -C "$outer" config user.email "test@test.com"
+    git -C "$outer" config user.name "Test User"
+    cp -R "${RFIX}/project/." "$P/"
+    cat > "$P/research/code/stamped.py" << 'EOF'
+import json
+import time
+
+with open("artifacts/stamped_%d.json" % time.time_ns(), "w", encoding="utf-8") as fh:
+    json.dump({"v": 3}, fh)
+EOF
+    git -C "$outer" add -A >/dev/null
+    git -C "$outer" commit -q -m "fixture in a subdirectory whose name has glob characters"
+    run check run --exp exploratory --code research/code/stamped.py --output 'artifacts/stamped_*.json' -- python3 research/code/stamped.py
+    echo "$output"
+    [ "$status" -eq 0 ]
+    local concrete
+    concrete="$(cd "$P" && ls artifacts/stamped_*.json)"
+    add_number "{\"id\":\"N-0002\",\"macro\":\"\\\\Stamped\",\"printed\":\"3\",\"raw\":3,\"rounding\":\"exact\",\"metric\":\"count\",\"output\":\"${concrete}\",\"pointer\":\"/v\",\"data_origin\":\"measured\",\"evaluation\":\"n/a\",\"exp\":\"exploratory\",\"run\":\"RUN-0001\"}"
+    commit_all "stamped number"
+    run check repro N-0002
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"N-0002 pass RUN-0001"* ]]
+}
+
+@test "P2 run: a venv's interpreter is recorded with the venv prefix, by path and through PATH" {
+    python3 -m venv --without-pip "$P/.venv" >/dev/null 2>&1 || skip "python3 -m venv is not available"
+    run check run --exp exploratory -- .venv/bin/python -c 'import sys; print(sys.prefix)'
+    echo "$output"
+    [ "$status" -eq 0 ]
+    PATH="$P/.venv/bin:$PATH" run check run --exp exploratory -- python3 -c 'print(1)'
+    [ "$status" -eq 0 ]
+    python3 - "$P" << 'EOF'
+import json, os, sys
+root = sys.argv[1]
+venv = os.path.realpath(os.path.join(root, ".venv"))
+for run, invoked in (("RUN-0001", os.path.join(root, ".venv/bin/python")), ("RUN-0002", os.path.join(root, ".venv/bin/python3"))):
+    it = json.load(open(os.path.join(root, "research/runs", run, "run.json")))["interpreter"]
+    assert it["kind"] == "python", it
+    assert os.path.realpath(it["prefix"]) == venv, (run, it)
+    assert it["invoked"] == invoked, (run, it)
+    assert it["path"] == os.path.realpath(invoked), (run, it)
+EOF
+}
+
 @test "P1 run: a glob that matches no file the command wrote is an error" {
     run check run --exp exploratory --output 'artifacts/none_*.json' -- python3 -c pass
     [ "$status" -eq 1 ]
