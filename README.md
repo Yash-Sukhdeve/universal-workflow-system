@@ -427,11 +427,11 @@ uws kb review --imported                 # the triage queue, with the steps to k
 Duplicates collapse into one item, rows that look like secrets are skipped, preferences and
 corrections stay in auto-memory, and rows that name concrete things (paths, file names,
 snake_case names, backticked terms), none of which the project contains, are flagged
-`suspected-fixture` (project imports only). `approve` refuses an import as it stands: the PI restates it with a
-resolvable source (`uws kb add ... --supersedes <ID>`, repeating the claim to keep it as it is)
-and approving the restatement retires the import. No rule retires an import before the PI has
-reviewed it: `prune` skips imports, and restating or disputing one changes nothing until the
-PI approves (decision D6). The vector-memory servers and skills
+`suspected-fixture` (project imports only). `approve` refuses an import as it stands: the PI
+restates it with a resolvable source (`uws kb add ... --supersedes <ID>`, repeating the claim
+to keep it as it is), and approving the restatement retires the import. No rule retires an
+import before the PI has reviewed it: `prune` skips imports, and a restatement or a dispute
+takes effect only when the PI approves it (decision D6). The vector-memory servers and skills
 keep running unchanged.
 
 `uws orchestrate dispatch` adds up to 5 trusted items (1000 bytes) that share at least two

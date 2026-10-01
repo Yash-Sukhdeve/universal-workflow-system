@@ -1391,8 +1391,8 @@ EOF
         [[ "$any" == "true" ]] || echo "No imported items wait for triage."
         printf '%s\n' \
             "Triage (the PI; docs/design/knowledge-base.md section 18). An import is a lead, not evidence," \
-            "and approve refuses it. No rule retires it before you have reviewed it (decision D6): prune" \
-            "skips imports (R1, R2, R5), and restating or disputing one changes nothing until you approve." \
+            "and approve refuses it. No rule retires it before you have reviewed it (decision D6): R2 and" \
+            "R5 skip imports, and a restatement (R1) or a dispute takes effect only when you approve it." \
             "  keep or correct:  uws kb add${sf} --type <T> --claim \"<the claim, corrected if needed>\" \\" \
             "                      --evidence <E> --source <resolvable source> --supersedes <ID>" \
             "                    then, in your own terminal: uws kb approve <new ID>" \
