@@ -3339,13 +3339,27 @@ def split_errors(project, split):
 def read_records(path):
     """Rows of a CSV/TSV, JSON Lines or JSON file (a list of objects, or an object whose
     only list of objects is the rows)."""
+    # utf-8-sig: a byte-order mark (Excel's "CSV UTF-8" writes one) would otherwise become
+    # part of the first header or make the first JSON line unreadable.
     if path.endswith((".csv", ".tsv")):
-        with open(path, encoding="utf-8", newline="") as fh:
+        with open(path, encoding="utf-8-sig", newline="") as fh:
             return list(csv.DictReader(fh, delimiter="\t" if path.endswith(".tsv") else ","))
     if path.endswith(".jsonl"):
-        return [obj for _l, obj, err in _read_jsonl(path) if not err]
+        rows = []
+        with open(path, encoding="utf-8-sig") as fh:
+            for lineno, raw in enumerate(fh, 1):
+                if not raw.strip():
+                    continue
+                try:
+                    obj = json.loads(raw)
+                except ValueError as exc:
+                    raise ValueError("line %d is not valid JSON: %s" % (lineno, exc))
+                if not isinstance(obj, dict):
+                    raise ValueError("line %d is not a JSON object" % lineno)
+                rows.append(obj)
+        return rows
     if path.endswith(".json"):
-        with open(path, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8-sig") as fh:
             data = json.load(fh)
         if isinstance(data, list):
             return [r for r in data if isinstance(r, dict)]
@@ -3358,13 +3372,18 @@ def read_records(path):
 
 
 def _field(rec, key):
+    """The value of `key` (or a dotted path) in a record; _MISSING when it is absent, null or
+    empty (a CSV row with an empty cell or too few cells), since such a row names no unit."""
     if key in rec:
-        return rec[key]
-    node = rec
-    for part in key.split("."):
-        if not isinstance(node, dict) or part not in node:
-            return _MISSING
-        node = node[part]
+        node = rec[key]
+    else:
+        node = rec
+        for part in key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return _MISSING
+            node = node[part]
+    if node is None or (isinstance(node, str) and not node.strip()):
+        return _MISSING
     return node
 
 
@@ -3420,6 +3439,56 @@ def check_split_leak(project, p, split):
     return out
 
 
+# What a manifest row declares about a file, beyond its content. The checks depend on it
+# (split: DATA-LEAK; labels: C6; origin, generator, seed: C3, DATA-GEN, DATA-SEED), so a new
+# row that changes it for unchanged content is a re-declaration, never a silent edit.
+DECLARATION_FIELDS = ("split", "origin", "labels", "generator", "seed")
+
+
+def _declared(row, key):
+    value = row.get(key)
+    if key == "split":
+        struct, _err = parse_split(value)
+        if struct is not None:
+            return json.dumps(struct, sort_keys=True)
+        return value.strip() if isinstance(value, str) else value
+    return value
+
+
+def redeclaration_problems(prev, row, decisions):
+    """(changed fields, problems) of a manifest row that registers unchanged content again.
+
+    A changed declaration needs a reason; replacing a structured split (which the leakage
+    check tests) by free text or 'none' turns that check off, so it needs a PI decision too."""
+    changed = [k for k in DECLARATION_FIELDS if _declared(prev, k) != _declared(row, k)]
+    problems = []
+    if not changed:
+        return changed, problems
+    if not row.get("reason"):
+        problems.append("reason")
+    old_split, _e1 = parse_split(prev.get("split"))
+    new_split, new_err = parse_split(row.get("split"))
+    if old_split is not None and new_split is None and not new_err:
+        did = str(row.get("pi_decision") or "")
+        if not DID_RE.fullmatch(did) or did not in decisions:
+            problems.append("pi_decision")
+    return changed, problems
+
+
+def _redeclaration_findings(rel, lineno, p, prev, row, decisions):
+    changed, problems = redeclaration_problems(prev, row, decisions)
+    out = []
+    if "reason" in problems:
+        out.append(Finding(rel, lineno, "DATA-REPLACE", "%s: the row changes %s of a file whose content did not "
+                           "change (sha256 %s); a new declaration needs a reason"
+                           % (p, ", ".join(changed), _short(row.get("sha256")))))
+    if "pi_decision" in problems:
+        out.append(Finding(rel, lineno, "DATA-REPLACE", "%s: the row replaces a structured split, which the leakage "
+                           "check tests, with %r, so the check no longer runs; that needs a PI decision ID recorded "
+                           "in research/pi/decisions.md" % (p, row.get("split"))))
+    return out
+
+
 def check_data(project):
     """Data manifest, generated-data seeds, number inputs and run-record completeness (section 8)."""
     out = []
@@ -3447,6 +3516,8 @@ def check_data(project):
         if row.get("labels") is not None and row["labels"] not in LABEL_ORIGINS:
             out.append(Finding(man.rel, lineno, "DATA-SCHEMA", "%s: labels %r is not one of %s" % (p, row["labels"], ", ".join(LABEL_ORIGINS))))
         prev = history.get(p)
+        if prev is not None and prev.get("sha256") == row.get("sha256"):
+            out.extend(_redeclaration_findings(man.rel, lineno, p, prev, row, decisions))
         if prev is not None and prev.get("sha256") != row.get("sha256"):
             # A new version of a registered file: say which version it replaces and why.
             if row.get("supersedes_sha256") != prev.get("sha256") or not row.get("reason"):
@@ -3613,9 +3684,6 @@ def data_add(project, args):
     sha, size = sha256_file(path), os.path.getsize(path)
     man = project.manifest()
     prev = man.latest.get(rel)
-    if prev and prev[1].get("sha256") == sha:
-        print("%s is already registered at sha256 %s; nothing to do" % (rel, _short(sha)))
-        return EXIT_OK
     row = {"path": rel, "sha256": sha, "size": size, "source": args.source, "version": args.version,
            "split": split if split is not None else args.split, "origin": args.origin, "registered_at": utc_now(),
            "registered_by": args.by or "engineer"}
@@ -3626,6 +3694,28 @@ def data_add(project, args):
     if generated:
         row["generator"] = gen_rel
         row["seed"] = args.seed
+    if prev and prev[1].get("sha256") == sha:
+        # The same content again: a new declaration (split, origin, labels, generator,
+        # seed) is recorded with its reason; anything else changes nothing.
+        if args.reason:
+            row["reason"] = args.reason
+        if args.pi_decision:
+            row["pi_decision"] = args.pi_decision
+        changed, problems = redeclaration_problems(prev[1], row, pi_decision_ids(project))
+        if not changed:
+            print("%s is already registered at sha256 %s; nothing to do" % (rel, _short(sha)))
+            return EXIT_OK
+        if "reason" in problems:
+            print("refused: %s is registered at sha256 %s with a different %s; a new declaration needs --reason"
+                  % (rel, _short(sha), ", ".join(changed)), file=sys.stderr)
+            return EXIT_FINDINGS
+        if "pi_decision" in problems:
+            print("refused: replacing the structured split of %s with %r turns the leakage check off; that needs "
+                  "--pi-decision D-<n> recorded in research/pi/decisions.md" % (rel, row["split"]), file=sys.stderr)
+            return EXIT_FINDINGS
+        _append_jsonl(man.path, row)
+        print("registered a new declaration of %s (%s changed; sha256 %s unchanged)" % (rel, ", ".join(changed), _short(sha)))
+        return EXIT_OK
     if prev:
         if not args.reason:
             print("refused: %s is registered at sha256 %s; a new version needs --reason" % (rel, _short(prev[1].get("sha256"))),

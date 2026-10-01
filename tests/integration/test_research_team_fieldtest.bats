@@ -486,6 +486,103 @@ EOF
     [[ "$output" == *"DATA-SPLIT research/data/derived/all.csv: research/data/derived/valid.jsonl has no scenario_id"* ]]
 }
 
+# leak_fixture: train.csv (S1-S3) and test.csv (S3, S4) registered with split none, and
+# all.csv registered with the structured split over them (S3 leaks).
+leak_fixture() {
+    mkdir -p "$P/research/data/derived"
+    printf 'scenario_id,x\nS1,a\nS2,b\nS3,c\n' > "$P/research/data/derived/train.csv"
+    printf 'scenario_id,x\nS3,c\nS4,d\n' > "$P/research/data/derived/test.csv"
+    printf 'scenario_id,x\nS1,a\nS2,b\nS3,c\nS3,c\nS4,d\n' > "$P/research/data/derived/all.csv"
+    local f
+    for f in train test; do
+        check data add "research/data/derived/${f}.csv" --source split --version 1 --split none --origin measured >/dev/null
+    done
+    check data add research/data/derived/all.csv --source runs --version 1 --origin measured \
+        --split '{"train": "research/data/derived/train.csv", "test": "research/data/derived/test.csv", "group_key": "scenario_id"}' >/dev/null
+}
+
+@test "P1 DATA-LEAK: a later row for the unchanged file cannot switch the structured split off without a trace" {
+    leak_fixture
+    commit_all "split declared"
+    run check data
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv: 1 scenario_id value(s) appear in both train and test (S3)"* ]]
+    # A hand-appended copy of the row with only the split changed, same sha256, no reason.
+    python3 - "$P/research/data/manifest.jsonl" << 'EOF'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+row = dict(rows[-1], split="none")
+open(sys.argv[1], "a").write(json.dumps(row) + "\n")
+EOF
+    commit_all "split switched off by hand"
+    run check data
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"DATA-REPLACE research/data/derived/all.csv: the row changes split of a file whose content did not change"* ]]
+    [[ "$output" == *"DATA-REPLACE research/data/derived/all.csv: the row replaces a structured split, which the leakage check tests, with 'none'"* ]]
+}
+
+@test "P1 data add: a new declaration of an unchanged file needs a reason, and dropping a structured split a PI decision" {
+    leak_fixture
+    run check data add research/data/derived/all.csv --source runs --version 1 --origin measured \
+        --split '{"train": "research/data/derived/train.csv", "test": "research/data/derived/test.csv", "group_key": "scenario_id"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already registered"* ]]
+    run check data add research/data/derived/all.csv --source runs --version 1 --origin measured --split none
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"a new declaration needs --reason"* ]]
+    run check data add research/data/derived/all.csv --source runs --version 1 --origin measured --split none --reason "split was wrong"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"needs --pi-decision"* ]]
+    local n
+    n="$(wc -l < "$P/research/data/manifest.jsonl")"
+    run check data add research/data/derived/all.csv --source runs --version 1 --origin measured --labels annotation --reason "annotated by hand" \
+        --split '{"train": "research/data/derived/train.csv", "test": "research/data/derived/test.csv", "group_key": "scenario_id"}'
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(wc -l < "$P/research/data/manifest.jsonl")" -eq "$((n + 1))" ]
+    run check data
+    [[ "$output" != *"DATA-REPLACE"* ]]
+    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv"* ]]
+}
+
+@test "P1 DATA-LEAK: a CSV with a UTF-8 byte-order mark (Excel 'CSV UTF-8') is read by its header" {
+    mkdir -p "$P/research/data/derived"
+    printf '\357\273\277scenario_id,x\r\n1,a\r\n2,b\r\n' > "$P/research/data/derived/train.csv"
+    printf '\357\273\277scenario_id,x\r\n2,b\r\n3,c\r\n' > "$P/research/data/derived/test.csv"
+    printf 'scenario_id,x\n1,a\n2,b\n3,c\n' > "$P/research/data/derived/all.csv"
+    local f
+    for f in train test; do
+        check data add "research/data/derived/${f}.csv" --source split --version 1 --split none --origin measured >/dev/null
+    done
+    check data add research/data/derived/all.csv --source runs --version 1 --origin measured \
+        --split '{"train": "research/data/derived/train.csv", "test": "research/data/derived/test.csv", "group_key": "scenario_id"}' >/dev/null
+    run check data
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" != *"DATA-SPLIT"* ]]
+    [[ "$output" == *"DATA-LEAK research/data/derived/all.csv: 1 scenario_id value(s) appear in both train and test (2)"* ]]
+}
+
+@test "P1 DATA-LEAK: the column form (one file with a split column) finds a leak, passes disjoint groups, and reports a row with no split" {
+    mkdir -p "$P/research/data/derived"
+    local split='{"column": "split", "group_key": "scenario_id"}'
+    printf 'scenario_id,split\n1,train\n2,train\n2,test\n3,test\n' > "$P/research/data/derived/leaky.csv"
+    printf 'scenario_id,split\n1,train\n2,train\n3,test\n' > "$P/research/data/derived/clean.csv"
+    printf 'scenario_id,split\n1,train\n2,\n3,test\n' > "$P/research/data/derived/gap.csv"
+    local f
+    for f in leaky clean gap; do
+        check data add "research/data/derived/${f}.csv" --source runs --version 1 --origin measured --split "$split" >/dev/null
+    done
+    run check data
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"DATA-LEAK research/data/derived/leaky.csv: 1 scenario_id value(s) appear in both train and test (2)"* ]]
+    [[ "$output" != *"DATA-LEAK research/data/derived/clean.csv"* ]]
+    [[ "$output" != *"DATA-SPLIT research/data/derived/clean.csv"* ]]
+    [[ "$output" == *"DATA-SPLIT research/data/derived/gap.csv: research/data/derived/gap.csv has no split (row 2)"* ]]
+}
+
 # ── P2: friction ─────────────────────────────────────────────────────────────
 
 # A copy of the UWS scripts with its own .workflow, like an installed UWS, and a project
