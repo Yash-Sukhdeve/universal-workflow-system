@@ -40,8 +40,10 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
   flagged `suspected-fixture` for the PI
 - `uws kb review --imported [--global]`: the import triage queue with the PI's steps (keep or
   correct with `add --supersedes`, refute with `add --contradicts` + `dispute` + `approve`, drop
-  with `reject`). `approve` refuses an item whose source is an import. `prune` (R5) does not
-  retire imported candidates (decision D6)
+  with `reject`). `approve` refuses an item whose source is an import. No rule retires an
+  import before the PI has reviewed it (decision D6): `prune` skips imports in R2 and R5, and
+  an import that `add --supersedes` restates (the restatement may repeat its claim) is retired
+  only when the PI approves the restatement
 - `uws kb dispute <ID> --by <ID> ["why"]`: mark an active item disputed with counter-evidence
   (verified, observed or reported; a trusted item only by a trusted one)
 - `uws kb init` also creates the project KB
@@ -64,7 +66,7 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
 
 #### Changed
 - Approving an item retires every active item it contradicts as `disproven-by`, not only
-  trusted ones
+  trusted ones, and every active item it supersedes (the imports R1 leaves for the PI)
 - `uws kb learn` reports `r4-unused-share` instead of "not measured"
 
 #### Fixed

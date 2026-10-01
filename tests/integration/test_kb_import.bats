@@ -121,7 +121,7 @@ init_global() {
     export UWS_KB_NOW="2026-12-24"
     run "$UWS" kb prune --apply
     [ "$status" -eq 0 ]
-    [[ "$output" == *"5 imported candidate(s) wait for the PI's triage"* ]]
+    [[ "$output" == *"5 imported item(s) wait for the PI's triage"* ]]
     [ -f "$fx" ]
     [ "$(item_count "$KB")" -eq 5 ]
 }
@@ -231,10 +231,15 @@ init_global() {
     [ "$status" -eq 0 ]
     [ "$(field "${GKB}/retired/${stash}.md" retired_reason)" = "disproven-by:${c}" ]
     [ "$(field "${GKB}/items/${c}.md" status)" = "trusted" ]
-    # correct: restate with the right file name and a resolvable source
+    # correct: restate with the right file name and a resolvable source; the import is
+    # retired when the PI approves the restatement, not before (decision D6)
     n="$("$UWS" kb add --global --type fact --claim "The vector-memory server stores memories in vector_memory.db" \
         --evidence reported --source url:https://github.com/cornebidouil/vector-memory-mcp \
         --quote 'DB_NAME = "vector_memory.db"' --supersedes "$memdb" 2>/dev/null)"
+    n="${n#global:}"
+    [ "$(field "${GKB}/items/${memdb}.md" status)" = "candidate" ]
+    run "$UWS" kb approve "global:${n}"
+    [ "$status" -eq 0 ]
     [ "$(field "${GKB}/retired/${memdb}.md" retired_reason)" = "superseded-by:${n}" ]
     # drop
     run "$UWS" kb reject "global:${bash_row}" "a lint enforces it already"
@@ -251,6 +256,85 @@ init_global() {
     [ "$status" -eq 0 ]
     # nothing was committed for the PI
     [ -z "$(git -C "$GKB" log --oneline 2>/dev/null)" ]
+}
+
+@test "triage: an import kept as it is (its own claim, --supersedes) is retired when the PI approves the restatement" {
+    init_global
+    "$UWS" kb import vector --db "${SRC}/global.db" --scope global >/dev/null
+    local b n claim
+    b="$(id_of "$(item_with "$GKB" 'macOS ships bash 3.2')")"
+    claim="$(field "${GKB}/items/${b}.md" claim)"
+    [ "$claim" = "BASH: macOS ships bash 3.2, so declare -A and mapfile are unavailable" ]
+    n="$("$UWS" kb add --global --type lesson --claim "$claim" --evidence reported \
+        --source url:https://www.gnu.org/software/bash/ --quote "bash 3.2" --supersedes "global:${b}" 2>/dev/null)"
+    n="${n#global:}"
+    # the same claim on the same day: a longer ID than the import's
+    [[ "$n" =~ ^K-20260924-[0-9a-f]{8}$ ]] || false
+    [ "${n:0:17}" = "$b" ]
+    [ "$(field "${GKB}/items/${b}.md" status)" = "candidate" ]
+    run "$UWS" kb lint --global
+    [ "$status" -eq 0 ]
+    run "$UWS" kb review --imported --global
+    [[ "$output" == *"global:${b} [candidate|"*"restated as global:${n}; approving it retires this import"* ]] || false
+    run "$UWS" kb approve "global:${n}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"global:${b}: retired (superseded-by:${n})"* ]] || false
+    [ "$(field "${GKB}/retired/${b}.md" retired_reason)" = "superseded-by:${n}" ]
+    [ "$(field "${GKB}/items/${n}.md" status)" = "trusted" ]
+    [ "$(field "${GKB}/items/${n}.md" claim)" = "$claim" ]
+    run "$UWS" kb lint --global
+    [ "$status" -eq 0 ]
+    run "$UWS" kb import vector --db "${SRC}/global.db" --scope global
+    [[ "$output" == *"import:vector-global#3: same claim as global:${n} (R7); not imported"* ]] || false
+}
+
+@test "D6: no rule retires an import before the PI has reviewed it, whoever restates or disputes it" {
+    "$UWS" kb pi --set "$PI" >/dev/null
+    "$UWS" kb import vector --db "${SRC}/local.db" >/dev/null
+    local a b d r c x
+    a="$(id_of "$(item_with "$KB" 'grep -c with')")"
+    b="$(id_of "$(item_with "$KB" 'keeps one Markdown file per item')")"
+    d="$(id_of "$(item_with "$KB" '608 BATS')")"
+    # an agent restates two imports and disputes a third
+    r="$(CLAUDECODE=1 "$UWS" kb add --type lesson --claim "grep -c prints its own 0 on no match, so || echo 0 prints it twice" \
+        --evidence observed --source file:f:1 --supersedes "$a" 2>/dev/null)"
+    x="$(CLAUDECODE=1 "$UWS" kb add --type fact --claim "The suite has 608 BATS tests and all of them pass" \
+        --evidence observed --source file:f:1 --supersedes "$d" 2>/dev/null)"
+    c="$(CLAUDECODE=1 "$UWS" kb add --type fact --claim "Each item is one Markdown file under docs/kb/items" \
+        --evidence observed --source file:f:1 --contradicts "$b" 2>/dev/null)"
+    run env CLAUDECODE=1 "$UWS" kb dispute "$b" --by "$c"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"an import is not retired by R2; it waits for the PI's triage (decision D6)"* ]] || false
+    [ "$(field "${KB}/items/${a}.md" status)" = "candidate" ]
+    [ "$(field "${KB}/items/${d}.md" status)" = "candidate" ]
+    [ "$(field "${KB}/items/${b}.md" status)" = "disputed" ]
+    grep -q "	${a}	candidate	candidate	restated-by:${r}	" "${KB}/events.tsv"
+    run "$UWS" kb lint
+    [ "$status" -eq 0 ]
+    # 20 days on, R2 would retire a disputed item and R1 a superseded one; imports wait
+    export UWS_KB_NOW="2026-10-14"
+    run "$UWS" kb prune --apply
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"imported item(s) wait for the PI's triage"* ]] || false
+    [ -f "${KB}/items/${a}.md" ]
+    [ -f "${KB}/items/${b}.md" ]
+    [ -f "${KB}/items/${d}.md" ]
+    # the PI turns one restatement down: its import stays in the queue
+    run "$UWS" kb reject "$x" "the count is out of date"
+    [ "$status" -eq 0 ]
+    run "$UWS" kb prune --apply
+    [ -f "${KB}/items/${d}.md" ]
+    run "$UWS" kb lint
+    [ "$status" -eq 0 ]
+    # the PI's approvals settle the other two
+    run "$UWS" kb approve "$r"
+    [ "$status" -eq 0 ]
+    [ "$(field "${KB}/retired/${a}.md" retired_reason)" = "superseded-by:${r}" ]
+    run "$UWS" kb approve "$c"
+    [ "$status" -eq 0 ]
+    [ "$(field "${KB}/retired/${b}.md" retired_reason)" = "disproven-by:${c}" ]
+    run "$UWS" kb lint
+    [ "$status" -eq 0 ]
 }
 
 @test "dispute: needs non-inferred counter-evidence; a trusted item is disputed only by a trusted one" {

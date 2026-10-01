@@ -832,23 +832,32 @@ imports only read their sources; no import was run on the real stores.
   document quotes row 13's `batch_size`). The flag informs triage and retires nothing.
   [inference] It misses a fixture that names one real file and flags a true fact whose names
   occur only in prose; it has not been run on the real stores.
-- Decision D6: `prune` (R5) does not retire imported candidates and says how many wait.
-  `approve` refuses an item with an `import:` source (exit 2): an import is a lead, not
-  evidence, so the PI restates it with a resolvable source first (R8 at promotion).
+- Decision D6 (no rule retires an import before the PI has reviewed it): `prune` skips imported
+  candidates and disputed imports in R5 and R2 and says how many wait, and R1 retires an import
+  only for a trusted (PI-approved) superseding item. `add --supersedes <import>` leaves the
+  import active (an events row `restated-by:<new ID>`, and `review --imported` shows the
+  restatement); the PI's `approve` of the new item retires it as `superseded-by`. Lint I4
+  accepts an import whose restatement is not yet trusted. A restatement the PI rejects leaves
+  the import in the queue. `approve` refuses an item with an `import:` source (exit 2): an
+  import is a lead, not evidence, so the PI restates it with a resolvable source first (R8 at
+  promotion).
 - PI triage, `uws kb review --imported [--global]`, instead of row-numbered special cases:
   - keep or correct: `uws kb add ... --source <resolvable> --supersedes <ID>`, then `approve`
-    the new item; R1 retires the import as `superseded-by`. Global row 8 (wrong file name) goes
-    this way, quoting `DB_NAME = "vector_memory.db"` from the server's source.
+    the new item, which retires the import as `superseded-by`. To keep a claim as it is, the new
+    item repeats it: R7 does not count the item it supersedes as a duplicate (on the same day the
+    new ID gets 8 hex digits, as for any ID collision). Global row 8 (wrong file name) goes this
+    way, quoting `DB_NAME = "vector_memory.db"` from the server's source.
   - refute: `uws kb add ... --evidence reported --source url:... --quote "..." --contradicts
-    <ID>`, then `uws kb dispute <ID> --by <new ID>` (the import becomes `disputed`), then
-    `approve` the new item, which retires the import as `disproven-by`. Global row 6 goes this
+    <ID>`, then `uws kb dispute <ID> --by <new ID>` (the import becomes `disputed`; R2 leaves
+    it for the PI), then `approve` the new item, which retires the import as `disproven-by`. Global row 6 goes this
     way, with the git-stash quote of 2.2-3.
   - drop: `uws kb reject <ID> "<why>"`.
 - New verb `dispute <ID> --by <ID> ["why"]`: marks an active item disputed and links both ways.
   It demotes, so agents may run it as they may run a failing check; the counter-evidence must be
   verified, observed or reported and not itself disputed, and a trusted item is disputed only by
   a trusted one (5.1).
-- Changed from section 16: approving an item retires every active item it contradicts (not only
+- Changed from section 16: approving an item also retires every active item it supersedes (the
+  imports R1 leaves for the PI), and every active item it contradicts (not only
   trusted ones) as `disproven-by`, so the PI's approval of counter-evidence settles a dispute in
   one step.
 

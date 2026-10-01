@@ -963,10 +963,13 @@ EOF
     done
 
     # ── Duplicates (R7, exit 3) ──
+    # An item this one supersedes may share its claim: restating an import
+    # unchanged with a resolvable source is the PI's "keep" step (design 18).
     local norm f
     norm="$(kb_normalize_claim "$claim")"
     for f in "${KB}"/items/*.md; do
         [[ -f "$f" ]] || continue
+        case " ${supersedes[*]+${supersedes[*]}} " in *" $(basename "$f" .md) "*) continue ;; esac
         if [[ "$(kb_normalize_claim "$(kb_fm_get "$f" claim)")" == "$norm" ]]; then
             local dupid
             dupid="$(kb_fm_get "$f" id)"
@@ -1046,16 +1049,25 @@ EOF
     fi
 
     # Reciprocal contradicts link, so the old item shows the dispute
+    local lf cur
     for l in ${contradicts[@]+"${contradicts[@]}"}; do
-        local lf="${KB}/items/${l}.md" cur
+        lf="${KB}/items/${l}.md"
         cur="$(kb_list_parse "$(kb_fm_raw "$lf" contradicts)")"
         # shellcheck disable=SC2086
         kb_fm_set "$lf" contradicts "$(kb_list_format $cur "$id")"
         kb_event "$KB" "$l" "$(kb_fm_get "$lf" status)" "$(kb_fm_get "$lf" status)" "contradicted-by:${id}" "$author"
     done
-    # R1: retire what this item supersedes
+    # R1: retire what this item supersedes. An import is retired only when the
+    # PI approves this item (decision D6: nothing retires an import before the
+    # PI has reviewed it); until then it stays in the triage queue.
     for l in ${supersedes[@]+"${supersedes[@]}"}; do
-        kb_fm_set "${KB}/items/${l}.md" superseded_by "$id"
+        lf="${KB}/items/${l}.md"
+        if [[ "$(kb_fm_get "$lf" captured_by)" == import* ]]; then
+            kb_event "$KB" "$l" "$(kb_fm_get "$lf" status)" "$(kb_fm_get "$lf" status)" "restated-by:${id}" "$author"
+            warn "$(id_prefix)${l} is an import: it stays until the PI approves $(id_prefix)${id}, which retires it as superseded-by:${id} (decision D6)"
+            continue
+        fi
+        kb_fm_set "$lf" superseded_by "$id"
         retire_item "$l" "superseded-by:${id}"
     done
     rebuild_stats_cache
@@ -1232,6 +1244,18 @@ EOF
     done <<EOF
 $(kb_list_parse "$(kb_fm_raw "$f" contradicts)")
 EOF
+    # ... and active items it supersedes: the imports that R1 leaves for the
+    # PI's review (decision D6) are retired by this approval
+    while IFS= read -r l; do
+        [[ -n "$l" ]] || continue
+        lf="${KB}/items/${l}.md"
+        [[ -f "$lf" ]] || continue
+        kb_fm_set "$lf" superseded_by "$id"
+        retire_item "$l" "superseded-by:${id}"
+        echo "$(id_prefix)${l}: retired (superseded-by:${id})"
+    done <<EOF
+$(kb_list_parse "$(kb_fm_raw "$f" supersedes)")
+EOF
     refresh_watch_blobs "$f"
     kb_fm_set "$f" reviewer "$pi"
     kb_fm_set "$f" verified_at "$TODAY"
@@ -1302,8 +1326,19 @@ cmd_review() {
         1:--imported) imported=true ;;
         *) die 2 "review: use 'review' or 'review --imported'" ;;
     esac
-    local f any=false id st ev cs rec flags cb pre sf detail
+    local f any=false id st ev cs rec flags cb pre sf detail restated="" l rid
     pre="$(id_prefix)"; sf="$(scope_flag)"
+    if [[ "$imported" == "true" ]]; then
+        # "<import ID><TAB><restating ID>" for active items that supersede an active import
+        for f in "${KB}"/items/*.md; do
+            [[ -f "$f" ]] || continue
+            while IFS= read -r l; do
+                [[ -n "$l" && -f "${KB}/items/${l}.md" ]] && restated+="${l}${TAB}$(kb_fm_get "$f" id)"$'\n'
+            done <<EOF
+$(kb_list_parse "$(kb_fm_raw "$f" supersedes)")
+EOF
+        done
+    fi
     for f in "${KB}"/items/*.md; do
         [[ -f "$f" ]] || continue
         st="$(kb_fm_get "$f" status)"
@@ -1318,17 +1353,24 @@ cmd_review() {
             "${flags:+|flags:${flags}}" "$(kb_fm_get "$f" claim)"
         if [[ "$imported" == "true" ]]; then
             detail="$(kb_fm_get "$f" flag_detail)"
-            printf '    from %s%s\n' "$(kb_list_parse "$(kb_fm_raw "$f" source)" | head -1)" "${detail:+; ${detail}}"
+            printf '    from %s%s\n' "$(kb_list_parse "$(kb_fm_raw "$f" source)" | sed -n 1p)" "${detail:+; ${detail}}"
+            while IFS="$TAB" read -r l rid; do
+                [[ -n "$l" && "$l" == "$id" ]] && printf '    restated as %s%s; approving it retires this import\n' "$pre" "$rid"
+            done <<EOF
+$restated
+EOF
         fi
     done
     if [[ "$imported" == "true" ]]; then
         [[ "$any" == "true" ]] || echo "No imported items wait for triage."
         printf '%s\n' \
             "Triage (the PI; docs/design/knowledge-base.md section 18). An import is a lead, not evidence," \
-            "and approve refuses it; nothing retires it automatically while it waits here (decision D6)." \
+            "and approve refuses it. No rule retires it before you have reviewed it (decision D6): prune" \
+            "skips imports (R1, R2, R5), and restating or disputing one changes nothing until you approve." \
             "  keep or correct:  uws kb add${sf} --type <T> --claim \"<the claim, corrected if needed>\" \\" \
             "                      --evidence <E> --source <resolvable source> --supersedes <ID>" \
             "                    then, in your own terminal: uws kb approve <new ID>" \
+            "                    (the approval retires <ID> as superseded-by:<new ID>)" \
             "  refute:           uws kb add${sf} --type fact --claim \"<what is true>\" --evidence reported \\" \
             "                      --source url:<page> --quote \"<verbatim text>\" --contradicts <ID>" \
             "                    uws kb dispute <ID> --by <new ID>; then uws kb approve <new ID>" \
@@ -1467,7 +1509,11 @@ cmd_dispute() {
         echo "$(id_prefix)${id}: ${st} -> disputed (counter-evidence ${by})"
     fi
     rebuild_stats_cache
-    echo "The PI settles it: uws kb approve $(id_prefix)${by} retires ${id} as disproven-by:${by}; otherwise prune --apply retires it after ${UWS_KB_DISPUTE_DAYS} days (R2)."
+    if [[ "$(kb_fm_get "$f" captured_by)" == import* ]]; then
+        echo "The PI settles it: uws kb approve $(id_prefix)${by} retires ${id} as disproven-by:${by}; an import is not retired by R2; it waits for the PI's triage (decision D6)."
+    else
+        echo "The PI settles it: uws kb approve $(id_prefix)${by} retires ${id} as disproven-by:${by}; otherwise prune --apply retires it after ${UWS_KB_DISPUTE_DAYS} days (R2)."
+    fi
 }
 
 # R4 (design 5.6): which trusted items were retrieved on this machine. Input:
@@ -1564,37 +1610,45 @@ cmd_prune() {
     [[ -d "${KB}/items" ]] || { echo "Nothing to prune (no KB at ${KB})."; return 0; }
     check_r4_config prune
     [[ "$apply" != "true" ]] || require_writable
-    local f id st since age rb plan="" line g imports=0
-    # R1: active items listed in another item's supersedes
+    local f id st since age rb plan="" line g imports=0 is_import
+    # R1: active items listed in another item's supersedes ("target<TAB>by<TAB>its status")
     local superseded=""
     for g in "${KB}"/items/*.md "${KB}"/retired/*.md; do
         [[ -f "$g" ]] || continue
         while IFS= read -r line; do
-            [[ -n "$line" ]] && superseded+="${line}${TAB}$(kb_fm_get "$g" id)"$'\n'
+            [[ -n "$line" ]] && superseded+="${line}${TAB}$(kb_fm_get "$g" id)${TAB}$(kb_fm_get "$g" status)"$'\n'
         done <<EOF
 $(kb_list_parse "$(kb_fm_raw "$g" supersedes)")
 EOF
     done
+    # Decision D6: no rule retires an import before the PI has reviewed it. R1
+    # retires one only for a trusted (PI-approved) superseding item, and R2 and
+    # R5 skip imports; prune counts them instead.
     for f in "${KB}"/items/*.md; do
         [[ -f "$f" ]] || continue
         id="$(kb_fm_get "$f" id)"; st="$(kb_fm_get "$f" status)"
+        is_import=false; [[ "$(kb_fm_get "$f" captured_by)" == import* ]] && is_import=true
         since="$(kb_fm_get "$f" status_since)"; [[ -n "$since" ]] || since="$(kb_fm_get "$f" created)"
         age="$(kb_days_between "$since" "$TODAY" || echo 0)"
-        line="$(printf '%s' "$superseded" | awk -F '\t' -v id="$id" '$1 == id { print $2; exit }')"
+        # a here-document, not a pipe: awk stops at the first match (no SIGPIPE under pipefail)
+        line="$(KBI="$id" KBIMP="$is_import" awk -F '\t' '
+            $1 == ENVIRON["KBI"] && (ENVIRON["KBIMP"] != "true" || $3 == "trusted") { print $2; exit }' <<EOF
+$superseded
+EOF
+)"
         if [[ -n "$line" ]]; then
             plan+="${id}${TAB}retire${TAB}superseded-by:${line}"$'\n'; continue
+        fi
+        if [[ "$is_import" == "true" && ( "$st" == "candidate" || "$st" == "disputed" ) ]]; then
+            imports=$((imports + 1)); continue
         fi
         case "$st" in
             disputed)   # R2
                 (( age >= UWS_KB_DISPUTE_DAYS )) && plan+="${id}${TAB}retire${TAB}disproven"$'\n' ;;
             stale)      # R3 (second half)
                 (( age >= UWS_KB_STALE_GRACE_DAYS )) && plan+="${id}${TAB}retire${TAB}expired"$'\n' ;;
-            candidate)  # R5; imports wait for the PI's triage instead (decision D6)
-                if [[ "$(kb_fm_get "$f" captured_by)" == import* ]]; then
-                    imports=$((imports + 1))
-                elif (( age >= UWS_KB_CANDIDATE_TTL_DAYS )); then
-                    plan+="${id}${TAB}retire${TAB}unpromoted"$'\n'
-                fi ;;
+            candidate)  # R5
+                (( age >= UWS_KB_CANDIDATE_TTL_DAYS )) && plan+="${id}${TAB}retire${TAB}unpromoted"$'\n' ;;
             trusted)    # R3 (first half): review_by passed -> stale
                 rb="$(kb_fm_get "$f" review_by)"
                 if [[ -n "$rb" && "$rb" != "never" ]]; then
@@ -1622,7 +1676,7 @@ EOF
         r4note="R4 (unused) not evaluated: ${R4_WINDOW} of ${UWS_KB_UNUSED_SESSIONS} sessions of usage recorded on this machine."
     fi
     if (( imports > 0 )); then
-        echo "${imports} imported candidate(s) wait for the PI's triage; R5 does not retire them (decision D6): uws kb review --imported$(scope_flag)"
+        echo "${imports} imported item(s) wait for the PI's triage; prune does not retire them (decision D6): uws kb review --imported$(scope_flag)"
     fi
     [[ -z "$r4note" ]] || echo "$r4note"
     if [[ -z "$plan" ]]; then echo "Nothing to prune."; return 0; fi
@@ -2693,10 +2747,14 @@ EOF
                     echo "I7 ${base}: trusted but reviewer is '$(kb_fm_get "$f" reviewer)', not the PI (${pi})"; bad=1
                 fi
             fi
-            # I4: supersedes targets are retired
+            # I4: supersedes targets are retired, except an import whose
+            # restatement the PI has not approved yet (decision D6)
             while IFS= read -r p; do
                 [[ -n "$p" ]] || continue
-                if [[ -f "${KB}/items/${p}.md" ]]; then echo "I4 ${base}: supersedes ${p}, which is not retired"; bad=1; fi
+                if [[ -f "${KB}/items/${p}.md" ]]; then
+                    if [[ "$st" != "trusted" && "$(kb_fm_get "${KB}/items/${p}.md" captured_by)" == import* ]]; then continue; fi
+                    echo "I4 ${base}: supersedes ${p}, which is not retired"; bad=1
+                fi
             done <<EOF
 $(kb_list_parse "$(kb_fm_raw "$f" supersedes)")
 EOF

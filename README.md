@@ -358,7 +358,8 @@ uws kb prune                             # dry run of the removal rules; --apply
   overlaps with trusted items (4) and anything that looks like a credential.
 - Items become `stale` or `disputed` when their watched files change or their check fails,
   and `prune --apply` moves superseded, disproven, expired and never-promoted items to
-  `docs/kb/retired/` with `git mv` (`uws kb restore <ID>` undoes it). Every change is a line
+  `docs/kb/retired/` with `git mv` (`uws kb restore <ID>` undoes it); imported items are
+  excepted, since they wait for the PI's triage (decision D6). Every change is a line
   in `docs/kb/events.tsv`; nothing is committed for you.
 - Session start adds one line (`KB: 12 trusted, 1 stale, ...`) inside the 1.2 KB context
   budget. In Claude Code, the `uws-kb` skill and `/uws:kb` command wrap the CLI.
@@ -426,7 +427,10 @@ uws kb review --imported                 # the triage queue, with the steps to k
 Duplicates collapse into one item, rows that look like secrets are skipped, preferences and
 corrections stay in auto-memory, and rows that name nothing the project contains are flagged
 `suspected-fixture`. `approve` refuses an import as it stands: the PI restates it with a
-resolvable source (`uws kb add ... --supersedes <ID>`). The vector-memory servers and skills
+resolvable source (`uws kb add ... --supersedes <ID>`, repeating the claim to keep it as it is)
+and approving the restatement retires the import. No rule retires an import before the PI has
+reviewed it: `prune` skips imports, and restating or disputing one changes nothing until the
+PI approves (decision D6). The vector-memory servers and skills
 keep running unchanged.
 
 `uws orchestrate dispatch` adds up to 5 trusted items (1000 bytes) that share at least two
