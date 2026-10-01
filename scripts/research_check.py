@@ -644,46 +644,62 @@ def _git(project, args):
 
 
 def check_append_only(project, led, bases=None):
-    """Every line committed at a base ref is still present, byte for byte (AT9).
+    """Every line ever committed is still present, byte for byte (AT9).
 
-    Default bases: HEAD (catches uncommitted edits or deletions) and HEAD~1 (catches a
-    committed deletion). Outside a git repository there is nothing to compare against.
+    Default bases: HEAD (catches uncommitted edits or deletions) and every commit that
+    touched the file, so an in-place edit stays reported however many commits follow it.
+    Outside a git repository there is nothing to compare against.
     """
     if not led.exists:
         return []
     return append_only_findings(project, led.rel, "LEDGER-APPEND", bases)
 
 
+def _row_label(line):
+    try:
+        obj = json.loads(line)
+        key = obj.get("id") or obj.get("exp") or obj.get("path") or obj.get("citekey") or "?"
+        return "%s@%s" % (key, obj.get("rev", 1))
+    except (ValueError, AttributeError):
+        return "?"
+
+
 def append_only_findings(project, rel, rule, bases=None):
-    """Lines of a JSON Lines file committed at HEAD / HEAD~1 must still be present."""
+    """Lines of a JSON Lines file committed at HEAD or in any commit that touched it (or at
+    the given `bases`) must still be present. A finding names the row (id@rev), the newest
+    commit that had the original line, and the line where the row is now (or was)."""
     out = []
     path = project.path(rel)
     if not os.path.isfile(path):
         return out
     if not in_git(project):
         return out
-    current = set()
+    current, where_now = set(), {}
     with open(path, encoding="utf-8") as fh:
-        for raw in fh:
+        for n, raw in enumerate(fh, 1):
             if raw.strip():
-                current.add(raw.rstrip("\n"))
-    for ref in (bases or ["HEAD", "HEAD~1"]):
+                line = raw.rstrip("\n")
+                current.add(line)
+                where_now.setdefault(_row_label(line), n)
+    if bases:
+        refs = list(bases)
+    else:
+        log = _git(project, ["log", "--format=%H", "--", rel]) or ""
+        refs = ["HEAD"] + [c for c in log.split() if c]
+    seen = set()
+    for ref in refs:
         old = _git(project, ["show", "%s:./%s" % (ref, rel)])
         if old is None:
             continue
-        for oldline in old.splitlines():
-            if not oldline.strip() or oldline in current:
+        for n, oldline in enumerate(old.splitlines(), 1):
+            if not oldline.strip() or oldline in current or oldline in seen:
                 continue
-            label = "?"
-            try:
-                obj = json.loads(oldline)
-                key = obj.get("id") or obj.get("exp") or obj.get("path") or obj.get("citekey") or "?"
-                label = "%s@%s" % (key, obj.get("rev", 1))
-            except (ValueError, AttributeError):
-                pass
-            out.append(Finding(rel, 1, rule,
+            seen.add(oldline)
+            label = _row_label(oldline)
+            name = ref if ref == "HEAD" else ref[:12]
+            out.append(Finding(rel, where_now.get(label, n), rule,
                                "%s was removed or edited compared with %s; this file is append-only "
-                               "(restore it from git and append a new row instead)" % (label, ref)))
+                               "(restore it from git and append a new row instead)" % (label, name)))
     return out
 
 
@@ -1155,16 +1171,47 @@ def _compare_references(project, refs):
     return out
 
 
-def pi_decision_ids(project):
+_DECISION_HEAD_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:#+\s*)?(D-\d+)\b")
+_PI_DECISION_FIELD_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?PI DECISION(?:\*\*)?\s*:\s*(.*)$", re.I)
+
+
+def pi_decision_records(project):
+    """{D-ID: the text of its PI DECISION field ('' when there is none)} of
+    research/pi/decisions.md. A record starts at a line beginning with its D-ID
+    (`D-001 | raised <date> by <role> | phase <phase>`) and runs to the next record."""
     path = project.path("research/pi/decisions.md")
     if not os.path.isfile(path):
-        return set()
-    ids = set()
-    for raw in read_text(path).splitlines():
-        m = re.match(r"^\s*(?:[-*]\s*)?(?:#+\s*)?(D-\d+)\b", raw)
+        return {}
+    records, cur = {}, None
+    for raw in _strip_html_comments(read_text(path)).splitlines():
+        m = _DECISION_HEAD_RE.match(raw)
         if m:
-            ids.add(m.group(1))
-    return ids
+            cur = m.group(1)
+            records.setdefault(cur, "")
+            continue
+        f = _PI_DECISION_FIELD_RE.match(raw)
+        if cur and f and f.group(1).strip() and not records[cur]:
+            records[cur] = f.group(1).strip()
+    return records
+
+
+def pi_decision_ids(project):
+    """D-IDs whose record holds the PI's decision (a non-empty PI DECISION field). A bare
+    `D-<n>` line is not a decision: anyone can append one."""
+    return set(d for d, text in pi_decision_records(project).items() if text)
+
+
+def pi_decision_problem(project, did):
+    """Why `did` cannot be used as a PI decision, or None."""
+    if not DID_RE.fullmatch(did or ""):
+        return "give --pi-decision D-<n>"
+    records = pi_decision_records(project)
+    if did not in records:
+        return "%s is not recorded in research/pi/decisions.md" % did
+    if not records[did]:
+        return ("%s has no PI DECISION in research/pi/decisions.md (its record needs a non-empty "
+                "`PI DECISION:` line)" % did)
+    return None
 
 
 def bib_ingest(project, args):
@@ -3430,10 +3477,12 @@ def plan_freeze(project, args):
             row["reason"] = args.reason
         if results:
             did = args.pi_decision or ""
-            if not args.reason or not DID_RE.fullmatch(did) or did not in pi_decision_ids(project):
+            problem = pi_decision_problem(project, did) if did else None
+            if not args.reason or not did or problem:
                 print("refused: results for %s exist (%s), so changing the frozen plan is a deviation. It needs "
                       "--reason \"...\" and --pi-decision D-<n> recorded in research/pi/decisions.md "
-                      "(apocalypt.md P5; design section 7.3)." % (exp, ", ".join(r[0] for r in results[:5])),
+                      "(apocalypt.md P5; design section 7.3)%s." % (exp, ", ".join(r[0] for r in results[:5]),
+                                                                     ": " + problem if problem else ""),
                       file=sys.stderr)
                 return EXIT_FINDINGS
             dev_rel = "%s/%s/deviations.md" % (EXPERIMENTS_REL, exp)
@@ -4008,9 +4057,10 @@ def data_add(project, args):
             return EXIT_FINDINGS
         if rel.startswith(RAW_DATA_REL + "/"):
             did = args.pi_decision or ""
-            if not DID_RE.fullmatch(did) or did not in pi_decision_ids(project):
-                print("refused: replacing raw data needs --pi-decision D-<n> recorded in research/pi/decisions.md",
-                      file=sys.stderr)
+            problem = pi_decision_problem(project, did) if did else None
+            if not did or problem:
+                print("refused: replacing raw data needs --pi-decision D-<n> recorded in research/pi/decisions.md%s"
+                      % (": " + problem if problem else ""), file=sys.stderr)
                 return EXIT_FINDINGS
             row["pi_decision"] = did
         row["supersedes_sha256"] = prev[1].get("sha256")
@@ -5262,20 +5312,65 @@ def check_reviews(project, strict_major):
     return out
 
 
+def check_deviation_disclosure(project):
+    """A plan changed after results (a DEV row) must be reported in the manuscript: its DEV-ID
+    or its EXP-ID appears in the text (preregistration: deviations are reported, Nosek et
+    al. 2018). Comments do not count."""
+    out = []
+    plans = project.plans()
+    devs = [(exp, lineno, row) for exp, rows in sorted(plans.by_exp.items())
+            for lineno, row in rows if row.get("deviation")]
+    if not devs:
+        return out
+    text = "\n".join("\n".join(project.doc(p).code) for p in project.prose_files())
+    for exp, lineno, row in devs:
+        dev = str(row.get("deviation"))
+        if not re.search(r"\b%s\b" % re.escape(dev), text) and not re.search(r"\b%s\b" % re.escape(exp), text):
+            out.append(Finding(plans.rel, lineno, "PLAN-DEVIATION",
+                               "%s: %s (%s) changed the frozen plan after results existed, and the manuscript does not "
+                               "report it: name %s (or %s) where the deviation is reported"
+                               % (exp, dev, row.get("pi_decision") or "no PI decision", dev, exp)))
+    return out
+
+
+APPROVAL_RE = re.compile(r"^\s*PUBLICATION-APPROVAL:\s*(.*?)\s*$", re.M)
+APPROVAL_HASH_RE = re.compile(r"^sha256:([0-9a-f]{64})\s+by\s+\S+")
+
+
 def check_pi_approval(project):
+    """The PI approves publication with one line in research/pi/decisions.md:
+    `PUBLICATION-APPROVAL: sha256:<manuscript hash> by <PI>` (the hash of the manuscript as it
+    is now, `uws research check manuscript-hash`), or, where review.sh keeps change requests
+    (.uws/crs/), `PUBLICATION-APPROVAL: CR-<id>` of an approved change request."""
     rel = "research/pi/decisions.md"
     path = project.path(rel)
     text = read_text(path) if os.path.isfile(path) else ""
-    m = re.search(r"^\s*PUBLICATION-APPROVAL:\s*(CR-[\w-]+)", text, re.M)
+    current = manuscript_hash(project)[0]
+    how = "`PUBLICATION-APPROVAL: sha256:%s by <PI>`" % current
+    m = APPROVAL_RE.search(text)
     if not m:
-        return [Finding(rel, 1, "GATE-PI", "no `PUBLICATION-APPROVAL: CR-...` line: the PI approves publication")]
-    cr = m.group(1)
+        return [Finding(rel, 1, "GATE-PI", "no PUBLICATION-APPROVAL line: the PI approves publication with %s" % how)]
+    line = text.count("\n", 0, m.start()) + 1
+    value = m.group(1)
+    hm = APPROVAL_HASH_RE.match(value)
+    if hm:
+        if hm.group(1) != current:
+            return [Finding(rel, line, "GATE-PI", "the PI approved sha256:%s, but the manuscript is now sha256:%s; "
+                            "the PI approves the manuscript as it is now: %s" % (_short(hm.group(1)), _short(current), how))]
+        return []
+    cm = re.match(r"^(CR-[\w-]+)", value)
+    if not cm:
+        return [Finding(rel, line, "GATE-PI", "PUBLICATION-APPROVAL %r is neither a manuscript hash nor a change "
+                        "request; write %s" % (value, how))]
+    cr = cm.group(1)
     crs = project.path(".uws/crs")
-    if os.path.isdir(crs):
-        if os.path.isdir(os.path.join(crs, cr)):
-            return [Finding(rel, text.count("\n", 0, m.start()) + 1, "GATE-PI", "%s is still pending review" % cr)]
-        if not os.path.isdir(os.path.join(crs, "ARCHIVED_" + cr)):
-            return [Finding(rel, text.count("\n", 0, m.start()) + 1, "GATE-PI", "%s was not approved with review.sh" % cr)]
+    if not os.path.isdir(crs):
+        return [Finding(rel, line, "GATE-PI", "%s cannot be checked: this project has no .uws/crs/ (where review.sh "
+                        "keeps change requests). Record the PI's approval of this manuscript as %s" % (cr, how))]
+    if os.path.isdir(os.path.join(crs, cr)):
+        return [Finding(rel, line, "GATE-PI", "%s is still pending review" % cr)]
+    if not os.path.isdir(os.path.join(crs, "ARCHIVED_" + cr)):
+        return [Finding(rel, line, "GATE-PI", "%s was not approved with review.sh" % cr)]
     return []
 
 
@@ -5345,6 +5440,7 @@ def run_gate(project, phase, allow_missing_cache=None):
     if idx >= PHASES.index("peer_review"):
         findings.extend(check_reviews(project, strict_major=True))
         findings.extend(check_review_hash(project))
+        findings.extend(check_deviation_disclosure(project))
     if phase == "publication":
         findings.extend(check_pi_approval(project))
         findings.extend(literal_inventory(project))
@@ -5476,7 +5572,10 @@ def cmd_init(project):
         "research/sources/index.jsonl": "",
         "research/QUESTION.md": QUESTION_TEMPLATE,
         "research/pi/decisions.md": "# PI decisions\n\n<!-- One record per decision: `D-001 | raised <date> by <role> | phase <phase>`, then\n"
-                                    "     CONCERN / EVIDENCE / RISK / ALTERNATIVE / RECOMMENDATION / COST / PI DECISION. -->\n",
+                                    "     CONCERN / EVIDENCE / RISK / ALTERNATIVE / RECOMMENDATION / COST / PI DECISION.\n"
+                                    "     A D-ID counts only once its `PI DECISION:` line is filled in.\n"
+                                    "     The PI approves publication with one line:\n"
+                                    "     PUBLICATION-APPROVAL: sha256:<hash from `uws research check manuscript-hash`> by <PI> -->\n",
         "research/pi/questions.md": "# Open questions for the PI\n\n<!-- Q-001 | raised by <role> | blocking: yes/no | options | assumption otherwise made -->\n",
     }
     for rel, content in files.items():
@@ -5539,7 +5638,7 @@ def build_parser():
     p.add_argument("--json", action="store_true", help="machine-readable output")
     sub = p.add_subparsers(dest="cmd")
     s = sub.add_parser("ledger", help="claim and number ledger rules")
-    s.add_argument("--base", action="append", help="git ref to compare for append-only (repeatable; default HEAD and HEAD~1)")
+    s.add_argument("--base", action="append", help="git ref to compare for append-only (repeatable; default HEAD and every commit that touched the ledger)")
     sub.add_parser("bib", help="bib_sources provenance and references.bib equality")
     s = sub.add_parser("quotes", help="quotes are verbatim in the cached source text")
     s.add_argument("--allow-missing-cache", action="store_true", help="report a missing cache as a warning (CI without caches)")

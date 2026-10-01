@@ -160,3 +160,73 @@ refresh_review_hash() {
 # ── error messages ────────────────────────────────────────────────────────────
 
 # ── defaults ──────────────────────────────────────────────────────────────────
+
+@test "literal: the publication gate lists every number accepted by uws:literal" {
+    research_make_reproducible
+    printf '\nThe synthetic run took 2.5 hours. %% uws:literal wall-clock note, not a result\n' >> "$P/paper/main.tex"
+    refresh_review_hash
+    commit_all "literal"
+    local l
+    l="$(line_of 'took 2.5 hours')"
+    run check gate publication
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL [warn] 2.5 hours is typed by hand (uws:literal: wall-clock note, not a result)"* ]] || false
+}
+
+@test "ledger: an in-place edit stays reported after later commits, with its real line" {
+    python3 - "$P/research/ledger/claims.jsonl" << 'EOF'
+import sys
+p = sys.argv[1]
+lines = open(p).read().splitlines(True)
+lines[3] = lines[3].replace("Gradient Boosting reaches", "Gradient Boosting clearly reaches")
+open(p, "w").write("".join(lines))
+EOF
+    commit_all "edit C-0002 in place"
+    echo "unrelated" > "$P/notes.txt"
+    git -C "$P" add notes.txt && git -C "$P" commit -qm "one more commit"
+    echo "unrelated again" >> "$P/notes.txt"
+    git -C "$P" add notes.txt && git -C "$P" commit -qm "and another"
+    run check ledger
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"research/ledger/claims.jsonl:4 LEDGER-APPEND C-0002@2 was removed or edited"* ]] || false
+}
+
+@test "plan: a bare D-<n> line is not a PI decision; a deviation must be reported in the manuscript" {
+    research_make_reproducible
+    printf 'A looser margin, decided after the results.\n' >> "$P/research/experiments/EXP-LEAK/plan.md"
+    printf '\nD-002\n' >> "$P/research/pi/decisions.md"
+    run check plan freeze EXP-LEAK --reason "margin was too strict" --pi-decision D-002
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"D-002 has no PI DECISION in research/pi/decisions.md"* ]] || false
+    printf 'D-003 | raised 2026-10-01 by methodologist | phase analysis\nCONCERN: the margin\nPI DECISION: accept the looser margin and report it\n' >> "$P/research/pi/decisions.md"
+    run check plan freeze EXP-LEAK --reason "margin was too strict" --pi-decision D-003
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"deviation DEV-001, D-003"* ]] || false
+    refresh_review_hash
+    commit_all "deviation"
+    run check gate peer_review
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"PLAN-DEVIATION EXP-LEAK: DEV-001 (D-003) changed the frozen plan after results existed, and the manuscript does not report it"* ]] || false
+    printf '\nDeviation from the pre-registered plan (DEV-001): the decision margin was loosened after the results were seen.\n' >> "$P/paper/main.tex"
+    refresh_review_hash
+    commit_all "report the deviation"
+    run check gate peer_review
+    [[ "$output" != *"PLAN-DEVIATION"* ]] || false
+}
+
+@test "publication: without .uws/crs a CR approval cannot be checked; the PI approves the manuscript hash" {
+    research_make_reproducible
+    run check gate publication
+    [ "$status" -eq 0 ]
+    sed_inplace 's/^PUBLICATION-APPROVAL: .*/PUBLICATION-APPROVAL: CR-MADE-UP-BY-ANYONE/' "$P/research/pi/decisions.md"
+    run check gate publication
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GATE-PI CR-MADE-UP-BY-ANYONE cannot be checked: this project has no .uws/crs/"* ]] || false
+    [[ "$output" == *"PUBLICATION-APPROVAL: sha256:"*" by <PI>"* ]] || false
+    # an approval of an older manuscript does not count
+    sed_inplace "s/^PUBLICATION-APPROVAL: .*/PUBLICATION-APPROVAL: sha256:$(printf '0%.0s' $(seq 1 64)) by pi@lab.example/" "$P/research/pi/decisions.md"
+    run check gate publication
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GATE-PI the PI approved sha256:000000000000, but the manuscript is now sha256:"* ]] || false
+}

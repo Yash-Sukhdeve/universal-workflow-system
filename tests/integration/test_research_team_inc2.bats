@@ -268,12 +268,13 @@ row["sha256"] = hashlib.sha256(open(os.path.join(root, row["plan"]), "rb").read(
 open(path, "w").write(json.dumps(row) + "\n")
 EOF
     commit_all "rewrite the freeze"
-    # a second commit, so the edit is no longer visible to the HEAD / HEAD~1 append-only check
+    # a second commit: the append-only check compares every commit that touched the
+    # ledger, so the edit is still found, and PLAN-ORDER counts from it
     printf 'x\n' > "$P/research/lit/notes.md"
     commit_all "later work"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" != *"PLAN-APPEND"* ]] || false
+    [[ "$output" == *"PLAN-APPEND EXP-LEAK@1 was removed or edited"* ]] || false
     [[ "$output" == *"PLAN-ORDER EXP-LEAK: N-0001 was committed in"* ]] || false
 }
 

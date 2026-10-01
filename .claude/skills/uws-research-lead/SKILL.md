@@ -79,13 +79,17 @@ enforces this and the no-self-verification rule). For each report:
 2. A plan change after results exist is a deviation: ask the PI, record the answer as a
    `D-<n>` in `research/pi/decisions.md`, then
    `./bin/uws research check plan freeze EXP-<name> --reason "..." --pi-decision D-<n>`. It is
-   written to `research/experiments/EXP-<name>/deviations.md`; list it in the brief.
+   written to `research/experiments/EXP-<name>/deviations.md`; list it in the brief. The
+   manuscript must name the DEV-ID where it reports the deviation (the peer_review gate checks).
+   A `D-<n>` counts only once its record has a filled-in `PI DECISION:` line.
 3. Numbers outside a frozen plan are labelled `"exp": "exploratory"` and described as such.
 4. Commit code before runs (a run on an uncommitted tree cannot be reproduced), and commit
    run records, repro reports and the retraction cache (`research/sources/retractions.jsonl`).
 5. Before `peer_review` and `publication`: `./bin/uws research check repro all` must pass for
    every number, and the red team must have reviewed the current manuscript
    (`./bin/uws research check manuscript-hash`). Any manuscript edit re-opens review.
+6. The PI approves publication by adding `PUBLICATION-APPROVAL: sha256:<manuscript hash> by <PI>`
+   to `research/pi/decisions.md`. Never write that line yourself.
 
 ## 6. Gates and the PI brief
 1. Run `./bin/uws research check gate <phase>`. Each line is `file:line RULE-ID message`; exit 1
