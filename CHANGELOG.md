@@ -72,6 +72,10 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
 #### Fixed
 - The front-matter list parser kept the space before each later quoted element, so an item with
   two or more sources could not be approved
+- `uws kb search` (and with it `links` and lint I6) exited 141 with no output once the ranked
+  matches passed about 64 KiB: the output budget stopped reading while `sort` and `cut` were
+  still writing, and `pipefail` turned their SIGPIPE into the script's exit status. The budget
+  now drains its input
 
 ### Meta-learning
 

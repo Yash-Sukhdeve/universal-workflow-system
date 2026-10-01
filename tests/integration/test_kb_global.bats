@@ -41,6 +41,17 @@ init_global() {
     "$UWS" kb pi --set "$PI" --global >/dev/null
 }
 
+# budget_ok <search output>: 1-5 lines, at most 1000 bytes, each line at most 200 bytes
+budget_ok() {
+    local n line
+    n="$(printf '%s\n' "$1" | wc -l | tr -d ' ')"
+    [ "$n" -ge 1 ] && [ "$n" -le 5 ] || return 1
+    [ "$(printf '%s\n' "$1" | LC_ALL=C wc -c | tr -d ' ')" -le 1000 ] || return 1
+    while IFS= read -r line; do
+        [ "$(printf '%s' "$line" | LC_ALL=C wc -c | tr -d ' ')" -le 200 ] || return 1
+    done <<< "$1"
+}
+
 add_global_lesson() {  # add_global_lesson <claim>
     gid add --global --type lesson --claim "$1" --evidence reported \
         --source url:https://example.org/doc --quote "a verbatim line"
@@ -334,6 +345,25 @@ EOF
     [ "$status" -eq 2 ]
     run "$UWS" kb learn --global
     [ "$status" -eq 2 ]
+}
+
+@test "search: hundreds of matches in the project and global KBs still give a budgeted answer (no SIGPIPE)" {
+    init_global
+    local i pad="padding words so that every ranked line is long and the ranked output fills the pipe"
+    for i in $(seq 1 400); do
+        seed_item "$KB" "K-20260924-$(printf '%06x' "$i")" "Alpha project note ${i} ${pad}" observed project
+        seed_item "$GKB" "K-20260924-$(printf 'b%05x' "$i")" "Alpha global lesson ${i} ${pad}" reported global
+    done
+    local scope
+    for scope in all project global; do
+        run "$UWS" kb search --scope "$scope" alpha
+        [ "$status" -eq 0 ]
+        budget_ok "$output"
+    done
+    # the subagent brief's search (orchestrate.sh kb_brief_section)
+    run env UWS_KB_USAGE_VIA=task "$UWS" kb search --min-terms 2 -- "Write up the alpha project note padding"
+    [ "$status" -eq 0 ]
+    budget_ok "$output"
 }
 
 @test "global: retire, restore and prune use git mv in the global repository, never commit, and record no project outcomes" {

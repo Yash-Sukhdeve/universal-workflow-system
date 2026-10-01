@@ -172,6 +172,21 @@ init_global() {
     chmod 555 "$SRC"
 }
 
+@test "import vector: a rerun into a KB with a large claim index finishes (no SIGPIPE under pipefail)" {
+    "$UWS" kb import vector --db "${SRC}/local.db" >/dev/null
+    # 2500 items whose IDs sort after the imported ones, so each R7 lookup finds its
+    # hit early in a claim index of about 600 KB
+    local i pad="with a padded claim that makes the claim index line long enough to fill the pipe"
+    for i in $(seq 1 2500); do
+        printf -- '---\nid: K-20260930-%06x\ntype: fact\nscope: project\nstatus: trusted\nclaim: "Item %d %s %s"\nevidence: observed\nsource: ["file:f:1"]\nauthor: human\ncaptured_by: cli\ncreated: 2026-09-24\nverified_at: 2026-09-24\nreview_by: 2027-03-24\n---\n' \
+            "$i" "$i" "$pad" "$pad" > "${KB}/items/K-20260930-$(printf '%06x' "$i").md"
+    done
+    run "$UWS" kb import vector --db "${SRC}/local.db"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Summary: 7 record(s); added 0 candidate(s)"* ]] || false
+    [[ "$output" == *"Nothing imported is trusted."* ]] || false
+}
+
 @test "import vector: bad input is refused with exit 2" {
     run "$UWS" kb import vector --db "${SRC}/missing.db"
     [ "$status" -eq 2 ]

@@ -665,6 +665,9 @@ budget() {
         printf '%s\n' "$line"
         used=$((used + len)); n=$((n + 1))
     done
+    # Read the rest: a writer upstream (sort, cut) that met a closed pipe would
+    # die of SIGPIPE, and pipefail would make the whole search fail
+    cat >/dev/null
 }
 
 status_filter_for() {  # status_filter_for <status|""> <include-stale> <all>
@@ -930,7 +933,7 @@ EOF
             local has_url=false
             for s in ${sources[@]+"${sources[@]}"}; do [[ "$s" == url:* ]] && has_url=true; done
             [[ "$has_url" == "true" ]] || die 2 "add: reported evidence needs a url: source"
-            [[ -n "$quote" ]] || printf '%s\n' "$body" | grep -q '^>' \
+            [[ -n "$quote" ]] || grep -q '^>' <<< "$body" \
                 || die 2 "add: reported evidence needs a verbatim quote (--quote, or a '> ' line in --body)"
             ;;
         observed)
@@ -2780,7 +2783,7 @@ EOF
     done
     # I6: output budgets (search over every tag, and the session line)
     local tagwords out lines total maxl
-    tagwords="$(for f in "${KB}"/items/*.md; do [[ -f "$f" ]] && kb_list_parse "$(kb_fm_raw "$f" tags)"; done | LC_ALL=C sort -u | head -20 | tr '\n' ' ')"
+    tagwords="$(for f in "${KB}"/items/*.md; do [[ -f "$f" ]] && kb_list_parse "$(kb_fm_raw "$f" tags)"; done | LC_ALL=C sort -u | awk 'NR <= 20' | tr '\n' ' ')"
     if [[ -n "${tagwords// /}" ]]; then
         # shellcheck disable=SC2086
         out="$(search_lines "|candidate|trusted|stale|disputed|" "" "" "" $tagwords | budget "$UWS_KB_SEARCH_LIMIT")"
@@ -2981,22 +2984,26 @@ cmd_import() {
     fi
     [[ "$dry" == "true" ]] || require_writable
 
-    local recs err rc=0
-    recs="$(mktemp "${TMPDIR:-/tmp}/uws-kb-import.XXXXXX")" || die 2 "import: cannot create a temporary file"
-    err="$(mktemp "${TMPDIR:-/tmp}/uws-kb-import-err.XXXXXX")" || { rm -f "$recs"; die 2 "import: cannot create a temporary file"; }
+    # Temporary files: the reader's records and errors, and the claim index
+    # ("norm<TAB>id<TAB>dir<TAB>captured_by" per item). Each R7 lookup reads the
+    # index file: an awk that stops at its first match must not read a large
+    # index from a pipe, or the writer dies of SIGPIPE under pipefail.
+    local recs err idxf rc=0
+    trap 'rm -f "$IMPORT_RECS" "$IMPORT_ERR" "$IMPORT_IDX"' EXIT
+    IMPORT_RECS="$(mktemp "${TMPDIR:-/tmp}/uws-kb-import.XXXXXX")" || die 2 "import: cannot create a temporary file"
+    IMPORT_ERR="$(mktemp "${TMPDIR:-/tmp}/uws-kb-import-err.XXXXXX")" || die 2 "import: cannot create a temporary file"
+    IMPORT_IDX="$(mktemp "${TMPDIR:-/tmp}/uws-kb-import-index.XXXXXX")" || die 2 "import: cannot create a temporary file"
+    recs="$IMPORT_RECS"; err="$IMPORT_ERR"; idxf="$IMPORT_IDX"
     python3 "${SCRIPT_DIR}/kb_import.py" "${pyargs[@]}" > "$recs" 2> "$err" || rc=$?
     if (( rc != 0 )); then
         local msg
         msg="$(tail -1 "$err")"
-        rm -f "$recs" "$err"
         die 2 "import: ${msg:-reading the source failed}"
     fi
-    rm -f "$err"
 
     local blob="-"
     [[ "$kind" == "vector" ]] && blob="$(git hash-object "$db" 2>/dev/null | cut -c1-12 || true)"
-    local idx
-    idx="$(claim_index)"
+    claim_index > "$idxf"
     [[ "$dry" == "true" ]] || ensure_kb
     local actor tag ref ty tags flags detail text meta orig claim norm hit hitid hitdir hitcb hst src
     local n_new=0 n_flag=0 n_dup=0 n_ret=0 n_skip=0 n_rows=0
@@ -3024,7 +3031,7 @@ cmd_import() {
             continue
         fi
         norm="$(KBV="$claim" LC_ALL=C awk "${KB_AWK_NORM}"'BEGIN { printf "%s", kb_norm(ENVIRON["KBV"]) }')"
-        hit="$(printf '%s\n' "$idx" | KBN="$norm" awk -F '\t' '$1 == ENVIRON["KBN"] { print $2 "\t" $3 "\t" $4; exit }')"
+        hit="$(KBN="$norm" awk -F '\t' '$1 == ENVIRON["KBN"] { print $2 "\t" $3 "\t" $4; exit }' "$idxf")"
         if [[ -n "$hit" ]]; then
             IFS="$TAB" read -r hitid hitdir hitcb <<< "$hit"
             if [[ "$hitdir" == "retired" ]]; then
@@ -3060,7 +3067,7 @@ cmd_import() {
             n=$((n + 2))
             (( n <= 12 )) || die 2 "import: cannot mint a unique ID"
         done
-        idx+=$'\n'"${norm}${TAB}${id}${TAB}items${TAB}import"
+        printf '%s\t%s\titems\timport\n' "$norm" "$id" >> "$idxf"
         n_new=$((n_new + 1))
         local shown="$ty"
         if [[ "$flags" != "-" ]]; then n_flag=$((n_flag + 1)); shown+="|flag:${flags}"; fi
@@ -3073,7 +3080,6 @@ cmd_import() {
         kb_event "$KB" "$id" "-" candidate "import:${src}" "$actor"
         echo "  added $(id_prefix)${id} [${shown}] from ${src}: ${claim}"
     done < "$recs"
-    rm -f "$recs"
     echo "Summary: ${n_rows} record(s); $([[ "$dry" == "true" ]] && echo "would add" || echo "added") ${n_new} candidate(s) (${n_flag} flagged suspected-fixture), ${n_dup} duplicate(s) collapsed (R7), ${n_ret} already retired, ${n_skip} skipped."
     [[ "$dry" == "true" ]] || rebuild_stats_cache
     echo "Nothing imported is trusted. The PI triages each item: uws kb review --imported$(scope_flag)"
@@ -3138,6 +3144,10 @@ EOF
 # Verbs that take --global / --scope global, and those that take --scope all
 GLOBAL_VERBS=" add search links show verify approve reject recommend review dispute pi prune retire restore lint stats init import "
 SEARCH_SCOPE="project"
+# Temporary files of cmd_import, removed by its EXIT trap
+IMPORT_RECS=""
+IMPORT_ERR=""
+IMPORT_IDX=""
 
 main() {
     local verb="${1:-help}" scope_arg=""
