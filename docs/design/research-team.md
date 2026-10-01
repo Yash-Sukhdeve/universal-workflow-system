@@ -5,8 +5,11 @@
   built: slop rules S3, S5, S7, C2 and C4, the INVENTORY report, the BibTeX metadata
   cross-check (6.3 step 6), `bib verify --online`, a check that the environment lock pins
   every package (runs record the lock's hash, nothing checks its content) and the Dockerfile
-  check, and the KB promotion interface (section 9). The gates say which of these they do
-  not check. Section 11b lists what the field test found and was consciously not fixed.
+  check, and the KB promotion interface (section 9). Each gate names the checks among these
+  that its phase would run (the BibTeX items from literature_review, the lock and Dockerfile
+  checks from data_collection, the slop rules and INVENTORY from analysis); the KB promotion
+  interface is not a gate check. Section 11b lists what the field test and the review of its
+  fixes found, and what was consciously not fixed.
 - **Date**: 2026-09-24
 - **Author role**: principal system architect (UWS subagent)
 - **Governing persona**: `docs/personas/apocalypt.md` (PI-supplied, verbatim). Every rule below cites the principle it enforces as P1-P11, which are the numbered principles in that file (P1 = line 21, P11 = line 101).
@@ -723,7 +726,8 @@ rows, 8 claim rows, two wrapper runs and the gate output committed under
 `research/gate-output/`. Each fix below has at least one regression test in
 `tests/integration/test_research_team_fieldtest.bats` that fails on the code before the fix
 (commit `2b53533`, or the branch commit before it for the three re-run fixes); lines quoted
-from the paper are verbatim copies in `tests/fixtures/research/promise/`.
+from the paper are verbatim copies in `tests/fixtures/research/promise/`. An adversarial
+review of the fixes followed; its findings and their fixes are listed after the decisions.
 
 **What the field test found, and the fix:**
 
@@ -787,6 +791,47 @@ F1 0.911 once `unrounded` showed it should print 0.912.
    overlap; it does not guess which column is the independent unit. Free text stays allowed
    (a warning), because a project may not have split files yet.
 
+**Review of the fixes [obs]:** each finding below survived an attempt to refute it. Every
+behavioural fix has a test that fails on the branch before it (`7dc9944`); a guarantee that
+no test pinned has a test that fails on a mutant removing it.
+
+| Finding | Fix | Rule |
+|---|---|---|
+| A value computed by a run before the freeze and reformatted by a run after it passed | provenance: every data input of the row and of its runs is followed to the run records that wrote that file version (same path and sha256), recursively; their records, outputs and commits are evidence | `PLAN-ORDER` |
+| After a squash merge the run's commit is gone, and `PLAN-ORDER` said the run "happened before the plan was frozen" | an unknown commit is reported as an order that cannot be shown (record the run again); each run is reported once per experiment | `PLAN-ORDER` |
+| `research check`/`bib` without a project `.workflow` created `.workflow/logs` in the current directory (uws then took it for a UWS project; the checker took it for the root, so a check from `paper/` exited 2) and wrote `decisions.log` into the installation | `research.sh` dispatches `check <name>`, `bib` and `help`, and refuses phase actions without state, before sourcing the libraries that create log directories; phase logs go to the project's `.workflow/logs` | `init` |
+| `BIB-UNDEFINED` missed `\cite{a,` + newline + `b}`, `\parencite`, `\textcite`, `\autocite`, `\footcite`, `\Citet`, `\cite {k}` and `\cites{a}{b}` | the comment-stripped file is read as a whole; every command with "cite" in its name counts except natbib's `\citetext` and `\citestyle`; the retraction check and S2 use the same reading | `BIB-UNDEFINED` |
+| A hand-appended manifest row with the same sha256 and `split: "none"` switched a blocking `DATA-LEAK` off with no trace | a row that changes the declaration (split, origin, labels, generator, seed) of unchanged content needs a reason; replacing a structured split by free text or "none" also needs a PI decision; `data add --reason` records it | `DATA-REPLACE` |
+| `numbers add` appended a revision of N-0001 that took N-0002's macro (the duplicate was reported on N-0002's line and filtered out) | the add checks the macro against every other current row | `NUM-SCHEMA` |
+| A run whose commit is not in the repository (or that names none) skipped `RUN-CODE` and passed the data_collection gate | both are blocking `RUN-CODE` findings | `RUN-CODE` |
+| `run.json` recorded a venv's base interpreter (realpath before the probe) | the probe runs the path the command invokes (`invoked`); `path` is the resolved file | `run` |
+| `--output 'artifacts/res[1].json'` was always a glob and failed; no output glob matched in a project at `.../proj [v2]` (run and repro) | a path that names an existing file is that file; glob roots are escaped | `run`, `repro` |
+| A `where` naming `paper/sec one.tex:2` was read as `one.tex:2` | a place's path is the longest text before `.tex`/`.md` in its `;` segment that names a manuscript file | `NUM-WHERE` |
+| A CSV with a UTF-8 byte-order mark (Excel "CSV UTF-8") failed a correct split as `DATA-SPLIT`; an empty unit value counted as the unit "" | CSV/TSV/JSON are read as utf-8-sig; an empty or null unit or split value is `DATA-SPLIT` | `DATA-SPLIT` |
+| "0.912 in cross-validation" and "2.5ms in the worst case" passed: "in" after a number was taken for the TeX inch | "in" is a length only attached to the number | `NUM-LITERAL` |
+| The status line said the gates name every unbuilt check; only the slop rules and INVENTORY were named | each gate names the unbuilt checks of its phases | gate notes |
+
+Guarantees that no test pinned now have one (each kills a mutant that left the suites
+green): the output-path evidence of `PLAN-ORDER`; the fallback clause that keeps phase
+actions off UWS's own `.workflow`; `uws research bib` as the first command without
+`.workflow`; the REPRO rejection of another tool's report and of an entry naming another
+run; C3 and C6 on hand-typed numbers linked by `where`; the column form of a split;
+abbreviations inside sentences; the KB note when a KB exists; the `supersedes` filled in by
+`numbers add`; and the narrowness of the S1 idiom list.
+
+Decisions of the review [decision]:
+8. **Provenance runs through run records only.** A file that a recorded run wrote is a
+   result of that run, wherever it is used next; data that no recorded run wrote (raw data,
+   a public dataset) is not a result and is not followed. Data preparation recorded with
+   `run` before the freeze therefore fails `PLAN-ORDER`, which matches the plan template
+   ("freeze ... before collecting data").
+9. **An order that cannot be shown fails, with the true reason.** A missing run commit is
+   neither "before" nor "after" the freeze; the gate fails closed and says the commit is not
+   in the repository, as `NUM-RUN`, `RUN-CODE` and the repro job already do.
+10. **A re-declaration is a recorded change.** The leak, label and disclosure checks read a
+   file's latest manifest row, so changing that row's declaration for unchanged content is a
+   change like a new version: it needs a reason, and turning the leak check off needs the PI.
+
 **Re-run of the gates on the audit** (a scratch clone of `audit/research-ledger` at
 `dfb8b1f`; every check plus the `analysis` and `publication` gates, the base checker of
 `2b53533` against this branch). Each finding was classified against the audit report
@@ -817,6 +862,10 @@ EXP-LEAK numbers were run outside the wrapper, no macro file, review or PI appro
   0.9115 (the same logic produced the N-0003 false positive); after, a warning, until a
   revision names `unrounded`. Appending the two revisions with `numbers add` turns N-0004
   into a block and clears N-0003 (174 blocking, 11 warnings).
+- After the review fixes the re-run is unchanged: the same 173 blocking findings and 13
+  warnings in the publication gate (171 and 13 in analysis), and two more notes naming
+  unbuilt checks. The review's cases (multi-line or biblatex citations, "in" after a
+  number, squash-merged runs, venvs, bracketed paths) do not occur in the audit.
 - Still missed, before and after: statements that need reading, not patterns ("timeout
   reduces success" is backwards; MAE at the noise level; KaVE figures from another paper;
   DevGPT prompts called conversations; the Airflow citation names a different paper); wrong
@@ -855,6 +904,13 @@ EXP-LEAK numbers were run outside the wrapper, no macro file, review or PI appro
    none): `output`, `pointer` and `output_sha256` stay required, so the audit's N-0007 can be
    written only by hand. Making them optional would let a number enter the ledger without
    provenance.
+7. **Provenance outside run records.** `PLAN-ORDER` cannot trace an intermediate result
+   written outside `run` (it looks like data); recording every step with `run` is the
+   remedy, not a heuristic that guesses which data files are results (decision 8).
+8. **User citation macros.** Any command with "cite" in its name counts as a citation, so
+   a user macro such as `\mycite{key}` is checked; a macro with "cite" in its name that takes
+   no keys (other than natbib's `\citetext` and `\citestyle`) would be read as citing its
+   argument. The .tex files of the PROMISE audit use no citation command but `\cite`.
 
 ## 12. Risks and failure modes
 

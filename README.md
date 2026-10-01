@@ -300,7 +300,8 @@ recorded in plain-text ledgers under `research/`, and a deterministic checker (P
 standard library) checks those ledgers at every phase gate:
 
 ```bash
-uws research check init              # scaffold research/ and bib_sources/ (no .workflow needed)
+uws research check init              # scaffold research/ and bib_sources/ (no .workflow needed;
+                                     # `uws init research` adds it for start/next)
 uws research bib fetch doi:10.1371/journal.pcbi.1003285 --key sandve2013
 uws research bib build               # references.bib only from bib_sources/
 uws research check retraction --online      # cache Crossref retraction notices
@@ -326,7 +327,8 @@ the cached source, that every number in the paper comes from a generated macro t
 an output file and its hash, and a set of "slop" rules (unsupported novelty, vague
 attribution, placeholders, overclaimed causality, undisclosed simulated data, generator
 labels called ground truth). They also check that each experiment's plan was frozen and
-committed before its results (a later change needs a PI decision), that every input is in
+committed before its results, including any result a run's input was computed from (a
+later change needs a PI decision), that every input is in
 the data manifest with its hash and, when generated, its seed, that derived metrics match
 their declared formula (for example FP / (FP + TN)), that cross-validation values are not
 presented as held-out results, that every number reproduces from its recorded run, that the

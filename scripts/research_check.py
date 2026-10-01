@@ -13,7 +13,8 @@ Commands (increment 1):
     bib                 bib_sources/ provenance and references.bib equality
     quotes              recorded quotes are verbatim substrings of the cached source text
     numbers             number provenance: output hash, pointer value, rounding, macros,
-                        hand-typed decimals; formulas over other numbers; evaluation split
+                        hand-typed decimals and numbers with units in result regions, and
+                        values at a row's `where`; formulas over other numbers; evaluation split
     slop                S1 S2 S4 S6 (prose) and C1 C3 C5 C6 (code / disclosure)
     gate <phase>        the evidence gate for one research phase
     role-exit           SubagentStop hook check (reads the hook JSON on stdin)
@@ -35,6 +36,18 @@ Commands (increment 2):
                         refreshes research/sources/retractions.jsonl, gates stay offline
     manuscript-hash     the hash a red-team review must name (`Manuscript: sha256:...`)
     macros              write the generated macro file from the number ledger
+Commands and options (field-test fixes, design section 11b):
+    claims              the claim ledger's rules (as `ledger`)
+    numbers add '<json>' | claims add '<json>'
+                        append one validated row (id, rev, supersedes filled in; numbers
+                        also output_sha256, raw and printed); existing lines never change
+    run --code <file>   a script the command runs: code, versioned by the run's commit
+    run --output <glob> a timestamped output name; the file the command wrote is recorded
+    run --env-lock <f>  a lock file to record by hash (default: research/env/*.lock and
+                        the common lock files that exist)
+    data add --split '{"train": <path>, "test": <path>, "group_key": <field>}'
+                        (or {"column": <split column>, "group_key": <field>}): a split
+                        the leakage check (DATA-LEAK) can test
 Internal (called by scripts/research_bib.sh):
     bib-ingest          validate a downloaded BibTeX body and store it with .meta.json
     bib-build           write references.bib from bib_sources/ only
@@ -4116,8 +4129,9 @@ def cmd_run(project, args):
           % (run_id, rc, len(inputs), len(code), len([o for o in out_records if o.get("path")]),
              " (%s)" % note if note else ""))
     if not locks:
-        print("note: no environment lock found (research/env/requirements.lock or --env-lock); the run records "
-              "no environment hash", file=sys.stderr)
+        print("note: no environment lock found (--env-lock <file>, else research/env/*.lock and the common lock "
+              "files %s); the run records no environment hash" % ", ".join(c for c in ENV_LOCK_CANDIDATES
+                                                                           if "/" not in c), file=sys.stderr)
     if untouched:
         print("warning: output(s) existed before the run and were not rewritten: %s; `repro` deletes outputs "
               "before re-running, so a command that does not write them fails there" % ", ".join(untouched),

@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The first real use of the research checks, an audit of the PROMISE 2026 paper, found
 integrity gaps, misses, false positives and friction. Each fix has a regression test in
-`tests/integration/test_research_team_fieldtest.bats` (32 tests) that fails on the code
-before it; the paper's lines are verbatim fixtures in `tests/fixtures/research/promise/`.
+`tests/integration/test_research_team_fieldtest.bats` (57 tests) that fails on the code
+before it (or, for a guarantee no test pinned, on a mutant that removes it); the paper's
+lines are verbatim fixtures in `tests/fixtures/research/promise/`. An adversarial review of
+these fixes found guarantees that still had holes; they are fixed too (see "Fixed").
 Details, decisions, the before/after re-run on the audit and what was consciously not
 fixed: `docs/design/research-team.md` section 11b.
 
@@ -26,18 +28,26 @@ fixed: `docs/design/research-team.md` section 11b.
 - `run --code <file>` records the scripts a command runs as code (versioned by the run's
   commit, not by the data manifest); code missing from the recorded commit is `RUN-CODE`.
 - `run --output` takes a glob for timestamped names; the run records the file the command
-  wrote and the repro job finds the re-run's file by the same pattern.
-- `run.json` records the command's interpreter (resolved path, kind, version) and
-  `env_lock` (hash of `research/env/requirements.lock` or `--env-lock` files).
+  wrote and the repro job finds the re-run's file by the same pattern. A path that names an
+  existing file is that file, even with `[`, `?` or `*` in its name.
+- `run.json` records the command's interpreter (the path the command invoked, which shows
+  a venv, the resolved file, kind and version) and `env_lock`: the hashes of the
+  `--env-lock` files, else of `research/env/*.lock` and the common lock files that exist
+  (requirements.lock, poetry.lock, Pipfile.lock, uv.lock, pdm.lock, conda-lock.yml,
+  environment.lock.yml, renv.lock, Manifest.toml).
 - Structured split declarations in the data manifest (`data add --split` JSON:
   `{train, validation, test, group_key}` or `{column, group_key}`): `DATA-LEAK` fails when one
-  group is on both sides, `DATA-SPLIT` reports a malformed declaration, a free-text split is
-  a warning.
-- `BIB-UNDEFINED`: a `\cite` key that neither `references.bib` nor `bib_sources/` defines.
+  group is on both sides, `DATA-SPLIT` reports a malformed declaration or a row with no
+  unit, a free-text split is a warning. A row that re-declares unchanged data (split,
+  origin, labels, generator, seed) needs a reason, and replacing a structured split by free
+  text or "none" also a PI decision (`DATA-REPLACE`); `data add --reason` records it.
+- `BIB-UNDEFINED`: a `\cite` key that neither `references.bib` nor `bib_sources/` defines,
+  in every citation form (a key list over several lines, `\cite {k}`, natbib `\Citet`,
+  biblatex `\parencite`, `\textcite`, `\autocite`, `\footcite`, multicite `\cites{a}{b}`).
 - Number rows may name `unrounded` {run, output, pointer}: the full-precision value that
   decides `NUM-ROUND` when the output file stores a pre-rounded value.
 - A number row's `where` (`file:line; file:l1,l2; file#label`; text in parentheses is a
-  note) links hand-typed values to the row: `NUM-LITERAL` names the row and its macro,
+  note; a file name may contain spaces) links hand-typed values to the row: `NUM-LITERAL` names the row and its macro,
   `NUM-SPLIT`, C3 and C6 judge the value like a macro use, and a named place that does not
   show the value is a `NUM-WHERE` warning. A claim row's `where` attaches the claim to those
   lines for C6.
@@ -45,14 +55,19 @@ fixed: `docs/design/research-team.md` section 11b.
 #### Changed
 - `PLAN-ORDER` orders against when a result existed: the first commit of its output file, of
   that content under any name, of its run record, and the commit the run executed on, not
-  only the ledger row.
+  only the ledger row. It follows provenance: an input that a recorded run wrote (same path
+  and sha256) brings that run's record, outputs and commit, recursively, so a value computed
+  before the freeze and only reformatted after it still fails. A run commit that is not in
+  the repository (squash merge, rebase, shallow clone) is reported as an order that cannot
+  be shown, never as "before the freeze"; each run is reported once.
 - Sentences are split LaTeX-aware (`recover\_context.sh`, `0.912`, `Fig.~3`, `et al.\ ` and
   common abbreviations end nothing), so C6 now catches "ground truth" at the PROMISE
   introduction (line 33) and approach (line 120). Only ledger macro names count as number
   uses (never `\textit` or `\paragraph`). C6 blocks when evidence tied to the sentence rests
   on generated data or generator-rule labels and warns otherwise.
 - `NUM-LITERAL` catches numbers with units (`1.1ms`, `1.1\,ms`, `30\%`) and covers the
-  introduction, evaluation, experiments and discussion as well.
+  introduction, evaluation, experiments and discussion as well. A number followed by the
+  word "in" ("0.912 in cross-validation") is no longer taken for a TeX length.
 - `NUM-ROUND` warns "pre-rounded; cannot judge" instead of blocking when the stored value
   could print either way, unless `unrounded` decides.
 - S1: a narrow idiom allowlist (best practice(s), best effort, best case, at best), and
@@ -61,16 +76,35 @@ fixed: `docs/design/research-team.md` section 11b.
   pass (an external reproduction) does not count.
 - `research check <name>` and `research bib` need no `.workflow/state.yaml`, from `uws` and
   from `research.sh`; a fallback to UWS's own `.workflow` is never used as the project's.
+  They are dispatched before any library that creates log directories, so they write no
+  `.workflow/` into the project or the UWS installation, and from a subdirectory they find
+  the project (nearest `research/ledger`). Phase actions (`start`, `next`, ...) without
+  workflow state say so (run `uws init research`) and write nothing.
 - `macros` writes the valid rows and reports each skipped invalid row (exit 1) instead of
   refusing all.
 - The gate's KB note quotes `uws kb stats`; `init` puts `.gitkeep` in empty scaffold
   directories.
+- Each gate names the unbuilt checks that belong to it: from literature_review the BibTeX
+  metadata cross-check and `bib verify --online`, from data_collection the lock-content and
+  Dockerfile checks, from analysis the unbuilt slop rules and the INVENTORY report.
 - The engineer, methodologist, scout and verifier personas and the `uws-research-lead`
-  skill use the new commands.
+  skill use the new commands; the skill says to run `uws init research` first when
+  `.workflow/state.yaml` is missing. `/uws:research-check` lists every check and asks for
+  the phase when `research status` cannot show it.
 
 #### Fixed
 - Code given as a run input is no longer reported as unmanifested data, and a gate no
   longer prints the same number-ledger schema error once per check.
+- Found by the review of these fixes: `research check`/`bib` left a stray `.workflow/` in
+  projects without one (uws then took them for UWS projects, and a check from `paper/`
+  exited 2) and wrote `decisions.log` into the installation; `PLAN-ORDER` passed a value
+  reformatted after the freeze and called a squash-merged run "before the freeze";
+  `BIB-UNDEFINED` missed multi-line and biblatex citations; a hand-appended manifest row
+  could switch a blocking `DATA-LEAK` off; `numbers add` appended a revision that took
+  another row's macro; `RUN-CODE` skipped a run whose commit is not in the repository;
+  `run` recorded a venv's base interpreter, failed on an output named `res[1].json` and on
+  any output glob in a project path with `[`; a `where` file name with a space was not
+  linked; a CSV with a byte-order mark failed `DATA-SPLIT`.
 
 #### Not fixed
 - A number measured under generated conditions (the PROMISE recovery times) has no
@@ -81,6 +115,9 @@ fixed: `docs/design/research-team.md` section 11b.
   verifier's and red team's work; the BibTeX metadata cross-check is still not built; a
   complete forged repro report is not detected (reports are not signed); `numbers add`
   cannot record a number that has no output file.
+- `PLAN-ORDER` follows provenance only through recorded runs: a file written outside
+  `run` (or raw data) is not traced, and data preparation recorded with `run` before the
+  freeze now fails it (freeze before collecting data, as the plan template says).
 
 ### Meta-learning
 

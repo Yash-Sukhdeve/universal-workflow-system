@@ -241,8 +241,11 @@ tolerance."
    timestamped output name give a glob, `--output 'out/results_*.json'`; the run records the
    file it wrote and the repro job finds the re-run's file by the same pattern. The record
    holds the command, commit, clean/dirty tree, inputs, code and outputs with hashes, seeds,
-   the interpreter the command ran under, the hash of `research/env/requirements.lock`, the
-   environment and the exit code (`research/runs/RUN-*/run.json`). Commit your code first: a
+   the interpreter the command ran under (the path it invoked, which shows a venv, and the
+   resolved file), `env_lock` (the hashes of the `--env-lock` files, else of
+   `research/env/*.lock` and the common lock files that exist: requirements.lock,
+   poetry.lock, uv.lock, Pipfile.lock, ...), the environment and the exit code
+   (`research/runs/RUN-*/run.json`). Commit your code first: a
    run on an uncommitted tree cannot be reproduced, and code missing from the commit is
    `RUN-CODE`.
 3. **Number rows** for the outputs (with the methodologist): `output`, `pointer`,
@@ -255,7 +258,8 @@ tolerance."
    run that writes the full precision), or the rounding check can only warn. Then
    `uws research check macros` writes the macro file.
 4. **Environment lock**: `research/env/requirements.lock` with every package pinned with
-   `==`, plus the Python version.
+   `==`, plus the Python version. Runs record its hash; no check reads its content yet
+   (the gates say so), so pinning every package is your job.
 5. **Repro reports**: `uws research check repro all` re-runs each recorded command at its
    commit in a scratch copy (never in the project) and compares every number within its
    tolerance; it writes `research/repro/report-*.json`. The analysis and publication gates
