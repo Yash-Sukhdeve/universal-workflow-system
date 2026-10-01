@@ -73,7 +73,7 @@ Usage: uws <command> [args...]
 Workflow Commands:
   init [type]              Initialize UWS in current project
   status [-v|-c]           Show workflow status
-  checkpoint <cmd> [args]  Manage checkpoints (create|list|restore|status)
+  checkpoint <cmd> [args]  Manage checkpoints (create|list|restore <ID>|verify|status)
   recover                  Recover context after session break
   orchestrate <cmd> [args] Route the current phase to its subagent
                            (dispatch "<task>" | collect "<summary>" | status)
@@ -84,8 +84,12 @@ Workflow Commands:
                            'uws kb help' for details
 
 Methodology Commands:
-  sdlc [cmd]               SDLC workflow (status|start|next|fail|reset)
-  research [cmd]           Research workflow (status|start|next|reject|reset)
+  sdlc [cmd]               SDLC workflow (status|start|next|goto|fail|reset|
+                           goal|deliverables|check <n>)
+  research [cmd]           Research workflow (status|start|next|reject|reset|
+                           goal|deliverables|check <n>)
+                           Once a goal is declared, next waits until every
+                           deliverable of the phase is ticked (--force overrides)
   research check <name>    Research team evidence checks: init | ledger | bib |
                            quotes | numbers [add] | claims [add] | slop |
                            gate <phase> | plan | data | run | repro | retraction |

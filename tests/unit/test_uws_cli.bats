@@ -301,3 +301,11 @@ STUB
     assert_output "No UWS project found"
     rm -rf "$empty_dir"
 }
+
+@test "uws help lists the goal-driven gate subcommands of sdlc and research" {
+    run "${PROJECT_ROOT}/bin/uws" help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"sdlc [cmd]               SDLC workflow (status|start|next|goto|fail|reset|"* ]] || false
+    [[ "$output" == *"goal|deliverables|check <n>)"* ]] || false
+    [[ "$output" == *"next waits until every"* ]] || false
+}
