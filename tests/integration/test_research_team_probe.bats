@@ -272,3 +272,14 @@ EOF
     [ -f "$P/paper/references.bib" ]
     [ ! -f "$P/references.bib" ]
 }
+
+@test "help: check numbers --help and check claims --help list the fields a row needs" {
+    run check numbers --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"data_origin  measured | simulated | synthetic-generated | literature"* ]] || false
+    [[ "$output" == *"evaluation   held-out | validation | cross-validation | training | n/a"* ]] || false
+    [[ "$output" == *"Filled in when missing: id, rev, supersedes, output_sha256, raw, printed."* ]] || false
+    run check claims --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"own_observation                      numbers: [N-IDs] or run"* ]] || false
+}

@@ -5665,6 +5665,35 @@ def find_root(start):
         d = parent
 
 
+NUMBERS_ADD_HELP = """\
+add '<one JSON object>': a number row. Required:
+  macro        \\Name, the LaTeX macro that prints it (`check macros` defines it)
+  metric       what it measures, e.g. "held-out ROC-AUC"
+  output       project path of the file holding the value
+  pointer      /json/pointer into it (CSV: /<row>/<column> or /<column>=<value>/<column>)
+  rounding     exact, or <kind>:<digits> with kind round, round-half-even, floor, ceil, trunc
+  data_origin  measured | simulated | synthetic-generated | literature
+  evaluation   held-out | validation | cross-validation | training | n/a
+  exp          EXP-<name> whose frozen plan it answers, or "exploratory"
+  run | inputs RUN-<nnnn> that produced it, or a list of input paths
+Filled in when missing: id, rev, supersedes, output_sha256, raw, printed.
+Optional: where (paper/main.tex:12), formula, tolerance, unrounded, scale.
+A literature value needs only macro, metric, output, pointer, rounding, data_origin."""
+
+CLAIMS_ADD_HELP = """\
+add '<one JSON object>': a claim row. Required: text, category, status ("unverified" for a
+new claim), author (a role such as scout or writer). Categories and their evidence:
+  established_fact, reported_finding   sources: [{"citekey", "quote" (verbatim), "locator"}]
+  own_observation                      numbers: [N-IDs] or run
+  inference                            depends_on: [C-IDs]
+  hypothesis                           mechanism, distinguishing_prediction,
+                                       strongest_alternative, undermining_observation
+  estimate, open_question
+Optional: where (paper/main.tex:12), strength (none | association | empirical | causal |
+proof), data_origin. Filled in when missing: id, rev, supersedes. Only another role
+verifies a claim (verified_by, verified_at, verdict "supports")."""
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="research_check.py", description=__doc__.split("\n\n")[0])
     p.add_argument("--root", help="project root (default: nearest directory with research/ledger or .workflow)")
@@ -5675,12 +5704,14 @@ def build_parser():
     sub.add_parser("bib", help="bib_sources provenance and references.bib equality")
     s = sub.add_parser("quotes", help="quotes are verbatim in the cached source text")
     s.add_argument("--allow-missing-cache", action="store_true", help="report a missing cache as a warning (CI without caches)")
-    s = sub.add_parser("numbers", help="number provenance and hand-typed numbers; `add '<json>'` appends a row")
+    s = sub.add_parser("numbers", help="number provenance and hand-typed numbers; `add '<json>'` appends a row",
+                       epilog=NUMBERS_ADD_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
     s.add_argument("row", nargs="?", help="for add: one JSON object (or - for stdin); id, rev, output_sha256, raw "
                    "and printed are filled in when missing")
     s.add_argument("--id", action="append", help="check only these N-IDs (repeatable)")
-    s = sub.add_parser("claims", help="claim ledger rules (as `ledger`); `add '<json>'` appends a validated row")
+    s = sub.add_parser("claims", help="claim ledger rules (as `ledger`); `add '<json>'` appends a validated row",
+                       epilog=CLAIMS_ADD_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
     s.add_argument("row", nargs="?", help="for add: one JSON object (or - for stdin); id and rev are filled in")
     s = sub.add_parser("slop", help="S1 S2 S4 S6 C1 C3 C5 C6")
