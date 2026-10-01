@@ -69,8 +69,8 @@ jobs:
           # builds its SQLite fixtures with tests/fixtures/kb/make_vector_db.py. Both run on
           # users' and CI machines with a bare python3, so standard library only.
           python3 -m py_compile scripts/kb_import.py tests/fixtures/kb/make_vector_db.py
-          if grep -nE '^\s*(import|from)\s+(yaml|numpy|pandas|requests|sqlite_vec)\b' \
-              scripts/kb_import.py tests/fixtures/kb/make_vector_db.py; then
+          # every import statement against sys.stdlib_module_names (tests/helpers/stdlib_only.py)
+          if ! python3 tests/helpers/stdlib_only.py scripts/kb_import.py tests/fixtures/kb/make_vector_db.py; then
             echo "::error::kb_import.py and make_vector_db.py must use the Python standard library only"
             exit 1
           fi

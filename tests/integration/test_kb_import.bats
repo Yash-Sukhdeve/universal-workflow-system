@@ -580,11 +580,17 @@ EOF
 }
 
 @test "import: the reader and fixture builder use the Python standard library only" {
-    # parse only (py_compile would write __pycache__ into the checkout)
-    run python3 -c 'import ast, sys; [ast.parse(open(p).read(), p) for p in sys.argv[1:]]' \
-        "${PROJECT_ROOT}/scripts/kb_import.py" "$MAKE_DB"
+    # every import statement, checked against the standard library's module list (parsed
+    # with ast only: py_compile would write __pycache__ into the checkout)
+    local check="${PROJECT_ROOT}/tests/helpers/stdlib_only.py"
+    run python3 "$check" "${PROJECT_ROOT}/scripts/kb_import.py" "$MAKE_DB"
     [ "$status" -eq 0 ]
-    run grep -nE '^\s*(import|from)\s+(yaml|numpy|pandas|requests|sqlite_vec)\b' \
-        "${PROJECT_ROOT}/scripts/kb_import.py" "$MAKE_DB"
+    [ -z "$output" ]
+    # the check itself catches a third-party import, also a nested or dotted one
+    { printf 'import click\n'; cat "${PROJECT_ROOT}/scripts/kb_import.py"
+      printf 'def f():\n    from sqlite_utils.db import Database\n'; } > "${TEST_TMP_DIR}/k.py"
+    run python3 "$check" "${TEST_TMP_DIR}/k.py"
     [ "$status" -eq 1 ]
+    [[ "$output" == *"k.py:1: click"* ]] || false
+    [[ "$output" == *": sqlite_utils.db"* ]] || false
 }
