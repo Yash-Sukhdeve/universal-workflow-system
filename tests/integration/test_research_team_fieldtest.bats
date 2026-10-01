@@ -41,8 +41,86 @@ line_of() {
     commit_all "ledger row added after the freeze"
     run check plan
     [ "$status" -eq 1 ]
-    [[ "$output" == *"PLAN-ORDER EXP-LATE: N-0002"* ]]
-    [[ "$output" == *"artifacts/results.json was first committed in"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-LATE: N-0002: its output artifacts/results.json was first committed in"* ]]
+}
+
+@test "P0 PLAN-ORDER: an earlier version of the output file committed before the freeze fails (output path evidence)" {
+    printf '{"auc": 0.95}\n' > "$P/artifacts/results.json"
+    write_plan EXP-V
+    commit_all "a first results file, and the plan"
+    check plan freeze EXP-V >/dev/null
+    commit_all "freeze"
+    printf '{"auc": 0.96}\n' > "$P/artifacts/results.json"
+    commit_all "results regenerated after the freeze"
+    add_number '{"id":"N-0002","macro":"\\VAuc","printed":"0.96","raw":0.96,"rounding":"exact","metric":"held-out AUC","output":"artifacts/results.json","pointer":"/auc","data_origin":"measured","evaluation":"held-out","exp":"EXP-V","inputs":[]}'
+    commit_all "row"
+    run check plan
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"PLAN-ORDER EXP-V: N-0002: its output artifacts/results.json was first committed in"* ]]
+    # The content 0.96 was first committed after the freeze: only the path is evidence here.
+    [[ "$output" != *"the content of its output"* ]]
+}
+
+@test "P0 PLAN-ORDER: a value computed before the freeze and reformatted by a run after it fails (provenance)" {
+    write_plan EXP-X
+    cat > "$P/research/code/train.py" << 'EOF'
+import json
+import sys
+
+json.dump({"auc": 0.8731}, open(sys.argv[1], "w"))
+EOF
+    cat > "$P/research/code/table.py" << 'EOF'
+import json
+import sys
+
+m = json.load(open(sys.argv[1]))
+json.dump({"table": {"auc": m["auc"]}}, open(sys.argv[2], "w"))
+EOF
+    commit_all "plan written (not frozen) and code"
+    check run --exp exploratory --code research/code/train.py --output artifacts/train_metrics.json -- \
+        python3 research/code/train.py artifacts/train_metrics.json >/dev/null
+    commit_all "an exploratory run computes the value"
+    check plan freeze EXP-X >/dev/null
+    commit_all "plan frozen after the value existed"
+    check run --exp EXP-X --code research/code/table.py --input artifacts/train_metrics.json --output artifacts/table.json -- \
+        python3 research/code/table.py artifacts/train_metrics.json artifacts/table.json >/dev/null
+    check data add artifacts/train_metrics.json --source "RUN-0001 output" --version 1 --split none --origin measured >/dev/null
+    add_number '{"id":"N-0002","macro":"\\XAuc","printed":"0.8731","raw":0.8731,"rounding":"exact","metric":"held-out AUC","output":"artifacts/table.json","pointer":"/table/auc","data_origin":"measured","evaluation":"held-out","exp":"EXP-X","run":"RUN-0002"}'
+    commit_all "the reformatting run and its row, after the freeze"
+    run check plan
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"PLAN-ORDER EXP-X: RUN-0001 (writes artifacts/train_metrics.json, an input of N-0002) ran on commit"*"which does not contain the freeze"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-X: N-0002: artifacts/train_metrics.json (written by RUN-0001, an input) was first committed in"* ]]
+}
+
+@test "P0 PLAN-ORDER: a run whose commit is not in the repository (squash merge) is not said to precede the freeze" {
+    local base
+    base="$(git -C "$P" rev-parse --abbrev-ref HEAD)"
+    git -C "$P" checkout -q -b feat
+    printf '# reviewed\n' >> "$P/research/code/make_results.py"
+    commit_all "code change on a branch"
+    research_make_reproducible
+    run check plan
+    [ "$status" -eq 0 ]
+    git -C "$P" checkout -q "$base"
+    git -C "$P" merge -q --squash feat >/dev/null
+    git -C "$P" commit -q -m "squash merge of feat"
+    git -C "$P" branch -q -D feat
+    git -C "$P" reflog expire --expire=now --all
+    git -C "$P" gc -q --prune=now
+    local commit
+    commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["git_commit"])' "$P/research/runs/RUN-0001/run.json")"
+    run git -C "$P" cat-file -e "${commit}^{commit}"
+    [ "$status" -ne 0 ]
+    run check plan
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" != *"does not contain the freeze"* ]]
+    [[ "$output" != *"the run happened before the plan was frozen"* ]]
+    [[ "$output" == *"PLAN-ORDER EXP-LEAK: RUN-0001 (N-0001) ran on commit ${commit:0:12}, which is not in this repository"* ]]
+    [ "$(printf '%s\n' "$output" | grep -c 'PLAN-ORDER EXP-LEAK: RUN-0001' || true)" -eq 1 ]
 }
 
 @test "P0 PLAN-ORDER: a run executed before the freeze fails, even when its record is committed after it" {

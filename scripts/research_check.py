@@ -2890,34 +2890,99 @@ def _plan_order(project, plans, results, decisions, known):
             blob_first[rel] = commits[-1] if commits else None
         return blob_first[rel]
 
-    def evidence(kind, key, label):
-        """When the result existed: [(what, commit)], plus the commit its run executed on.
+    # (path, sha256) -> the RUN-IDs whose record lists that file version as an output.
+    producers = {}
+    for rid, (_rel, rec, _err) in sorted(runs.items()):
+        for o in (rec or {}).get("outputs") or []:
+            o_rel = safe_rel(project, o.get("path")) if isinstance(o, dict) else None
+            if o_rel and o.get("sha256"):
+                producers.setdefault((o_rel, o["sha256"]), []).append(rid)
 
-        A result exists from the earliest of: the ledger row (or run record), the first
-        commit of the output file it names, and the first commit of its run record. Adding
-        the ledger row after a fresh freeze therefore cannot hide results committed earlier."""
-        items, run_id, run_rec = [], None, None
+    def data_inputs(row, rec):
+        """(path, sha256) of the data a number row or run record names as input (code is
+        versioned by the run's commit, not followed). A row's bare path is taken at the
+        version the manifest registers, else at its current content."""
+        out = []
+        man = project.manifest()
+        for p in (row or {}).get("inputs") or []:
+            p_rel = safe_rel(project, p) if isinstance(p, str) else None
+            if not p_rel or is_code_path(p_rel):
+                continue
+            entry = man.latest.get(p_rel)
+            sha = entry[1].get("sha256") if entry else None
+            if not sha and os.path.isfile(project.path(p_rel)):
+                sha = sha256_file(project.path(p_rel))
+            out.append((p_rel, sha))
+        for inp in (rec or {}).get("inputs") or []:
+            p_rel = safe_rel(project, inp.get("path")) if isinstance(inp, dict) else None
+            if p_rel and not is_code_path(p_rel):
+                out.append((p_rel, inp.get("sha256")))
+        return out
+
+    def evidence(kind, key, label):
+        """When the result existed: (items, runs).
+
+        items: [(before, commit, after)], each saying what was first committed in `commit`;
+        runs: [(RUN-ID, commit it executed on, how it relates to the result)]. A result
+        exists from the earliest of: the ledger row (or run record), the first commit of the
+        output file it names and of that content under any name, the first commit of its run
+        record, and the commit the run executed on. Adding the ledger row after a fresh
+        freeze therefore cannot hide results committed earlier.
+
+        Provenance is followed: an input that a recorded run wrote (same path and sha256)
+        brings that run's record, commit and outputs, recursively. So a value computed before
+        the freeze and only reformatted by a run after it is still a result from before the
+        freeze. Data that no recorded run wrote (raw data) is not a result and is not followed."""
+        items, run_list, queue, seen, outputs_seen = [], [], [], set(), set()
+
+        def add_run(run_id, how, via_input):
+            if run_id in seen or run_id not in runs:
+                return
+            seen.add(run_id)
+            rel, rec, _err = runs[run_id]
+            rec = rec or {}
+            run_list.append((run_id, rec.get("git_commit"), how))
+            if via_input is None:
+                record = "%s was committed in " % label if kind == "run" else \
+                    "%s: its run record %s was first committed in " % (label, rel)
+                items.append((record, first_commit_of(rel), ""))
+            for o in rec.get("outputs") or []:
+                o_rel = safe_rel(project, o.get("path")) if isinstance(o, dict) else None
+                if o_rel and o_rel not in outputs_seen:
+                    add_output(o_rel, o.get("sha256"), None if via_input is None else run_id)
+            if via_input is not None:
+                items.append(("%s: the record of %s (which wrote its input %s) was first committed in "
+                              % (label, run_id, via_input), first_commit_of(rel), ""))
+            queue.append(rec)
+
+        def add_output(o_rel, sha, producer):
+            outputs_seen.add(o_rel)
+            what = "its output %s" % o_rel if producer is None else "%s (written by %s, an input)" % (o_rel, producer)
+            items.append(("%s: %s was first committed in " % (label, what), first_commit_of(o_rel), ""))
+            items.append(("%s: the content of %s was first committed in " % (label, what),
+                          first_commit_with_content(o_rel, sha), " (under this or another name)"))
+
+        def add_producers(inputs, of):
+            for p_rel, sha in inputs:
+                for rid in producers.get((p_rel, sha), []):
+                    add_run(rid, "writes %s, an input of %s" % (p_rel, of), p_rel)
+
         if kind == "number":
             row = numbers.latest[key][1]
-            items.append(("row", None, num_first.get(key)))
+            items.append(("%s was committed in " % label, num_first.get(key), ""))
             out_rel = safe_rel(project, row.get("output"))
             if out_rel:
-                items.append(("output", out_rel, first_commit_of(out_rel)))
-                items.append(("output content", out_rel, first_commit_with_content(out_rel, row.get("output_sha256"))))
+                add_output(out_rel, row.get("output_sha256"), None)
             if row.get("run") and str(row["run"]) in runs:
-                run_id = str(row["run"])
+                add_run(str(row["run"]), label, None)
+            add_producers(data_inputs(row, None), label)
         else:
-            run_id = label
-        if run_id in runs:
-            rel, run_rec, _err = runs[run_id]
-            items.append(("run record", rel, first_commit_of(rel)))
-            for o in (run_rec or {}).get("outputs") or []:
-                o_rel = safe_rel(project, o.get("path")) if isinstance(o, dict) else None
-                if o_rel and (kind == "run" or not any(i[1] == o_rel for i in items)):
-                    items.append(("output", o_rel, first_commit_of(o_rel)))
-                    items.append(("output content", o_rel, first_commit_with_content(o_rel, o.get("sha256"))))
-        return items, run_id, (run_rec or {}).get("git_commit")
+            add_run(key, None, None)
+        while queue:
+            add_producers(data_inputs(None, queue.pop(0)), label)
+        return items, run_list
 
+    checked_runs = set()
     for exp in todo:
         rows = plans.by_exp[exp]
         res = [(label, kind) + evidence(kind, key, label) for label, kind, key in results[exp]]
@@ -2928,29 +2993,34 @@ def _plan_order(project, plans, results, decisions, known):
                                "%s: the freeze is not committed, but results exist (%s); commit the freeze first"
                                % (exp, ", ".join(r[0] for r in res[:3]))))
         else:
-            for label, kind, items, run_id, run_commit in res:
+            for label, kind, items, run_list in res:
                 reported = set()
-                for what, rel, c in items:
+                for before, c, after in items:
                     if c is None or c in reported or (c != f1 and is_ancestor(project, f1, c)):
                         continue
                     reported.add(c)
-                    if what == "row" or (kind == "run" and what == "run record"):
-                        msg = "%s was committed in %s" % (label, c[:12])
-                    elif what == "output content":
-                        msg = "%s: the content of its output %s was first committed in %s (under this or another " \
-                              "name)" % (label, rel, c[:12])
-                    else:
-                        msg = "%s: its %s %s was first committed in %s" % (label, what, rel, c[:12])
                     out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
-                                       "%s: %s, not after the plan was frozen (%s); a plan written after its "
-                                       "results is not a pre-registration" % (exp, msg, f1[:12])))
-                if run_commit and not is_ancestor(project, f1, str(run_commit)):
-                    who = run_id if kind == "run" else "%s (%s)" % (run_id, label)
-                    out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
-                                       "%s: %s ran on commit %s, which does not contain the freeze (%s): the run "
-                                       "happened before the plan was frozen" % (exp, who, str(run_commit)[:12], f1[:12])))
-        res = [(label, c) for label, _k, items, _r, run_commit in res
-               for c in [i[2] for i in items] + [run_commit] if c]
+                                       "%s: %s%s%s, not after the plan was frozen (%s); a plan written after its "
+                                       "results is not a pre-registration" % (exp, before, c[:12], after, f1[:12])))
+                for run_id, run_commit, how in run_list:
+                    if not run_commit or (exp, run_id) in checked_runs:
+                        continue
+                    checked_runs.add((exp, run_id))
+                    who = run_id if how is None else "%s (%s)" % (run_id, how)
+                    if _git_rc(project, ["cat-file", "-e", "%s^{commit}" % run_commit]) != 0:
+                        # A squash merge, rebase or shallow clone drops the commit: the order
+                        # cannot be shown either way, so it is never asserted.
+                        out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
+                                           "%s: %s ran on commit %s, which is not in this repository (a squash merge, "
+                                           "rebase or shallow clone drops commits), so it cannot be shown to have run "
+                                           "after the plan was frozen (%s); record the run again on a commit of this "
+                                           "history" % (exp, who, str(run_commit)[:12], f1[:12])))
+                    elif not is_ancestor(project, f1, str(run_commit)):
+                        out.append(Finding(plans.rel, first_line, "PLAN-ORDER",
+                                           "%s: %s ran on commit %s, which does not contain the freeze (%s): the run "
+                                           "happened before the plan was frozen" % (exp, who, str(run_commit)[:12], f1[:12])))
+        res = [(label, c) for label, _k, items, run_list in res
+               for c in [i[1] for i in items] + [r[1] for r in run_list] if c]
         dev_path = project.path("%s/%s/deviations.md" % (EXPERIMENTS_REL, exp))
         dev_text = read_text(dev_path) if os.path.isfile(dev_path) else ""
         for lineno, row in rows[1:]:
