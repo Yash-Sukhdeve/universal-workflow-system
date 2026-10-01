@@ -225,6 +225,19 @@ EOF
     [[ "$output" == *"GATE-PI the PI approved sha256:000000000000, but the manuscript is now sha256:"* ]] || false
 }
 
+@test "publication: the example approval line in the decisions.md template is not an approval" {
+    research_make_reproducible
+    # what `check init` writes into a new decisions.md, followed by the PI's real line
+    sed_inplace '/^PUBLICATION-APPROVAL: /d' "$P/research/pi/decisions.md"
+    printf '<!-- The PI approves publication with one line:\n     PUBLICATION-APPROVAL: sha256:<hash> by <PI> -->\n' >> "$P/research/pi/decisions.md"
+    run check gate publication
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"GATE-PI no PUBLICATION-APPROVAL line"* ]] || false
+    printf 'PUBLICATION-APPROVAL: %s by pi@lab.example\n' "$(check manuscript-hash)" >> "$P/research/pi/decisions.md"
+    run check gate publication
+    [ "$status" -eq 0 ]
+}
+
 # ── C3: disclosure of synthetic data ─────────────────────────────────────────
 
 @test "C3: a sentence whose section heading says synthetic is a warning, not a block" {

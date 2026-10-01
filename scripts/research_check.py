@@ -5377,7 +5377,8 @@ def check_pi_approval(project):
     (.uws/crs/), `PUBLICATION-APPROVAL: CR-<id>` of an approved change request."""
     rel = "research/pi/decisions.md"
     path = project.path(rel)
-    text = read_text(path) if os.path.isfile(path) else ""
+    # The template's example line sits in an HTML comment; comments are not approvals
+    text = _strip_html_comments(read_text(path)) if os.path.isfile(path) else ""
     current = manuscript_hash(project)[0]
     how = "`PUBLICATION-APPROVAL: sha256:%s by <PI>`" % current
     m = APPROVAL_RE.search(text)
