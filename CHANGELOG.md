@@ -30,7 +30,8 @@ sources; the vector-memory servers, skills and SessionStart hook are unchanged.
 - `uws kb import vector --db <path> [--scope project|global] [--dry-run]` and
   `uws kb import automemory --dir <path> [--include-index] [--dry-run]` (`scripts/kb_import.py`,
   Python standard library only): a read-only SQLite connection copied into memory with the backup
-  API (only `memory_metadata` is read), or read-only file reads (`MEMORY.md` is opened only with
+  API, or for a WAL database a byte copy opened in a temporary directory, so nothing is created
+  next to the source (only `memory_metadata` is read), or read-only file reads (`MEMORY.md` is opened only with
   `--include-index`, which imports each top-level entry as `automemory#MEMORY.md:L<line>`; UWS
   never writes it). Rows become
   candidates with `evidence: inferred`, `source: [import:vector-local#<row>]` (or
