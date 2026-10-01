@@ -65,12 +65,18 @@ jobs:
             echo "::error::research_check.py must use the Python standard library only"
             exit 1
           fi
-          # scripts/kb_import.py backs `uws kb import` (tests/integration/test_kb_import.bats)
+          # scripts/kb_import.py backs `uws kb import`; tests/integration/test_kb_import.bats
+          # builds its SQLite fixtures with tests/fixtures/kb/make_vector_db.py. Both run on
+          # users' and CI machines with a bare python3, so standard library only.
           python3 -m py_compile scripts/kb_import.py tests/fixtures/kb/make_vector_db.py
-          if grep -nE '^\s*(import|from)\s+(yaml|numpy|pandas|requests|sqlite_vec)\b' scripts/kb_import.py; then
-            echo "::error::kb_import.py must use the Python standard library only"
+          if grep -nE '^\s*(import|from)\s+(yaml|numpy|pandas|requests|sqlite_vec)\b' \
+              scripts/kb_import.py tests/fixtures/kb/make_vector_db.py; then
+            echo "::error::kb_import.py and make_vector_db.py must use the Python standard library only"
             exit 1
           fi
+          # The importer reads vector-memory databases through sqlite3's read-only URI
+          # connection and backup API (Python 3.7+)
+          python3 -c 'import sqlite3, sys; assert sys.version_info >= (3, 7); print("sqlite", sqlite3.sqlite_version)'
 
       - name: Lint user-facing entry points (warnings fail)
         run: |
@@ -195,6 +201,9 @@ jobs:
         run: |
           brew install yq || echo "yq installation failed (non-critical)"
           yq --version || true
+
+      - name: Check python3 with sqlite3 (uws kb import and its tests)
+        run: python3 -c 'import sqlite3, sys; assert sys.version_info >= (3, 7); print(sys.version.split()[0], "sqlite", sqlite3.sqlite_version)'
 
       - name: Make scripts executable
         run: |
