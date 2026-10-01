@@ -453,7 +453,7 @@ session() {  # session <name> <words...>: one session that searches for <words>
     cp .workflow/state.yaml .workflow/checkpoints.log "$fake/.workflow/"
     seed K-20260101-000001 fact "Topic1 fact"
     cp "${KB}/items/K-20260101-000001.md" "$fake/docs/kb/items/"
-    (cd "$fake" && git init -q && git config user.email "$PI" && printf 'line one\n' > f && git add -A && git commit -qm init)
+    (cd "$fake" && git init -q && git config user.email "$PI" && git config user.name "PI" && printf 'line one\n' > f && git add -A && git commit -qm init)
     export UWS_KB_GUARD_ROOT="$fake"
     cd "$fake"
     "$UWS" sdlc start >/dev/null
