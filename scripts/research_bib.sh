@@ -21,8 +21,9 @@
 #       Ingest a file the PI supplied (for example when every endpoint blocks scripts).
 #       The same strict parser applies and the PI decision ID is recorded.
 #   research_bib.sh build [--out <path>]
-#       Write references.bib as the concatenation of bib_sources/*.bib (default
-#       paper/references.bib if it exists, else references.bib).
+#       Write references.bib as the concatenation of bib_sources/*.bib (default: the
+#       existing paper/references.bib or references.bib; a new one goes to
+#       paper/references.bib when paper/ exists, else to references.bib).
 #
 # Strictness: a response is stored only if it is HTTP 200, not HTML, and parses as
 # exactly one BibTeX entry with a title. Otherwise nothing is written (DBLP answers

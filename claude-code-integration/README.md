@@ -33,7 +33,8 @@ git add .uws/ .claude/ .workflow/ CLAUDE.md .gitignore && git commit -m "Add UWS
 
 1. **Auto-loads context** - On session start, Claude automatically knows your project state
 2. **Auto-checkpoints** - Before context compaction, state is saved automatically
-3. **Simple commands** - `/uws-status`, `/uws-checkpoint`, `/uws-recover`
+3. **Slash commands** - `/uws`, `/uws-status`, `/uws-checkpoint`, `/uws-recover`, `/uws-handoff`,
+   `/uws-sdlc`, `/uws-research`
 
 ## Files Created
 
@@ -41,7 +42,7 @@ git add .uws/ .claude/ .workflow/ CLAUDE.md .gitignore && git commit -m "Add UWS
 your-project/
 ├── .uws/                    # UWS engine (commit this: settings.json points here)
 │   ├── hooks/               # Claude Code hooks
-│   └── scripts/             # sdlc.sh, research.sh, checkpoint.sh
+│   └── scripts/             # sdlc.sh, research.sh, checkpoint.sh, common.sh
 ├── .workflow/               # Project state (commit this!)
 │   ├── state.yaml           # Current phase/checkpoint
 │   ├── handoff.md           # Human-readable context
@@ -54,12 +55,18 @@ your-project/
 
 ## Slash Commands
 
-| Command | Description |
-|---------|-------------|
-| `/uws-status` | Show current workflow state |
-| `/uws-checkpoint "msg"` | Create a checkpoint with message |
-| `/uws-recover` | Full context recovery after break |
-| `/uws-handoff` | Prepare handoff before session end |
+| Command | Purpose |
+|---------|---------|
+| `/uws` | List the UWS commands |
+| `/uws-status` | Show current state |
+| `/uws-checkpoint "msg"` | Create checkpoint |
+| `/uws-recover` | Full context recovery |
+| `/uws-handoff` | Prepare for session end |
+| `/uws-sdlc <action>` | SDLC phases: status, start, next, goto, fail, reset |
+| `/uws-research <action>` | Research phases: status, start, next, goto, reject, reset |
+
+These bundled scripts have no goal-driven deliverable gate, research checks, knowledge
+base or subagents; those come with the plugin and the `uws` CLI (main README).
 
 ## Session Workflow
 
@@ -120,11 +127,17 @@ Claude Code hooks require the project to be opened with `claude` command in the 
 
 ## Uninstall
 
+From a clone of this repository, run the uninstaller inside the project:
+
 ```bash
-rm -rf .uws .workflow/.uws-*
-# Remove UWS section from CLAUDE.md manually
-# Remove hooks from .claude/settings.json manually
+/path/to/universal-workflow-system/claude-code-integration/uninstall.sh --dry-run   # what it would remove
+/path/to/universal-workflow-system/claude-code-integration/uninstall.sh            # asks before removing
 ```
+
+It copies `.workflow/` to `.workflow.backup.<date>` (it asks first), then removes
+`.workflow/`, `.uws/`, the `uws*` slash commands, the UWS hooks and permissions in
+`.claude/settings.json` and the UWS section of `CLAUDE.md`. `--force` skips the prompts.
+It also runs as `curl -fsSL .../claude-code-integration/uninstall.sh | bash`.
 
 ## License
 

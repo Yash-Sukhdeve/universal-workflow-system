@@ -64,10 +64,13 @@ your-project/
 ├── .claude/
 │   ├── settings.json          # Hook configuration + permissions
 │   └── commands/
+│       ├── uws.md             # /uws (lists the commands)
 │       ├── uws-status.md      # /uws-status command
 │       ├── uws-checkpoint.md  # /uws-checkpoint command
 │       ├── uws-recover.md     # /uws-recover command
-│       └── uws-handoff.md     # /uws-handoff command
+│       ├── uws-handoff.md     # /uws-handoff command
+│       ├── uws-sdlc.md        # /uws-sdlc command
+│       └── uws-research.md    # /uws-research command
 │
 └── CLAUDE.md                  # Updated with UWS instructions
 ```
@@ -203,7 +206,8 @@ Check commands exist:
 ls -la .claude/commands/
 ```
 
-Should show: `uws-status`, `uws-checkpoint`, `uws-recover`, `uws-handoff`
+Should show: `uws.md`, `uws-status.md`, `uws-checkpoint.md`, `uws-recover.md`,
+`uws-handoff.md`, `uws-sdlc.md`, `uws-research.md`
 
 ### Checkpoints not incrementing?
 
@@ -287,10 +291,16 @@ echo "${TIMESTAMP} | ${NEW_CP} | Auto-checkpoint (${GIT_HASH})" >> "$CHECKPOINT_
 
 | Command | Purpose |
 |---------|---------|
+| `/uws` | List the UWS commands |
 | `/uws-status` | Show current state |
 | `/uws-checkpoint "msg"` | Create checkpoint |
 | `/uws-recover` | Full context recovery |
 | `/uws-handoff` | Prepare for session end |
+| `/uws-sdlc <action>` | SDLC phases: status, start, next, goto, fail, reset |
+| `/uws-research <action>` | Research phases: status, start, next, goto, reject, reset |
+
+These bundled scripts have no goal-driven deliverable gate, research checks, knowledge
+base or subagents; those come with the plugin and the `uws` CLI (main README).
 
 | File | Purpose |
 |------|---------|
