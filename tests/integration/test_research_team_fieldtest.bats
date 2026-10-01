@@ -390,23 +390,97 @@ nostate_setup() {
     git -C "$NOSTATE" init -q
 }
 
+# inst_listing: every path under the UWS copy, so a test can show that nothing was added.
+inst_listing() {
+    (cd "$INST" && find . -print | LC_ALL=C sort)
+}
+
 @test "P2 init: research check init needs no .workflow (uws and research.sh), and never writes into UWS itself" {
     nostate_setup
+    local before
+    before="$(inst_listing)"
     cd "$NOSTATE"
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research check init
     echo "$output"
     [ "$status" -eq 0 ]
     [ -f "$NOSTATE/research/ledger/claims.jsonl" ]
     [ ! -e "$INST/research" ]
+    # Neither the project nor the installation gets a .workflow (or logs in one): a stray
+    # project .workflow would make uws treat the directory as a UWS project from then on.
+    [ ! -e "$NOSTATE/.workflow" ]
+    [ "$(inst_listing)" = "$before" ]
     rm -rf "$NOSTATE/research" "$NOSTATE/bib_sources"
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/scripts/research.sh" check init
     echo "$output"
     [ "$status" -eq 0 ]
     [ -f "$NOSTATE/research/ledger/numbers.jsonl" ]
     [ ! -e "$INST/research" ]
+    [ ! -e "$NOSTATE/.workflow" ]
     run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/scripts/research.sh" check ledger
     [ "$status" -eq 0 ]
     [[ "$output" == *"ledger: PASS"* ]]
+    [ ! -e "$NOSTATE/.workflow" ]
+    [ "$(inst_listing)" = "$before" ]
+    run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" status
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"No UWS project found"* ]]
+}
+
+@test "P2 no .workflow: a check or bib build from a subdirectory finds the project and writes nothing else" {
+    nostate_setup
+    python3 "$CHECK" --root "$NOSTATE" init >/dev/null
+    mkdir -p "$NOSTATE/paper"
+    cd "$NOSTATE/paper"
+    run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research check ledger
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ledger: PASS"* ]]
+    [ ! -e "$NOSTATE/paper/.workflow" ]
+    [ ! -e "$NOSTATE/.workflow" ]
+    run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research bib build
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -f "$NOSTATE/references.bib" ]
+    [ ! -e "$NOSTATE/paper/references.bib" ]
+    [ ! -e "$NOSTATE/paper/.workflow" ]
+}
+
+@test "P2 no .workflow: uws research bib build works as the first command; a deliverable number still needs a project" {
+    nostate_setup
+    local before
+    before="$(inst_listing)"
+    mkdir -p "$NOSTATE/research/ledger" "$NOSTATE/paper"
+    cp -R "${RFIX}/project/bib_sources" "$NOSTATE/"
+    cd "$NOSTATE"
+    run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research bib build --out paper/references.bib
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q '@[A-Za-z]*{sandve2013,' "$NOSTATE/paper/references.bib"
+    [ ! -e "$NOSTATE/.workflow" ]
+    [ "$(inst_listing)" = "$before" ]
+    run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/bin/uws" research check 2
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"No UWS project found"* ]]
+    [ ! -e "$NOSTATE/.workflow" ]
+}
+
+@test "P2 research.sh: phase actions never use the .workflow of the UWS installation" {
+    nostate_setup
+    printf 'project_type: "research"\ncurrent_phase: "phase_1_planning"\n' > "$INST/.workflow/state.yaml"
+    local before
+    before="$(inst_listing)"
+    cp "$INST/.workflow/state.yaml" "$TEST_TMP_DIR/inst-state.yaml"
+    cd "$NOSTATE"
+    local action
+    for action in start next status; do
+        run env -u WORKFLOW_DIR -u UWS_ROOT "$INST/scripts/research.sh" "$action"
+        echo "$output"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"research.sh ${action} needs .workflow/state.yaml"* ]]
+        cmp "$INST/.workflow/state.yaml" "$TEST_TMP_DIR/inst-state.yaml"
+    done
+    [ ! -e "$NOSTATE/.workflow" ]
+    [ "$(inst_listing)" = "$before" ]
 }
 
 @test "P2 research.sh: an action that needs workflow state says so" {

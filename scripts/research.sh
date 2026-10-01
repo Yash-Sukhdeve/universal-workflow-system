@@ -34,32 +34,6 @@ readonly MAGENTA='\033[0;35m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m'
 
-# Source utility libraries
-source_lib() {
-    local lib="$1"
-    if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
-        # Suppress yq warning noise
-        # shellcheck source=/dev/null
-        YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/${lib}"
-        return 0
-    fi
-    return 1
-}
-
-# decisions.log lives in the project's .workflow/logs (decision_utils.sh defaults to a
-# CWD-relative path, which is wrong when research.sh runs from a subdirectory).
-# shellcheck disable=SC2034  # read by decision_utils.sh
-DECISION_LOG_DIR="${WORKFLOW_DIR}/logs"
-
-# Source core utilities
-source_lib "yaml_utils.sh" || true
-source_lib "atomic_utils.sh" || true
-source_lib "validation_utils.sh" || true
-source_lib "logging_utils.sh" || true
-source_lib "workflow_routing.sh" || true
-source_lib "decision_utils.sh" || true
-source_lib "kb_utils.sh" || true   # meta-learning outcomes (docs/kb/outcomes.tsv)
-
 PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
 # Subcommands of `research.sh check <name>` that run the evidence checker instead of
@@ -85,9 +59,11 @@ validate_workflow() {
 
 #######################################
 # Run the evidence checker (docs/design/research-team.md section 6.6). It needs no
-# workflow state. When no .workflow belongs to this project, the checker finds the project
-# from the current directory (nearest research/ledger, else the current directory), so
-# `check init` scaffolds here and never inside the UWS installation.
+# workflow state. When no .workflow belongs to this project, no --root is passed and the
+# checker finds the project itself: the nearest directory, from the current one upwards,
+# with research/ledger or .workflow, else the current directory. So `check init` scaffolds
+# here and never inside the UWS installation, and a check from a subdirectory (paper/)
+# finds the project.
 # Arguments: checker command and its arguments
 #######################################
 run_checker() {
@@ -102,7 +78,8 @@ run_checker() {
 }
 
 #######################################
-# Run the BibTeX fetcher; like the checker it needs no workflow state.
+# Run the BibTeX fetcher; like the checker it needs no workflow state (and finds the
+# project the same way when no .workflow belongs to it).
 #######################################
 run_bib() {
     if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" ]]; then
@@ -110,6 +87,107 @@ run_bib() {
     fi
     UWS_RESEARCH_ROOT="$PROJECT_ROOT" exec bash "${SCRIPT_DIR}/research_bib.sh" "$@"
 }
+
+#######################################
+# Usage text (needs no workflow state and no library)
+#######################################
+show_usage() {
+    echo "Usage: ./scripts/research.sh [action] [details]"
+    echo ""
+    echo "Actions:"
+    echo "  status  Show current research phase (default)"
+    echo "  start   Begin research at hypothesis phase"
+    echo "  next    Advance to next phase"
+    echo "  reject  Report rejected hypothesis or failed analysis"
+    echo "  reset   Reset research state to start over"
+    echo "  check <n>                  Mark deliverable <n> of the current phase done"
+    echo ""
+    echo "Research team (active when research/ledger exists; docs/design/research-team.md)."
+    echo "The checks and bib need no .workflow/state.yaml:"
+    echo "  check init                 Scaffold research/ and bib_sources/"
+    echo "  check ledger|bib|quotes|numbers|claims|slop   Run one evidence check"
+    echo "  check numbers add '<json>' Append a validated number row (claims add: a claim row)"
+    echo "  check gate <phase>         Run a phase's evidence gate (next runs it too)"
+    echo "  check plan [new|freeze <EXP-ID>]   Pre-register an experiment plan (frozen by hash)"
+    echo "  check data [add <path> ...]        Data manifest: hashes, sources, splits, seeds"
+    echo "  check run [--exp E] [--input P] [--code P] [--output P|GLOB] -- <cmd>   Run and record a command"
+    echo "  check repro <N-ID ...|all> Re-run recorded commands in a scratch copy and compare"
+    echo "  check retraction [--online]        Retraction notices (Crossref) for bib_sources/"
+    echo "  check manuscript-hash      The hash a red-team review must name"
+    echo "  check macros               Write the number macros from the number ledger"
+    echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
+    echo "  bib build                  Write references.bib from bib_sources/ only"
+    echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"
+    echo ""
+    echo "Research Phases (Scientific Method):"
+    echo "  hypothesis → literature_review → experiment_design → data_collection"
+    echo "    → analysis → peer_review → publication"
+    echo ""
+    echo "Rejection Handling:"
+    echo "  literature_review rejected → returns to hypothesis"
+    echo "  experiment_design rejected → returns to hypothesis"
+    echo "  data issues               → returns to experiment_design"
+    echo "  analysis rejected          → returns to experiment_design"
+    echo "  peer_review rejected       → returns to analysis"
+    echo "  publication rejected       → returns to analysis"
+    echo ""
+    echo "Note: Negative results are valuable in research!"
+}
+
+# Dispatch what needs no workflow state before any library is sourced, and refuse the
+# actions that need it when there is none: logging_utils.sh and decision_utils.sh create
+# log directories as soon as they are sourced (LOG_DIR in the current directory,
+# DECISION_LOG_DIR in WORKFLOW_DIR). In a project without .workflow that would leave a stray
+# .workflow/ in the project (which uws then takes for a UWS project) and write into the UWS
+# installation that resolve_project.sh falls back to.
+case "${1:-status}" in
+    check)
+        if [[ -n "${2:-}" && "$RESEARCH_CHECK_COMMANDS" == *" ${2} "* ]]; then
+            shift
+            run_checker "$@"
+        fi
+        validate_workflow check
+        ;;
+    bib)
+        shift
+        run_bib "$@"
+        ;;
+    help|--help|-h)
+        show_usage
+        exit 0
+        ;;
+    *)
+        validate_workflow "${1:-status}"
+        ;;
+esac
+
+# Source utility libraries
+source_lib() {
+    local lib="$1"
+    if [[ -f "${SCRIPT_LIB_DIR}/${lib}" ]]; then
+        # Suppress yq warning noise
+        # shellcheck source=/dev/null
+        YAML_UTILS_QUIET=true source "${SCRIPT_LIB_DIR}/${lib}"
+        return 0
+    fi
+    return 1
+}
+
+# Logs live in the project's .workflow/logs: logging_utils.sh and decision_utils.sh default
+# to a CWD-relative path, which is wrong when research.sh runs from a subdirectory.
+# shellcheck disable=SC2034  # read by logging_utils.sh and decision_utils.sh
+LOG_DIR="${LOG_DIR:-${WORKFLOW_DIR}/logs}"
+# shellcheck disable=SC2034
+DECISION_LOG_DIR="${WORKFLOW_DIR}/logs"
+
+# Source core utilities
+source_lib "yaml_utils.sh" || true
+source_lib "atomic_utils.sh" || true
+source_lib "validation_utils.sh" || true
+source_lib "logging_utils.sh" || true
+source_lib "workflow_routing.sh" || true
+source_lib "decision_utils.sh" || true
+source_lib "kb_utils.sh" || true   # meta-learning outcomes (docs/kb/outcomes.tsv)
 
 #######################################
 # Get current research phase safely
@@ -482,19 +560,8 @@ main() {
     local details="${2:-}"
     local extra="${3:-}"
 
-    # The evidence checker and the BibTeX fetcher work from the project files alone.
-    if [[ "$action" == "check" && -n "$details" && "$RESEARCH_CHECK_COMMANDS" == *" ${details} "* ]]; then
-        shift
-        run_checker "$@"
-    fi
-    if [[ "$action" == "bib" ]]; then
-        shift
-        run_bib "$@"
-    fi
-    case "$action" in
-        help|--help|-h) ;;
-        *) validate_workflow "$action" ;;
-    esac
+    # `check <name>`, `bib` and `help` were dispatched, and the workflow state validated,
+    # before the libraries were sourced (above).
 
     # Methodology guard: warn if research workflow is not active for this project type
     if declare -f is_methodology_active > /dev/null 2>&1; then
@@ -730,46 +797,7 @@ main() {
             ;;
 
         help|--help|-h)
-            echo "Usage: ./scripts/research.sh [action] [details]"
-            echo ""
-            echo "Actions:"
-            echo "  status  Show current research phase (default)"
-            echo "  start   Begin research at hypothesis phase"
-            echo "  next    Advance to next phase"
-            echo "  reject  Report rejected hypothesis or failed analysis"
-            echo "  reset   Reset research state to start over"
-            echo "  check <n>                  Mark deliverable <n> of the current phase done"
-            echo ""
-            echo "Research team (active when research/ledger exists; docs/design/research-team.md)."
-            echo "The checks and bib need no .workflow/state.yaml:"
-            echo "  check init                 Scaffold research/ and bib_sources/"
-            echo "  check ledger|bib|quotes|numbers|claims|slop   Run one evidence check"
-            echo "  check numbers add '<json>' Append a validated number row (claims add: a claim row)"
-            echo "  check gate <phase>         Run a phase's evidence gate (next runs it too)"
-            echo "  check plan [new|freeze <EXP-ID>]   Pre-register an experiment plan (frozen by hash)"
-            echo "  check data [add <path> ...]        Data manifest: hashes, sources, splits, seeds"
-            echo "  check run [--exp E] [--input P] [--code P] [--output P|GLOB] -- <cmd>   Run and record a command"
-            echo "  check repro <N-ID ...|all> Re-run recorded commands in a scratch copy and compare"
-            echo "  check retraction [--online]        Retraction notices (Crossref) for bib_sources/"
-            echo "  check manuscript-hash      The hash a red-team review must name"
-            echo "  check macros               Write the number macros from the number ledger"
-            echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
-            echo "  bib build                  Write references.bib from bib_sources/ only"
-            echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"
-            echo ""
-            echo "Research Phases (Scientific Method):"
-            echo "  hypothesis → literature_review → experiment_design → data_collection"
-            echo "    → analysis → peer_review → publication"
-            echo ""
-            echo "Rejection Handling:"
-            echo "  literature_review rejected → returns to hypothesis"
-            echo "  experiment_design rejected → returns to hypothesis"
-            echo "  data issues               → returns to experiment_design"
-            echo "  analysis rejected          → returns to experiment_design"
-            echo "  peer_review rejected       → returns to analysis"
-            echo "  publication rejected       → returns to analysis"
-            echo ""
-            echo "Note: Negative results are valuable in research!"
+            show_usage
             ;;
 
         *)
