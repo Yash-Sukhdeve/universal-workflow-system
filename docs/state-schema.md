@@ -25,8 +25,8 @@ context_bridge:
 
 # Metadata
 metadata:
-  version: "1.0.0"
-  workflow_version: "1.0.0"
+  version: "1.2.0"          # the UWS release that wrote the file (VERSION)
+  workflow_version: "1.2.0"
   created: "2026-02-17T10:00:00-05:00"
 ```
 

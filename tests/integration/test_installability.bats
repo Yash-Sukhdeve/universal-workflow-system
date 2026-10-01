@@ -567,3 +567,24 @@ no_stale_hint() {
     run grep -c 'Bash 4.0+ required' "${PROJECT_ROOT}/install.sh"
     [ "$output" = "0" ]
 }
+
+# ── Version ───────────────────────────────────────────────────────────────
+
+@test "version: one release number everywhere (VERSION, plugin.json, installers, CLI, new state.yaml)" {
+    local v
+    v="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
+    [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || false
+    # Claude Code detects a plugin update by the manifest's version: it moves with VERSION
+    [ "$(jq -r .version "$PLUGIN_DIR/.claude-plugin/plugin.json")" = "$v" ]
+    [ "$(tr -d '[:space:]' < "$PLUGIN_DIR/VERSION")" = "$v" ]
+    [ "$("${PROJECT_ROOT}/bin/uws" version)" = "uws $v" ]
+    [ "$("$PLUGIN_DIR/bin/uws" version)" = "uws $v" ]
+    grep -q "^UWS_VERSION=\"$v\"" "${PROJECT_ROOT}/claude-code-integration/install.sh"
+    grep -q "^# Version $v\$" "${PROJECT_ROOT}/claude-code-integration/uninstall.sh"
+    grep -q "^UWS_VERSION=\"$v\"" "${PROJECT_ROOT}/antigravity-integration/install.sh"
+    cd "$PROJ"
+    UWS_SKIP_VECTOR_MEMORY=true "${PROJECT_ROOT}/bin/uws" init software </dev/null >/dev/null
+    grep -q "^  version: \"$v\"" .workflow/state.yaml
+    run "${PROJECT_ROOT}/bin/uws" status </dev/null
+    [[ "$output" == *"Universal Workflow System v${v} "* ]] || false
+}

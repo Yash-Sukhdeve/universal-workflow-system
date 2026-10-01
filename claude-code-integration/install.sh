@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # UWS (Universal Workflow System) - Claude Code Integration Installer
-# Version 1.3.0
+# Version 1.2.0 (the UWS release; VERSION at the repository root holds it)
 #
 # One-liner installation:
 #   curl -fsSL https://raw.githubusercontent.com/Yash-Sukhdeve/universal-workflow-system/master/claude-code-integration/install.sh | bash
@@ -10,7 +10,7 @@
 # Or clone and run:
 #   ./install.sh [--yes]
 #
-# Fixes in 1.3.0:
+# Fixes since the installers of February 2026:
 #   - Slash commands written as .md files (Claude Code ignores files without .md)
 #   - Hooks written in the nested settings.json format Claude Code loads
 #   - Prompts read from /dev/tty so `curl | bash` works; --yes for unattended installs
@@ -64,7 +64,7 @@ NC='\033[0m'
 [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]] || { RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; BOLD=''; NC=''; }
 
 # Configuration
-UWS_VERSION="1.3.0"
+UWS_VERSION="1.2.0"   # the UWS release (VERSION); tests check that they agree
 PROJECT_DIR="${PWD}"
 UWS_DIR="${PROJECT_DIR}/.uws"
 WORKFLOW_DIR="${PROJECT_DIR}/.workflow"
@@ -252,8 +252,8 @@ chmod +x "${UWS_DIR}/hooks/pre_compact.sh"
 
 echo -e "  ${GREEN}✓${NC} Hooks created (git-guarded)"
 
-# Clean up stale files from earlier versions: v1.1.0 commands that no longer exist,
-# and the extensionless command files v1.2.0 wrote (Claude Code never loaded them).
+# Clean up stale files from earlier installers: commands that no longer exist, and the
+# extensionless command files the February 2026 installer wrote (Claude Code never loaded them).
 STALE_COMMANDS=("uws-pm" "uws-spiral" "uws-submit" "uws-review"
                 "uws" "uws-status" "uws-checkpoint" "uws-recover" "uws-handoff" "uws-sdlc" "uws-research")
 for cmd in "${STALE_COMMANDS[@]}"; do
@@ -1194,9 +1194,9 @@ if [[ -f "$SETTINGS_FILE" ]]; then
         TEMP_SETTINGS=$(mktemp)
 
         # Merge: add UWS permissions (deduplicated), drop stale UWS permissions, refresh hooks.
-        # v1.2.0 wrote .hooks as a flat array, which Claude Code ignores; an array is
-        # replaced by an object. Other tools' hook groups in the object form are preserved.
-        # Broad permissions that v1.2.0 itself added; only dropped when upgrading a UWS install.
+        # The February 2026 installer wrote .hooks as a flat array, which Claude Code ignores; an
+        # array is replaced by an object. Other tools' hook groups in the object form are preserved.
+        # Broad permissions that installer itself added; only dropped when upgrading a UWS install.
         LEGACY_PERMS='[]'
         if [[ -n "${EXISTING_VERSION:-}" ]]; then
             LEGACY_PERMS='["Bash(git:*)","Bash(sed:*)","Bash(date:*)"]'
@@ -1222,7 +1222,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
         fi
     else
         # No jq available - check if file has UWS hooks already
-        # A v1.2.0 flat-array hook entry ("event": ...) does not load, so it needs the merge too
+        # An earlier installer's flat-array hook entry ("event": ...) does not load, so it needs the merge too
         if grep -q ".uws/hooks" "$SETTINGS_FILE" 2>/dev/null && ! grep -q '"event"' "$SETTINGS_FILE" 2>/dev/null; then
             echo -e "  ${YELLOW}→${NC} UWS hooks already present in settings.json, keeping"
         else

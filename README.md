@@ -1,7 +1,7 @@
-# Universal Workflow System (UWS) v1.1.0
+# Universal Workflow System (UWS)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](#)
+[![Release](https://img.shields.io/github/v/release/Yash-Sukhdeve/universal-workflow-system)](https://github.com/Yash-Sukhdeve/universal-workflow-system/releases)
 [![CI](https://github.com/Yash-Sukhdeve/universal-workflow-system/actions/workflows/ci.yml/badge.svg)](https://github.com/Yash-Sukhdeve/universal-workflow-system/actions)
 
 **Context-preserving workflow system for AI-assisted development.** Maintains state across sessions, survives context resets, and works with any project type.

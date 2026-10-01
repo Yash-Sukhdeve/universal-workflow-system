@@ -143,6 +143,8 @@ jobs:
           cp -RL plugins/uws "$materialized"
           claude plugin validate "$materialized"
           test -x "$materialized/bin/uws"
+          # one release number: VERSION ships with the plugin and matches its manifest
+          test "$(tr -d '[:space:]' < "$materialized/VERSION")" = "$(jq -r .version "$materialized/.claude-plugin/plugin.json")"
           test -x "$materialized/scripts/init_workflow.sh"
           ls "$materialized"/agents/uws-*.md
           test -f "$materialized/skills/uws-kb/SKILL.md"

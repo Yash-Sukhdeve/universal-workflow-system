@@ -15,7 +15,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Configuration
-UWS_VERSION="1.0.0"
+UWS_VERSION="1.2.0"   # the UWS release (VERSION); tests check that they agree
 PROJECT_DIR="${PWD}"
 UWS_DIR="${PROJECT_DIR}/.uws"
 WORKFLOW_DIR="${PROJECT_DIR}/.workflow"

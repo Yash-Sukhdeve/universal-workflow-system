@@ -90,9 +90,9 @@ Update the handoff document:
 - `CLAUDE.md`
 
 The installer adds only machine-local files to `.gitignore`
-(`.claude/settings.local.json`, settings backups). Installers before 1.3.0 ignored
-`.uws/` and `.claude/`, which left clones with hooks that silently did nothing; the
-1.3.0 installer removes those entries when it upgrades a project.
+(`.claude/settings.local.json`, settings backups). Installers before September 2026
+ignored `.uws/` and `.claude/`, which left clones with hooks that silently did nothing;
+the current installer removes those entries when it upgrades a project.
 
 ## Hooks
 
@@ -106,10 +106,10 @@ The installer adds only machine-local files to `.gitignore`
 ### Context not loading?
 1. Check `.uws/hooks/` scripts are executable: `chmod +x .uws/hooks/*.sh`
 2. Verify `.claude/settings.json` has `"hooks": {"SessionStart": [...]}` (an object keyed
-   by event). A `"hooks": [...]` list is the pre-1.3.0 format Claude Code ignores:
+   by event). A `"hooks": [...]` list is an older installer's format, which Claude Code ignores:
    re-run the installer to migrate it.
 3. Commands missing from `/`? They must be `.claude/commands/uws-*.md`; files without
-   `.md` (written by installer 1.2.0) are not loaded. Re-run the installer.
+   `.md` (written by the February 2026 installer) are not loaded. Re-run the installer.
 4. Run `claude --debug` and look for `SessionStart` in the hook log, or run `/uws-recover`.
 
 ### Checkpoints not incrementing?

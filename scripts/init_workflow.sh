@@ -11,6 +11,10 @@ PROJECT_ROOT="$(pwd)"
 # Accept project type as argument
 PROJECT_TYPE_ARG="${1:-}"
 
+# The UWS release (VERSION at the install's root), recorded in state.yaml metadata
+UWS_RELEASE="$(tr -d '[:space:]' 2>/dev/null < "${SCRIPT_DIR}/../VERSION" || true)"
+UWS_RELEASE="${UWS_RELEASE:-unknown}"
+
 # Source utility libraries
 if [[ -f "${SCRIPT_DIR}/lib/uws_config.sh" ]]; then
     source "${SCRIPT_DIR}/lib/uws_config.sh"
@@ -196,8 +200,8 @@ phases:
 methodology_progress:
 
 metadata:
-  version: "1.1.0"
-  workflow_version: "1.1.0"
+  version: "${UWS_RELEASE}"
+  workflow_version: "${UWS_RELEASE}"
   created: "$(date -Iseconds)"
 EOF
     

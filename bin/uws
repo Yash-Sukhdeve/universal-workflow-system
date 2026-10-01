@@ -8,8 +8,6 @@
 
 set -euo pipefail
 
-UWS_VERSION="1.1.0"
-
 # ── Resolve symlinks to find the real UWS installation directory ───────────
 
 resolve_uws_dir() {
@@ -25,6 +23,11 @@ resolve_uws_dir() {
 }
 
 UWS_INSTALL_DIR="$(resolve_uws_dir)"
+
+# The release number has one source: VERSION at the install's root (the plugin ships it
+# too); .claude-plugin/plugin.json must carry the same number (tests/unit/test_uws_cli.bats)
+UWS_VERSION="$(tr -d '[:space:]' 2>/dev/null < "${UWS_INSTALL_DIR}/VERSION" || true)"
+UWS_VERSION="${UWS_VERSION:-unknown}"
 
 # shellcheck source=scripts/lib/uws_ui.sh
 source "${UWS_INSTALL_DIR}/scripts/lib/uws_ui.sh"
