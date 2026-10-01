@@ -425,6 +425,10 @@ no_stale_hint() {
     [[ "$ctx" == *"methodology: not started (/uws:sdlc start or /uws:research start)"* ]] || false
     [[ "$ctx" != *" uws "* ]] || false
     grep -q 'next step: `/uws:sdlc goal' "$PROJ/.workflow/handoff.md"
+    # the resume command in the handoff template is the plugin's, not a bare `uws`
+    grep -qx '/uws:recover' "$PROJ/.workflow/handoff.md"
+    run grep -c '^uws ' "$PROJ/.workflow/handoff.md"
+    [ "$output" = "0" ]
     # Once the goal is set and SDLC started, nothing tells the model to do them again
     "$MAT/bin/uws" sdlc goal "A calculator" </dev/null >/dev/null
     "$MAT/bin/uws" sdlc start </dev/null >/dev/null

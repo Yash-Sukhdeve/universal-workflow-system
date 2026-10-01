@@ -240,8 +240,14 @@ create_handoff_template() {
 - **Checkpoint**: CP_1_001
 <!-- uws:managed:end -->"
     fi
-    local init_date
+    local init_date resume
     init_date="$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)"
+    # The command that resumes a session, as this user reaches UWS (lib/uws_ui.sh)
+    if uws_in_plugin; then
+        resume="/uws:recover"
+    else
+        resume="$(uws_hint recover)          # with the Claude Code plugin: /uws:recover"
+    fi
 
     cat > .workflow/handoff.md << EOF
 # Context Handoff Document
@@ -263,7 +269,7 @@ ${summary_block}
 
 ## Commands to Resume
 \`\`\`bash
-uws recover          # or ./uws recover; in Claude Code: /uws:recover
+${resume}
 \`\`\`
 
 ## Notes
@@ -613,6 +619,12 @@ main() {
     echo "🚀 Initializing ${PROJECT_TYPE} workflow..."
     echo ""
 
+    # Hints (handoff template, next steps) name the per-project ./uws wrapper when this
+    # run creates it
+    if [[ "${UWS_NO_WRAPPER:-false}" != "true" && -z "${UWS_CMD:-}" ]] && ! uws_in_plugin; then
+        UWS_CMD="./uws"
+    fi
+
     # Check for existing workflow
     check_existing_workflow
 
@@ -643,10 +655,6 @@ main() {
     echo "═══════════════════════════════════════════════════════════════"
     echo -e "${GREEN}Workflow system initialized successfully!${NC}"
     echo ""
-    # Hints name the per-project ./uws wrapper when this run created it
-    if [[ "${UWS_NO_WRAPPER:-false}" != "true" && -z "${UWS_CMD:-}" ]] && ! uws_in_plugin; then
-        UWS_CMD="./uws"
-    fi
     local m="sdlc" m_name="SDLC"
     [[ "$PROJECT_TYPE" == "research" ]] && { m="research"; m_name="the research workflow"; }
     echo "Next steps:"
