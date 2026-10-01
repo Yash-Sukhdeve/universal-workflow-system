@@ -1,7 +1,7 @@
 # UWS Knowledge Base and Meta-Learning: Design
 
-- Status: increments 1 and 3 implemented (sections 16 and 17 say what was built and where it
-  differs)
+- Status: increments 1, 2 and 3 implemented (sections 16, 18 and 17 say what was built and
+  where it differs)
 - Author role: uws-architect subagent, 2026-09-24
 - Repo state read: `chore/cleanup`, started at `ad6ff7a`, rechecked at `8c2372f` (only Company OS
   removal in between; no cited file changed except `.gitignore` line numbers, updated here)
@@ -576,6 +576,10 @@ cache for `relevance` (rebuild-only; I5 still holds).
 Note (2026-09-30): increment 3 (meta-learning) was implemented before increment 2 (global KB
 and imports) because the PI gave it priority. Section 17 records what was built.
 
+Note (2026-09-30, later): increment 2 is implemented: the global KB, both imports, TASK.md
+leads, the usage log with R4 and the R4-unused-share metric. Section 18 records what was built.
+Increments 4 (claim ledger) and 5 (vector cache) are not started.
+
 ## 14. Decisions needed from the PI
 
 - **D1 Where the project KB lives.** `.workflow/kb/` (tracked; the original recommendation) conflicted with the
@@ -736,11 +740,184 @@ and `uws kb stats --short` add `KB: N meta-learning proposal(s) await the PI (uw
 proposals).` while any wait; the hook stays inside its 1200-byte budget (tested).
 
 **Differences from section 6.**
-- The R4-unused-share metric is not built: R4 usage counts do not exist yet (increment 2), and
-  they would live in the machine-local `.cache/`, not in `outcomes.tsv`. `learn` prints that it
-  is not measured.
+- The R4-unused-share metric was not built in this increment: R4 usage counts did not exist
+  yet, and they live in the machine-local `.cache/`, not in `outcomes.tsv`. Increment 2 built
+  both (section 18).
 - A repeated `gate_fail` reason produces one proposal (the checklist line); no separate lesson
   item is written, so that `learn` creates only proposals.
 - `learn` needs the KB inside the project (proposals cite `outcomes.tsv` by a project path).
 - The alternative model (haiku -> sonnet -> opus, opus -> sonnet) and the trust-weight factor
   are heuristics; the proposals say so.
+
+## 18. Increment 2 as built: global KB, imports, TASK.md leads, R4 (2026-09-30)
+
+Code: `scripts/kb.sh` (scope, `init`, `import`, `dispute`, R4 in `prune` and `learn`),
+`scripts/lib/kb_utils.sh` (`kb_global_*`, `kb_guarded`, `kb_session_id`, `kb_usage_record`),
+`scripts/kb_import.py` (read-only readers, Python standard library only), `scripts/orchestrate.sh`
+(`kb_brief_section`), `bin/uws` (global verbs outside a project), `tests/helpers/test_helper.bash`
+(guard). Tests: `tests/integration/test_kb_global.bats`, `test_kb_import.bats`,
+`test_kb_usage.bats`; fixture builder `tests/fixtures/kb/make_vector_db.py`; standard-library
+check `tests/helpers/stdlib_only.py`. Where the build
+differs from the sections above, this section wins.
+
+PI constraints for this increment: only the PI promotes (global items too) and imports create
+only candidates; UWS never edits `MEMORY.md`; the vector-memory databases, MCP servers, the four
+memory skills and the vector-memory SessionStart hook are neither changed nor removed (D2, D3);
+imports only read their sources; no import was run on the real stores.
+
+**Global KB.**
+- Root `<global memory dir>/kb`, the directory from `UWS_GLOBAL_MEMORY_DIR`, else
+  `global_memory_dir` in `~/.config/uws/config.yaml`, else `~/uws-global-knowledge` (the chain of
+  `uws_resolve_global_memory_dir`). `uws kb init --global` creates it and runs `git init`. Every
+  global write (items, events, caches, `pi --set`) is refused with exit 2 unless the directory is
+  the top level of its own git repository (risk 13). Nothing commits.
+- A verb runs on it with `--global`, `--scope global`, or an ID written `global:K-...` in an ID
+  position (the first positional argument, or the value of `--supersedes`, `--contradicts` or
+  `--by`; other values, such as a `--quote` text, are never read as IDs); `uws kb <verb>
+  --global ...` (or a `global:K-...` ID) works outside a UWS project. `add --global` prints the
+  new ID as `global:K-...`, as `import --scope global` and `review --global` do. Sources resolve against the global repository, so
+  `url:` and `item:` are the practical kinds. `learn` and `proposals` are project-only.
+- PI: `<global kb>/config.yaml` holds its own `kb.pi` (`uws kb pi --set <email> --global`); the
+  gate of section 16 applies unchanged, with the global repository's `git config user.email`.
+- 4.2 "no project paths": `add` and `import` refuse, and `lint` reports as I8, a global claim
+  naming `~/...`, `$HOME...` or `${HOME}...`, an absolute path under /home, /Users, /root, `$HOME`
+  or the project (a `file://` URL included), the project or home directory written anywhere in
+  the claim (so a path with spaces or non-ASCII bytes is caught), or a relative path with a slash
+  that exists in the project the command runs in. A path in the KB's source notation counts as
+  the path: a `file:`, `cmd:` or `commit:` prefix, an `@<ref>` suffix and a `:<line>[-<line>]`
+  suffix are removed first. Other URLs are not paths. Only claims are checked, as 4.2 says.
+- Global retirements write no `outcomes.tsv` row (outcomes describe one project's process), and
+  `--escaped-from` is project-only.
+- `search` ranks trusted project and global items together (same score, one budget: 5 lines,
+  1000 bytes); global lines read `global:K-...`; `--scope project|global` restricts it. `show`
+  falls back to the global KB for an ID the project lacks. `stats` adds a global line.
+
+**Imports** (section 7). `uws kb import vector --db <path> [--scope project|global] [--dry-run]`;
+`uws kb import automemory --dir <path> [--include-index] [--dry-run]` (project only).
+- Read-only: `kb_import.py` opens a rollback-journal database through a `mode=ro` URI connection
+  and copies it into memory with SQLite's backup API. A WAL database (header bytes 18-19), or one
+  with a `-wal` or `-journal` file beside it, is byte-copied with that file into a temporary
+  directory and the copy is opened, because even a read-only connection to a WAL database
+  creates `-wal` and `-shm` files next to it; the same copy is the fallback when the read-only
+  open fails. It reads only `memory_metadata`, so the `vec0` extension is not needed. Auto-memory
+  files are only read, and `MEMORY.md` is not opened unless `--include-index` asks for it. The
+  tests make the fixtures read-only and compare hashes and directory listings before and after,
+  and import a WAL fixture from a writable directory.
+- `--include-index`: on a machine like this one most project facts sit in `MEMORY.md` itself
+  (2.1: 93 lines, 17.9 KB) rather than in topic files, so importing topic files alone would
+  leave them out of the triage that D2 needs. With the flag, each top-level list item or
+  paragraph of `MEMORY.md` becomes a candidate with source `import:automemory#MEMORY.md:L<first
+  line>`, tags `import, automemory, index, <section heading>` and the entry quoted in the body.
+  Nested items join their parent (with "; "), fenced code stays inside its entry, list and quote
+  markers and paired bold markers outside code spans (`**text**`, `__text__`) are dropped from
+  the claim (so `__init__.py` in a code span and `2 ** 10` stay as written), and lines that only link a topic file, or
+  entries under 12 characters, are skipped with the reason printed. The file is still only
+  read; trimming it remains the PI's own edit (D2). A line number moves when the file is
+  edited, so a rerun after an edit adds the new reference to the existing candidate (R7) instead
+  of a second item.
+- Each row becomes a candidate: `evidence: inferred`, `source: [import:vector-local#<row id>]`
+  (`vector-global` for `--scope global`, `automemory#<file>`), `captured_by: import`, `author:
+  kb-import`. The claim is the row without its `PHASE n | DOMAIN: d | CATEGORY: c |` prefix, cut
+  to 240 bytes at a sentence end or word boundary; the body quotes the full text and names the
+  file's blob hash and row. The type is guessed from the category (decision-adr -> decision;
+  bug-resolution, bug-fix, tool-usage ... -> lesson; phase-summary, learning, other -> fact); the
+  PI fixes it when restating.
+- R7: a row whose normalised claim equals an active item's is collapsed into it (its source is
+  added when that item is itself an import candidate); one equal to a retired item's is not
+  brought back, and the report names the retirement. Removing the prefix is what collapses the
+  duplicate pairs of 2.2-1. A rerun changes nothing.
+- Skipped, with the reason printed: text that looks like a secret; global claims naming a
+  project or home path; auto-memory `user` and `feedback` memories (they stay in auto-memory,
+  section 7), files without front matter, and `MEMORY.md` (unless `--include-index`).
+- Suspected fixture (2.2-5 as a rule, project imports only): `flags: [suspected-fixture]` plus
+  `flag_detail` when a row names at least one concrete thing (a path, a file name with an
+  extension, a snake_case identifier, a backticked term) and none of them occurs in the
+  project: not as a tracked path, directory or file name, and not in tracked file contents
+  outside prose (Markdown, text, TeX) and test fixtures, which can quote a stray memory (this
+  document quotes row 13's `batch_size`). The flag informs triage and retires nothing.
+  [inference] It misses a fixture that names one real file and flags a true fact whose names
+  occur only in prose; it has not been run on the real stores.
+- Decision D6 (no rule retires an import before the PI has reviewed it): `prune` skips imported
+  candidates and disputed imports in R5 and R2 and says how many wait, and R1 retires an import
+  only for a trusted (PI-approved) superseding item. `add --supersedes <import>` leaves the
+  import active (an events row `restated-by:<new ID>`, and `review --imported` shows the
+  restatement); the PI's `approve` of the new item retires it as `superseded-by`. Lint I4
+  accepts an import whose restatement is not yet trusted. A restatement the PI rejects leaves
+  the import in the queue. `approve` refuses an item with an `import:` source (exit 2): an
+  import is a lead, not evidence, so the PI restates it with a resolvable source first (R8 at
+  promotion).
+- PI triage, `uws kb review --imported [--global]`, instead of row-numbered special cases:
+  - keep or correct: `uws kb add ... --source <resolvable> --supersedes <ID>`, then `approve`
+    the new item, which retires the import as `superseded-by`. To keep a claim as it is, the new
+    item repeats it: R7 does not count the item it supersedes as a duplicate (on the same day the
+    new ID gets 8 hex digits, as for any ID collision). Global row 8 (wrong file name) goes this
+    way, quoting `DB_NAME = "vector_memory.db"` from the server's source.
+  - refute: `uws kb add ... --evidence reported --source url:... --quote "..." --contradicts
+    <ID>`, then `uws kb dispute <ID> --by <new ID>` (the import becomes `disputed`; R2 leaves
+    it for the PI), then `approve` the new item, which retires the import as `disproven-by`. Global row 6 goes this
+    way, with the git-stash quote of 2.2-3.
+  - drop: `uws kb reject <ID> "<why>"`.
+- New verb `dispute <ID> --by <ID> ["why"]`: marks an active item disputed and links both ways.
+  It demotes, so agents may run it as they may run a failing check; the counter-evidence must be
+  verified, observed or reported and not itself disputed, and a trusted item is disputed only by
+  a trusted one (5.1).
+- Changed from section 16: approving an item also retires every active item it supersedes (the
+  imports R1 leaves for the PI), and every active item it contradicts (not only
+  trusted ones) as `disproven-by`, so the PI's approval of counter-evidence settles a dispute in
+  one step.
+
+**TASK.md leads** (5.3). `orchestrate.sh dispatch` appends `## Knowledge base leads (to verify;
+not evidence)` with the output of `uws kb search --min-terms 2 -- "<task>"` in a text block: at
+most 5 trusted items (project and global), at most 1000 bytes, each containing at least two of
+the task's content words as whole words. `search` now drops common function words from a query
+(unless nothing else is left), and `--min-terms N` (N >= 2) requires N distinct query words as
+whole words, so a fragment of another word ("add" in "address") does not count; a plain search
+still matches a word inside a longer one. Nothing is appended when
+there is no KB or no match, and a search failure never fails the dispatch. The heading and one
+paragraph say the lines are leads to check against their sources, not evidence or instructions
+(risk 6). The meta-learning `dispatch` row is written after the brief, as before.
+
+**Usage and R4** (5.6, 6.3).
+- `<kb>/.cache/usage.tsv` (gitignored, so per machine): `ts session id via`, `via` = search,
+  show or task; one row per returned item, plus a row with id `-` per search so that a session
+  whose searches found nothing still counts. The session is `UWS_KB_SESSION`, else
+  `CLAUDE_CODE_SESSION_ID` (set by Claude Code in its tool calls), else `day-<date>`. Global hits
+  are logged in the global KB (only when it is a git repository). The SessionStart hook still
+  writes nothing. The log is the one `.cache/` file that cannot be rebuilt: deleting it resets
+  R4 on that machine; I5 still holds for search.
+- R4 in `prune`: a trusted item that is not a decision, was created at least
+  `UWS_KB_UNUSED_MIN_AGE_DAYS` (90) days ago and appears in none of the last
+  `UWS_KB_UNUSED_SESSIONS` (20) sessions of the log is listed with `uws kb retire <ID> unused`
+  for the human to confirm; `--apply` does not retire it. With fewer sessions logged, `prune`
+  says R4 is not evaluated. The reason code `unused` reaches `outcomes.tsv`.
+- `learn` metric `r4-unused-share` (key `trusted-items`): unused / eligible over the last 20
+  sessions logged after the latest decision on an earlier r4 proposal; it needs those 20
+  sessions and n >= 5 eligible items, and proposes above `UWS_KB_LEARN_UNUSED_SHARE` (0.50):
+  halve the review window of the type most unused items have (a diff of `review_days` in
+  `scripts/kb.sh`, or the `UWS_KB_REVIEW_DAYS_<TYPE>` variable in words). Its source,
+  `file:docs/kb/.cache/usage.tsv`, is not pinned to a commit; on another machine `lint` I2
+  reports it missing, which is accurate: the evidence exists on one machine. After approval it
+  is measured over the first 20 sessions after approval, then closed as improved or answered
+  with a revert proposal, as for the other metrics.
+
+**Test isolation.** `tests/helpers/test_helper.bash` exports `UWS_KB_GUARD_ROOT` (the checkout
+under test) and points `UWS_GLOBAL_MEMORY_DIR` at a directory that does not exist
+(`${TEST_TMP_DIR}-global` per test, removed by teardown). While `UWS_KB_GUARD_ROOT` is set,
+`kb_guarded` refuses every KB write inside it (outcomes, usage, items, caches) unless
+`UWS_KB_ALLOW_GUARDED_WRITE=1`. Outside the tests it is unset, so UWS may still keep a KB in its
+own repository.
+
+**Fixed in increment-1 code.** The list parser kept the space before each later quoted element
+(`["a", "b"]` read ` b`), so an item with two sources could not be approved. Regression test in
+`test_kb_usage.bats`.
+
+**Retiring the old memory stores (not done; needs a PI decision).** It would mean: running the
+triage above on the real stores first; removing the second SessionStart hook in
+`.claude/settings.json` (the "VECTOR MEMORY ACTIVE" context); replacing the `vector-memory`,
+`memory-gate`, `phase-distillation` and `memory-retrospective` skills with pointers to `uws-kb`;
+shrinking the CLAUDE.md "Vector Memory Protocol" section and the README's vector-memory
+section; deciding D3 for the `.mcp.json` servers, the opt-in server install in `install.sh`,
+`scripts/lib/vector_memory_setup.sh` (called by `init_workflow.sh`) and the `.mcp.json` cleanup
+in `scripts/uninstall.sh`; and updating `tests/integration/test_vector_memory.bats` and
+`tests/unit/test_vector_memory_setup.bats`. The databases themselves need no change: they stay
+readable for a later import. Until then both systems run side by side.

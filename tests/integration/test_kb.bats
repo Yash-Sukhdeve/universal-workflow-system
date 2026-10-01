@@ -102,7 +102,7 @@ EOF
 @test "1: add without --source exits 2 and writes nothing" {
     run "$UWS" kb add --type fact --claim X --evidence observed
     [ "$status" -eq 2 ]
-    [[ "$output" == *"--source"* ]]
+    [[ "$output" == *"--source"* ]] || false
     [ "$(item_count)" -eq 0 ]
 }
 
@@ -111,7 +111,7 @@ EOF
     head="$(git rev-parse --short HEAD)"
     kb_id add --type fact --claim "The hook budget default is 1200 bytes" --evidence observed \
         --source file:scripts/lib/hook_context.sh:30
-    [[ "$KB_OUT" =~ ^K-20260924-[0-9a-f]{6}$ ]]
+    [[ "$KB_OUT" =~ ^K-20260924-[0-9a-f]{6}$ ]] || false
     [ "$(item_count)" -eq 1 ]
     local f="${KB}/items/${KB_OUT}.md"
     [ "$(field "$f" status)" = "candidate" ]
@@ -123,7 +123,7 @@ EOF
 @test "3: a source file that does not exist exits 2" {
     run "$UWS" kb add --type fact --claim "Something" --evidence observed --source file:does/not/exist:1
     [ "$status" -eq 2 ]
-    [[ "$output" == *"does not exist"* ]]
+    [[ "$output" == *"does not exist"* ]] || false
     [ "$(item_count)" -eq 0 ]
 }
 
@@ -132,7 +132,7 @@ EOF
     local first="$KB_OUT"
     run "$UWS" kb add --type fact --claim "  checkpoints LIVE in .workflow.  " --evidence observed --source file:f:1
     [ "$status" -eq 3 ]
-    [[ "$output" == *"$first"* ]]
+    [[ "$output" == *"$first"* ]] || false
     [ "$(item_count)" -eq 1 ]
 }
 
@@ -153,7 +153,7 @@ EOF
     [ "$(field "$f" reviewer)" = "$PI" ]
     run "$UWS" kb search budget
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$id"* ]]
+    [[ "$output" == *"$id"* ]] || false
     printf 'no longer\n' > f
     run "$UWS" kb verify --changed
     [ "$status" -eq 5 ]
@@ -170,7 +170,7 @@ EOF
     git config user.email "reviewer@lab.example"
     run "$UWS" kb approve "$id"
     [ "$status" -eq 6 ]
-    [[ "$output" == *"not the PI"* ]]
+    [[ "$output" == *"not the PI"* ]] || false
     [ "$(field "$f" status)" = "candidate" ]
     git config user.email "$PI"
     run "$UWS" kb approve "$id"
@@ -200,12 +200,12 @@ EOF
     git add -A >/dev/null && git commit -qm "restore A"
     run git log --follow --format=%s -- "docs/kb/items/${a}.md"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"restore A"* ]]
-    [[ "$output" == *"supersede A"* ]]
-    [[ "$output" == *"add A"* ]]
+    [[ "$output" == *"restore A"* ]] || false
+    [[ "$output" == *"supersede A"* ]] || false
+    [[ "$output" == *"add A"* ]] || false
     # Restore also removed A from B's supersedes, so prune will not retire it again
     run "$UWS" kb prune
-    [[ "$output" != *"$a"* ]]
+    [[ "$output" != *"$a"* ]] || false
 }
 
 @test "8: prune is a dry run by default; --apply marks expired items stale, then retires them" {
@@ -220,7 +220,7 @@ EOF
     before="$(git status --porcelain)"
     run "$UWS" kb prune
     [ "$status" -eq 0 ]
-    [[ "$output" == *"would stale ${id}"* ]]
+    [[ "$output" == *"would stale ${id}"* ]] || false
     [ "$(git status --porcelain)" = "$before" ]
     run "$UWS" kb prune --apply
     [ "$status" -eq 0 ]
@@ -241,10 +241,10 @@ EOF
     local line
     while IFS= read -r line; do
         [ "$(printf '%s' "$line" | LC_ALL=C wc -c | tr -d ' ')" -le 200 ]
-        [[ "$line" == *"|trusted|"* ]]
+        [[ "$line" == *"|trusted|"* ]] || false
     done <<< "$output"
     [ "$(printf '%s\n' "$output" | LC_ALL=C wc -c | tr -d ' ')" -le 1000 ]
-    [[ "$output" != *"dec00"* ]]
+    [[ "$output" != *"dec00"* ]] || false
 }
 
 @test "10: SessionStart hook with 50 items stays within 1200 bytes, shows the KB line, writes nothing" {
@@ -258,7 +258,7 @@ EOF
     local ctx
     ctx="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')"
     [ "$(printf '%s' "$ctx" | LC_ALL=C wc -c | tr -d ' ')" -le 1200 ]
-    [[ "$ctx" == *"KB: 50 trusted"* ]]
+    [[ "$ctx" == *"KB: 50 trusted"* ]] || false
     [ "$(git status --porcelain)" = "$before" ]
 }
 
@@ -270,13 +270,13 @@ EOF
     sed -e "s/^contradicts: \[\]/contradicts: [${a}]/" "${KB}/items/${b}.md" > x && mv x "${KB}/items/${b}.md"
     run "$UWS" kb lint
     [ "$status" -eq 1 ]
-    [[ "$output" == *"I3"*"$a"*"$b"* ]]
+    [[ "$output" == *"I3"*"$a"*"$b"* ]] || false
 }
 
 @test "12: a claim containing an AWS access key shape exits 2" {
     run "$UWS" kb add --type fact --claim "key AKIAABCDEFGHIJKLMNOP leaked" --evidence observed --source file:f:1
     [ "$status" -eq 2 ]
-    [[ "$output" == *"secret"* ]]
+    [[ "$output" == *"secret"* ]] || false
     [ "$(item_count)" -eq 0 ]
 }
 
@@ -313,7 +313,7 @@ EOF
     kb_id add --type fact --claim "Agent context cannot promote" --evidence observed --source file:f:1
     run env CLAUDECODE=1 "$UWS" kb approve "$KB_OUT"
     [ "$status" -eq 6 ]
-    [[ "$output" == *"AI agent"* ]]
+    [[ "$output" == *"AI agent"* ]] || false
     run env UWS_AGENT=uws-implementer "$UWS" kb approve "$KB_OUT"
     [ "$status" -eq 6 ]
     [ "$(field "${KB}/items/${KB_OUT}.md" status)" = "candidate" ]
@@ -323,7 +323,7 @@ EOF
     kb_id add --type fact --claim "Needs a PI" --evidence observed --source file:f:1
     run "$UWS" kb approve "$KB_OUT"
     [ "$status" -eq 6 ]
-    [[ "$output" == *"no PI configured"* ]]
+    [[ "$output" == *"no PI configured"* ]] || false
     set_pi
     run "$UWS" kb approve "$KB_OUT" --as someone@else.example
     [ "$status" -eq 6 ]
@@ -353,7 +353,7 @@ EOF
     [ "$(field "$f" status)" = "candidate" ]
     grep -q "^recommended_by: \[agent:" "$f"
     run "$UWS" kb review
-    [[ "$output" == *"$KB_OUT"*"recommended:agent:"* ]]
+    [[ "$output" == *"$KB_OUT"*"recommended:agent:"* ]] || false
 }
 
 @test "PI gate: approve refuses when a verified item's check fails" {
@@ -371,7 +371,7 @@ EOF
     sed -e 's/^status: candidate/status: trusted/' "$f" > x && mv x "$f"
     run "$UWS" kb lint
     [ "$status" -eq 1 ]
-    [[ "$output" == *"I7 ${KB_OUT}"* ]]
+    [[ "$output" == *"I7 ${KB_OUT}"* ]] || false
 }
 
 @test "reject (PI only) retires a candidate as rejected" {
@@ -390,7 +390,7 @@ EOF
     local out
     out="$("$UWS" kb add --type lesson --claim "Pinned numpy breaks opencv wheels" --evidence observed \
         --source file:f:1 --author uws-researcher --tags numpy,opencv </dev/null 2>/dev/null)"
-    [[ "$out" =~ ^K-20260924-[0-9a-f]{6}$ ]]
+    [[ "$out" =~ ^K-20260924-[0-9a-f]{6}$ ]] || false
     [ "$(field "${KB}/items/${out}.md" author)" = "uws-researcher" ]
     grep -q '^tags: \[numpy, opencv\]' "${KB}/items/${out}.md"
 }
@@ -399,7 +399,7 @@ EOF
     local err
     err="$("$UWS" kb add --type fact --claim "x" --evidence guessed --source file:f:1 2>&1 >/dev/null || true)"
     [ "$(printf '%s\n' "$err" | wc -l | tr -d ' ')" -eq 1 ]
-    [[ "$err" == *"unknown evidence"* ]]
+    [[ "$err" == *"unknown evidence"* ]] || false
     run "$UWS" kb add --type fact --claim "x" --evidence observed --source file:f:1 --reviewer bob
     [ "$status" -eq 2 ]
 }
@@ -410,7 +410,7 @@ EOF
     ok="$(printf 'b%.0s' $(seq 1 240))"
     run "$UWS" kb add --type fact --claim "$long" --evidence observed --source file:f:1
     [ "$status" -eq 2 ]
-    [[ "$output" == *"241 bytes"* ]]
+    [[ "$output" == *"241 bytes"* ]] || false
     run "$UWS" kb add --type fact --claim "$ok" --evidence observed --source file:f:1
     [ "$status" -eq 0 ]
 }
@@ -427,11 +427,11 @@ EOF
     local b="$KB_OUT"
     run "$UWS" kb links --type contradicts "$a"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$b"* ]]
+    [[ "$output" == *"$b"* ]] || false
     run "$UWS" kb links --type contradicts stash
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$a"* && "$output" == *"$b"* ]]
-    [[ "$output" == *"{contradicts "* ]]
+    [[ "$output" == *"$a"* && "$output" == *"$b"* ]] || false
+    [[ "$output" == *"{contradicts "* ]] || false
     # The PI settles it: approving B retires A as disproven
     run "$UWS" kb approve "$b"
     [ "$status" -eq 0 ]
@@ -446,7 +446,7 @@ EOF
     "$UWS" kb verify --changed >/dev/null || true
     run "$UWS" kb search --status disputed stash
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$KB_OUT [fact|disputed|verified|"* ]]
+    [[ "$output" == *"$KB_OUT [fact|disputed|verified|"* ]] || false
 }
 
 @test "interface: search lines carry status and evidence; candidates show check-passed" {
@@ -455,7 +455,7 @@ EOF
     "$UWS" kb verify "$KB_OUT" >/dev/null
     run "$UWS" kb search --all line
     [ "$status" -eq 0 ]
-    [[ "$output" == "$KB_OUT [fact|candidate|verified|check-passed|2026-09-24] f contains line one (file:f:1@"* ]]
+    [[ "$output" == "$KB_OUT [fact|candidate|verified|check-passed|2026-09-24] f contains line one (file:f:1@"* ]] || false
 }
 
 # ── Other rules ─────────────────────────────────────────────────────────────
@@ -473,21 +473,23 @@ EOF
 @test "add: provenance rules per evidence level and type" {
     run "$UWS" kb add --type fact --claim "r" --evidence reported --source url:https://example.org
     [ "$status" -eq 2 ]
-    [[ "$output" == *"verbatim quote"* ]]
+    [[ "$output" == *"verbatim quote"* ]] || false
     run "$UWS" kb add --type fact --claim "i" --evidence inferred --source file:f:1
     [ "$status" -eq 2 ]
     run "$UWS" kb add --type hypothesis --claim "h" --evidence inferred --source file:f:1
     [ "$status" -eq 2 ]
-    [[ "$output" == *"falsifier"* ]]
+    [[ "$output" == *"falsifier"* ]] || false
     run "$UWS" kb add --type fact --claim "v" --evidence verified --source file:f:1
     [ "$status" -eq 2 ]
     run "$UWS" kb add --type fact --claim "d" --evidence verified --source file:f:1 --check 'rm -rf /tmp/x'
     [ "$status" -eq 2 ]
-    [[ "$output" == *"destructive"* ]]
+    [[ "$output" == *"destructive"* ]] || false
     run "$UWS" kb add --type question --claim "Why did the design gate fail?"
     [ "$status" -eq 0 ]
+    # increment 2: global items need the global KB repository (uws kb init --global)
     run "$UWS" kb add --type fact --claim "global" --evidence observed --source file:f:1 --scope global
     [ "$status" -eq 2 ]
+    [[ "$output" == *"not its own git repository"* ]] || false
 }
 
 @test "verify: a check that times out marks a trusted item stale, not disputed" {
@@ -523,19 +525,19 @@ EOF
     kb_id add --type decision --claim "Use plain files for the KB" --evidence observed --source file:f:1
     run "$UWS" kb show "$KB_OUT"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"review_by: never"* ]]
+    [[ "$output" == *"review_by: never"* ]] || false
     run "$UWS" kb retire "$KB_OUT" "replaced by ADR-7"
     [ "$status" -eq 0 ]
     grep -q "candidate	retired	replaced by ADR-7" "${KB}/events.tsv"
     run "$UWS" kb stats
-    [[ "$output" == *"0 active"*"1 retired"* ]]
+    [[ "$output" == *"0 active"*"1 retired"* ]] || false
     run "$UWS" kb show K-20260101-abcdef
     [ "$status" -eq 1 ]
 }
 
 @test "uws help lists kb; the KB gitignores its cache" {
     run "$UWS" help
-    [[ "$output" == *"kb <verb>"* ]]
+    [[ "$output" == *"kb <verb>"* ]] || false
     kb_id add --type fact --claim "Cache is local" --evidence observed --source file:f:1
     grep -qx '.cache/' "${KB}/.gitignore"
     "$UWS" kb stats >/dev/null

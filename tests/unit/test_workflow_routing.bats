@@ -172,7 +172,7 @@ YAML
     cp "$STATE_FILE" "${TEST_TMP_DIR}/before.yaml"
     run record_active_agent 'bad name"; echo pwned' "$STATE_FILE"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"invalid agent name"* ]]
+    [[ "$output" == *"invalid agent name"* ]] || false
     run record_active_agent "" "$STATE_FILE"
     [ "$status" -ne 0 ]
     cmp "$STATE_FILE" "${TEST_TMP_DIR}/before.yaml"
@@ -181,7 +181,7 @@ YAML
 @test "record_active_agent fails cleanly when the state file is missing" {
     run record_active_agent researcher "${TEST_TMP_DIR}/nope/state.yaml"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"state file not found"* ]]
+    [[ "$output" == *"state file not found"* ]] || false
     [ ! -e "${TEST_TMP_DIR}/nope" ]
 }
 

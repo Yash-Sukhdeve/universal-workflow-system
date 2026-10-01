@@ -91,7 +91,7 @@ teardown() {
     run "${SCRIPTS_DIR}/status.sh"
 
     assert_success
-    [[ "$output" == *"Status"* ]] || [[ "$output" == *"phase"* ]] || [[ "$output" == *"Phase"* ]]
+    [[ "$output" == *"Status"* ]] || [[ "$output" == *"phase"* ]] || [[ "$output" == *"Phase"* ]] || false
 }
 
 @test "uws-checkpoint command delegates to checkpoint.sh" {
@@ -100,7 +100,7 @@ teardown() {
     run "${SCRIPTS_DIR}/checkpoint.sh" create "test checkpoint"
 
     assert_success
-    [[ "$output" == *"checkpoint"* ]] || [[ "$output" == *"Checkpoint"* ]] || [[ "$output" == *"CP_"* ]]
+    [[ "$output" == *"checkpoint"* ]] || [[ "$output" == *"Checkpoint"* ]] || [[ "$output" == *"CP_"* ]] || false
 }
 
 @test "uws-recover command delegates to recover_context.sh" {
@@ -183,7 +183,7 @@ teardown() {
     run "${SCRIPTS_DIR}/status.sh" 2>/dev/null
 
     # Should not crash
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]] || false
 }
 
 # =============================================================================
@@ -196,7 +196,7 @@ teardown() {
     run "${SCRIPTS_DIR}/status.sh"
 
     assert_success
-    [[ "$output" == *"phase"* ]] || [[ "$output" == *"Phase"* ]]
+    [[ "$output" == *"phase"* ]] || [[ "$output" == *"Phase"* ]] || false
 }
 
 @test "status command shows checkpoint information" {
@@ -205,7 +205,7 @@ teardown() {
     run "${SCRIPTS_DIR}/status.sh"
 
     assert_success
-    [[ "$output" == *"checkpoint"* ]] || [[ "$output" == *"Checkpoint"* ]] || [[ "$output" == *"CP_"* ]]
+    [[ "$output" == *"checkpoint"* ]] || [[ "$output" == *"Checkpoint"* ]] || [[ "$output" == *"CP_"* ]] || false
 }
 
 @test "checkpoint command outputs checkpoint ID" {
@@ -214,5 +214,5 @@ teardown() {
     run "${SCRIPTS_DIR}/checkpoint.sh" create "test"
 
     assert_success
-    [[ "$output" == *"CP_"* ]] || [[ "$output" == *"checkpoint"* ]]
+    [[ "$output" == *"CP_"* ]] || [[ "$output" == *"checkpoint"* ]] || false
 }

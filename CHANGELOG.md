@@ -7,6 +7,194 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Knowledge base (increment 2)
+
+Increment 2 of `docs/design/knowledge-base.md` (section 18): the global KB, imports of the older
+memory stores, knowledge leads in subagent briefs, and usage counts for rule R4. Only the PI
+promotes items, global ones included; imports create candidates only and only read their
+sources; the vector-memory servers, skills and SessionStart hook are unchanged.
+
+#### Added
+- Global KB at `<global memory dir>/kb` (`UWS_GLOBAL_MEMORY_DIR`, `global_memory_dir` in
+  `~/.config/uws/config.yaml`, or `~/uws-global-knowledge`): `uws kb init --global` creates it
+  and runs `git init`; every global write is refused (exit 2) unless it is its own git
+  repository. `--global`, `--scope global` or a `global:K-...` ID (as an ID argument, or the
+  value of `--supersedes`, `--contradicts` or `--by`) select it, also outside a UWS project;
+  `add --global` prints the new ID as `global:K-...`. It keeps its own PI (`uws kb pi --set <email> --global`, `<global kb>/config.yaml`).
+  Global claims may not name project or home paths (`add`/`import` refuse; `lint` I8)
+- `uws kb search` ranks trusted project and global items together in the same 5-line,
+  1000-byte budget; global lines read `global:K-...`; `--scope project|global` narrows it.
+  Queries drop common function words, and `--min-terms N` asks for N matching whole words;
+  `search -- <words>` takes words that start with a dash. `show` finds global IDs; `stats` lists
+  the global KB and this machine's usage
+- `uws kb import vector --db <path> [--scope project|global] [--dry-run]` and
+  `uws kb import automemory --dir <path> [--include-index] [--dry-run]` (`scripts/kb_import.py`,
+  Python standard library only): a read-only SQLite connection copied into memory with the backup
+  API, or for a WAL database a byte copy opened in a temporary directory, so nothing is created
+  next to the source (only `memory_metadata` is read), or read-only file reads (`MEMORY.md` is opened only with
+  `--include-index`, which imports each top-level entry as `automemory#MEMORY.md:L<line>`; UWS
+  never writes it). Rows become
+  candidates with `evidence: inferred`, `source: [import:vector-local#<row>]` (or
+  `vector-global`, `automemory#<file>`) and `captured_by: import`; the local
+  `PHASE n | DOMAIN: d | CATEGORY: c |` prefix is dropped from the claim (a global row keeps its
+  `TOOL:` prefix), long rows are cut to 240 bytes, duplicates collapse by R7, retired
+  claims are not brought back, secrets and (globally) project paths are skipped, auto-memory
+  preferences and feedback stay where they are, and rows that name concrete things (paths, file
+  names, snake_case names, backticked terms), none of which the project contains, are flagged
+  `suspected-fixture` for the PI (project imports only)
+- `uws kb review --imported [--global]`: the import triage queue with the PI's steps (keep or
+  correct with `add --supersedes`, refute with `add --contradicts` + `dispute` + `approve`, drop
+  with `reject`). `approve` refuses an item whose source is an import. No rule retires an
+  import before the PI has reviewed it (decision D6): `prune` skips imports in R2 and R5, and
+  an import that `add --supersedes` restates (the restatement may repeat its claim) is retired
+  only when the PI approves the restatement
+- `uws kb dispute <ID> --by <ID> ["why"]`: mark an active item disputed with counter-evidence
+  (verified, observed or reported; a trusted item only by a trusted one)
+- `uws kb init` also creates the project KB
+- `orchestrate.sh dispatch` appends "Knowledge base leads (to verify; not evidence)" to the
+  subagent's `TASK.md`: at most 5 trusted items, 1000 bytes, sharing at least two words with
+  the task; nothing when there is no KB or no match
+- Usage log `<kb>/.cache/usage.tsv` (gitignored, per machine) for search, show and brief
+  retrievals, by session (`UWS_KB_SESSION`, else `CLAUDE_CODE_SESSION_ID`, else the day). R4:
+  `prune` lists trusted items (not decisions, older than 90 days) not retrieved in the last 20
+  sessions, for the human to retire with `retire <ID> unused` (reason code `unused`); `learn`
+  measures `r4-unused-share` and proposes halving a review window above 50% (n >= 5), then
+  tracks the adopted change over the next 20 sessions like the other metrics
+  (`UWS_KB_UNUSED_SESSIONS`, `UWS_KB_UNUSED_MIN_AGE_DAYS`, `UWS_KB_LEARN_UNUSED_SHARE`)
+- Test isolation: `tests/helpers/test_helper.bash` exports `UWS_KB_GUARD_ROOT` and a
+  non-existent `UWS_GLOBAL_MEMORY_DIR`; while it is set, no KB write (items, outcomes, usage,
+  caches) lands in the UWS checkout unless a test sets `UWS_KB_ALLOW_GUARDED_WRITE=1`
+- Tests: `tests/integration/test_kb_global.bats` (15), `test_kb_import.bats` (19) and
+  `test_kb_usage.bats` (19), on synthetic SQLite fixtures built with the vector-memory schema
+  (`tests/fixtures/kb/make_vector_db.py`, which can also write custom rows and WAL databases);
+  `tests/helpers/stdlib_only.py` checks that the importer and the fixture builder import only
+  the Python standard library
+
+#### Changed
+- Approving an item retires every active item it contradicts as `disproven-by`, not only
+  trusted ones, and every active item it supersedes (the imports R1 leaves for the PI)
+- `uws kb learn` reports `r4-unused-share` instead of "not measured"
+
+#### Fixed
+- The front-matter list parser kept the space before each later quoted element, so an item with
+  two or more sources could not be approved
+- `uws kb search` (and with it `links` and lint I6) exited 141 with no output once the ranked
+  matches passed about 64 KiB: the output budget stopped reading while `sort` and `cut` were
+  still writing, and `pipefail` turned their SIGPIPE into the script's exit status. The budget
+  now drains its input
+
+### Research team (field-test fixes)
+
+The first real use of the research checks, an audit of the PROMISE 2026 paper, found
+integrity gaps, misses, false positives and friction. Each fix has a regression test in
+`tests/integration/test_research_team_fieldtest.bats` (57 tests) that fails on the code
+before it (or, for a guarantee no test pinned, on a mutant that removes it); the paper's
+lines are verbatim fixtures in `tests/fixtures/research/promise/`. An adversarial review of
+these fixes found guarantees that still had holes; they are fixed too (see "Fixed").
+Details, decisions, the before/after re-run on the audit and what was consciously not
+fixed: `docs/design/research-team.md` section 11b.
+
+#### Added
+- `research check numbers add '<json>'` and `research check claims add '<json>'` append one
+  validated row; `id`, `rev` and `supersedes` are filled in (numbers also `output_sha256`,
+  `raw` read at `pointer`, and `printed` from `rounding`), and existing lines are never
+  touched. A row is refused for its own errors (schema, references, value at the pointer,
+  links); a printed value that its evidence contradicts is appended and reported, so an
+  audit can record a misprint.
+- `run --code <file>` records the scripts a command runs as code (versioned by the run's
+  commit, not by the data manifest); code missing from the recorded commit is `RUN-CODE`.
+- `run --output` takes a glob for timestamped names; the run records the file the command
+  wrote and the repro job finds the re-run's file by the same pattern. A path that names an
+  existing file is that file, even with `[`, `?` or `*` in its name.
+- `run.json` records the command's interpreter (the path the command invoked, which shows
+  a venv, the resolved file, kind and version) and `env_lock`: the hashes of the
+  `--env-lock` files, else of `research/env/*.lock` and the common lock files that exist
+  (requirements.lock, poetry.lock, Pipfile.lock, uv.lock, pdm.lock, conda-lock.yml,
+  environment.lock.yml, renv.lock, Manifest.toml).
+- Structured split declarations in the data manifest (`data add --split` JSON:
+  `{train, validation, test, group_key}` or `{column, group_key}`): `DATA-LEAK` fails when one
+  group is on both sides, `DATA-SPLIT` reports a malformed declaration or a row with no
+  unit, a free-text split is a warning. A row that re-declares unchanged data (split,
+  origin, labels, generator, seed) needs a reason, and replacing a structured split by free
+  text or "none" also a PI decision (`DATA-REPLACE`); `data add --reason` records it.
+- `BIB-UNDEFINED`: a `\cite` key that neither `references.bib` nor `bib_sources/` defines,
+  in every citation form (a key list over several lines, `\cite {k}`, natbib `\Citet`,
+  biblatex `\parencite`, `\textcite`, `\autocite`, `\footcite`, multicite `\cites{a}{b}`).
+- Number rows may name `unrounded` {run, output, pointer}: the full-precision value that
+  decides `NUM-ROUND` when the output file stores a pre-rounded value.
+- A number row's `where` (`file:line; file:l1,l2; file#label`; text in parentheses is a
+  note; a file name may contain spaces) links hand-typed values to the row: `NUM-LITERAL` names the row and its macro,
+  `NUM-SPLIT`, C3 and C6 judge the value like a macro use, and a named place that does not
+  show the value is a `NUM-WHERE` warning. A claim row's `where` attaches the claim to those
+  lines for C6.
+
+#### Changed
+- `PLAN-ORDER` orders against when a result existed: the first commit of its output file, of
+  that content under any name, of its run record, and the commit the run executed on, not
+  only the ledger row. It follows provenance: an input that a recorded run wrote (same path
+  and sha256) brings that run's record, outputs and commit, recursively, so a value computed
+  before the freeze and only reformatted after it still fails. A run commit that is not in
+  the repository (squash merge, rebase, shallow clone) is reported as an order that cannot
+  be shown, never as "before the freeze"; each run is reported once.
+- Sentences are split LaTeX-aware (`recover\_context.sh`, `0.912`, `Fig.~3`, `et al.\ ` and
+  common abbreviations end nothing), so C6 now catches "ground truth" at the PROMISE
+  introduction (line 33) and approach (line 120). Only ledger macro names count as number
+  uses (never `\textit` or `\paragraph`). C6 blocks when evidence tied to the sentence rests
+  on generated data or generator-rule labels and warns otherwise.
+- `NUM-LITERAL` catches numbers with units (`1.1ms`, `1.1\,ms`, `30\%`) and covers the
+  introduction, evaluation, experiments and discussion as well. A number followed by the
+  word "in" ("0.912 in cross-validation") is no longer taken for a TeX length.
+- `NUM-ROUND` warns "pre-rounded; cannot judge" instead of blocking when the stored value
+  could print either way, unless `unrounded` decides.
+- S1: a narrow idiom allowlist (best practice(s), best effort, best case, at best), and
+  "First <contribution noun>" (as in "First predictive models") counts as a novelty claim.
+- `REPRO` accepts only the repro job's re-run of a number's recorded run: a hand-written
+  pass (an external reproduction) does not count.
+- `research check <name>` and `research bib` need no `.workflow/state.yaml`, from `uws` and
+  from `research.sh`; a fallback to UWS's own `.workflow` is never used as the project's.
+  They are dispatched before any library that creates log directories, so they write no
+  `.workflow/` into the project or the UWS installation, and from a subdirectory they find
+  the project (nearest `research/ledger`). Phase actions (`start`, `next`, ...) without
+  workflow state say so (run `uws init research`) and write nothing.
+- `macros` writes the valid rows and reports each skipped invalid row (exit 1) instead of
+  refusing all.
+- The gate's KB note quotes `uws kb stats`; `init` puts `.gitkeep` in empty scaffold
+  directories.
+- Each gate names the unbuilt checks that belong to it: from literature_review the BibTeX
+  metadata cross-check and `bib verify --online`, from data_collection the lock-content and
+  Dockerfile checks, from analysis the unbuilt slop rules and the INVENTORY report.
+- The engineer, methodologist, scout and verifier personas and the `uws-research-lead`
+  skill use the new commands; the skill says to run `uws init research` first when
+  `.workflow/state.yaml` is missing. `/uws:research-check` lists every check and asks for
+  the phase when `research status` cannot show it.
+
+#### Fixed
+- Code given as a run input is no longer reported as unmanifested data, and a gate no
+  longer prints the same number-ledger schema error once per check.
+- Found by the review of these fixes: `research check`/`bib` left a stray `.workflow/` in
+  projects without one (uws then took them for UWS projects, and a check from `paper/`
+  exited 2) and wrote `decisions.log` into the installation; `PLAN-ORDER` passed a value
+  reformatted after the freeze and called a squash-merged run "before the freeze";
+  `BIB-UNDEFINED` missed multi-line and biblatex citations; a hand-appended manifest row
+  could switch a blocking `DATA-LEAK` off; `numbers add` appended a revision that took
+  another row's macro; `RUN-CODE` skipped a run whose commit is not in the repository;
+  `run` recorded a venv's base interpreter, failed on an output named `res[1].json` and on
+  any output glob in a project path with `[`; a `where` file name with a space was not
+  linked; a CSV with a byte-order mark failed `DATA-SPLIT`.
+
+#### Not fixed
+- A number measured under generated conditions (the PROMISE recovery times) has no
+  `data_origin` of its own: labelled `synthetic-generated` it draws C3 findings (7 in the
+  re-run), labelled `measured` it draws none. Changing the vocabulary is a PI decision.
+- `NUM-LITERAL` still skips method sections; statements that need reading (wrong
+  directions, a count with the wrong unit, citations of another paper) remain the
+  verifier's and red team's work; the BibTeX metadata cross-check is still not built; a
+  complete forged repro report is not detected (reports are not signed); `numbers add`
+  cannot record a number that has no output file.
+- `PLAN-ORDER` follows provenance only through recorded runs: a file written outside
+  `run` (or raw data) is not traced, and data preparation recorded with `run` before the
+  freeze now fails it (freeze before collecting data, as the plan template says).
+
 ### Meta-learning
 
 Increment 3 of `docs/design/knowledge-base.md` (section 6), built before the global KB and
@@ -49,7 +237,7 @@ changes from those counts; only the PI accepts them and nothing is applied autom
 
 #### Not built
 - The R4-unused-share metric: it needs R4 usage counts, which are not built, and would not
-  come from `outcomes.tsv`; `learn` says it is not measured
+  come from `outcomes.tsv`; `learn` says it is not measured (built in increment 2, above)
 
 #### Fixed
 - `review.sh reject` no longer stops under `set -e` when `NOTIFICATIONS.md` is missing

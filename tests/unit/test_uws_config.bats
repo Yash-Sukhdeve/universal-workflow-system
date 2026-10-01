@@ -73,7 +73,7 @@ teardown() {
 
     run grep 'global_memory_dir:' "$UWS_CONFIG_FILE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *'/tmp/test-mem'* ]]
+    [[ "$output" == *'/tmp/test-mem'* ]] || false
 }
 
 @test "uws_config_write handles multiple pairs" {
@@ -232,7 +232,7 @@ teardown() {
 @test "uws_validate_global_dir_path rejects dot-prefixed components" {
     run uws_validate_global_dir_path "/home/user/.hidden/knowledge"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"starts with dot"* ]]
+    [[ "$output" == *"starts with dot"* ]] || false
 }
 
 @test "uws_validate_global_dir_path rejects nested dot-prefixed" {

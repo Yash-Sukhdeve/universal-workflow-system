@@ -64,16 +64,18 @@ Workflow Commands:
   orchestrate <cmd> [args] Route the current phase to its subagent
                            (dispatch "<task>" | collect "<summary>" | status)
   kb <verb> [args]         Project knowledge base in docs/kb/ (add|search|links|
-                           show|verify|recommend|review|approve|reject|pi|prune|
-                           retire|restore|lint|stats|learn|proposals);
+                           show|verify|recommend|review|approve|reject|dispute|
+                           pi|prune|retire|restore|lint|stats|learn|proposals|
+                           init|import); --global for the cross-project KB;
                            'uws kb help' for details
 
 Methodology Commands:
   sdlc [cmd]               SDLC workflow (status|start|next|fail|reset)
   research [cmd]           Research workflow (status|start|next|reject|reset)
   research check <name>    Research team evidence checks: init | ledger | bib |
-                           quotes | numbers | slop | gate <phase> | plan | data |
-                           run | repro | retraction | manuscript-hash | macros
+                           quotes | numbers [add] | claims [add] | slop |
+                           gate <phase> | plan | data | run | repro | retraction |
+                           manuscript-hash | macros (no .workflow needed)
   research bib fetch|build Download authoritative BibTeX into bib_sources/;
                            build references.bib from bib_sources/ only
   spiral [args]            Spiral SDLC workflow
@@ -103,6 +105,32 @@ Examples:
   uws uninstall --dry-run  Preview what uninstall would remove
   uws uninstall --all      Remove UWS from project + system
 EOF
+}
+
+# Succeeds when `uws kb <verb> [args]` addresses the global KB, which needs no
+# project: --global, --scope global, --scope=global, or a global:K-... ID in an
+# ID position. The rule is kb.sh's own (kb_scan_scope_args), so a --quote or
+# --claim text that starts with global:K- does not count.
+kb_args_global() {
+    local lib="${UWS_INSTALL_DIR}/scripts/lib/kb_utils.sh"
+    [[ -f "$lib" ]] || return 1
+    # shellcheck source=scripts/lib/kb_utils.sh
+    source "$lib"
+    [[ $# -gt 0 ]] && shift
+    kb_scan_scope_args "$@" || return 1
+    [[ "$KB_SCAN_SCOPE" == "global" ]]
+}
+
+# research_needs_no_state <research args>: true for `bib ...` and for `check <name>` (a
+# checker command, not the number of a deliverable to tick).
+research_needs_no_state() {
+    case "${1:-}" in
+        bib) return 0 ;;
+        check)
+            [[ -n "${2:-}" && ! "${2}" =~ ^[0-9]+$ ]] && return 0
+            ;;
+    esac
+    return 1
 }
 
 # `uws agent` / `uws skill` were retired: agents are real Claude Code
@@ -143,6 +171,12 @@ main() {
         agent|skill)
             retired_command "$cmd"
             ;;
+        kb)
+            # The global knowledge base lives outside any project
+            if ! find_uws_root >/dev/null 2>&1 && kb_args_global "$@"; then
+                exec "$UWS_INSTALL_DIR/scripts/kb.sh" "$@"
+            fi
+            ;;
         uninstall)
             # uninstall doesn't need .workflow/ — find scripts via resolved install dir
             if [[ -x "$UWS_INSTALL_DIR/scripts/uninstall.sh" ]]; then
@@ -158,6 +192,13 @@ main() {
     # Find UWS root
     local root
     if ! root="$(find_uws_root)"; then
+        # The research evidence checks (`research check <name>`) and the BibTeX fetcher
+        # (`research bib`) work from the project files alone (docs/design/research-team.md
+        # section 6.6), so they run here without a .workflow; research.sh finds the project
+        # from the current directory and refuses the actions that need workflow state.
+        if [[ "$cmd" == "research" ]] && research_needs_no_state "$@"; then
+            exec "$UWS_INSTALL_DIR/scripts/research.sh" "$@"
+        fi
         echo "Error: No UWS project found (no .workflow/ directory)." >&2
         echo "Run 'uws init' inside your project to get started." >&2
         exit 1

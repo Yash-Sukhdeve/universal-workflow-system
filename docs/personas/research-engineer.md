@@ -30,18 +30,37 @@ tolerance."
    Generated data also needs `--generator <script> --seed <seed> --labels
    generator-rule|annotation|measurement|none`. If the data was generated without a seed,
    record `--seed unrecorded`: the data check then reports it (`DATA-SEED`), which is the
-   truth. Raw files are made read-only when registered.
+   truth. Raw files are made read-only when registered. When rows are split, declare the
+   split as JSON so leakage can be checked: `--split '{"train": "<path>", "test": "<path>",
+   "group_key": "<unit column>"}'` (each part a registered file) or `--split '{"column":
+   "<split column>", "group_key": "<unit column>"}'`. The data check fails when one unit is
+   on both sides (`DATA-LEAK`); a free-text split is only a warning that it cannot check.
 2. **Run records**: run every command that produces a reported number through the wrapper,
-   `uws research check run --exp EXP-<name> --input <p> --output <p> [--seed name=value]
-   -- <command>`. It records the command, commit, clean/dirty tree, inputs and outputs with
-   hashes, seeds, environment and exit code in `research/runs/RUN-*/run.json`. Commit your
-   code first: a run on an uncommitted tree cannot be reproduced and the repro job fails it.
+   `uws research check run --exp EXP-<name> --input <data> --code <script> --output <p>
+   [--seed name=value] -- <command>`. Data goes in `--input`; the scripts the command runs go
+   in `--code` (code is versioned by the run's commit, never registered as data). For a
+   timestamped output name give a glob, `--output 'out/results_*.json'`; the run records the
+   file it wrote and the repro job finds the re-run's file by the same pattern. The record
+   holds the command, commit, clean/dirty tree, inputs, code and outputs with hashes, seeds,
+   the interpreter the command ran under (the path it invoked, which shows a venv, and the
+   resolved file), `env_lock` (the hashes of the `--env-lock` files, else of
+   `research/env/*.lock` and the common lock files that exist: requirements.lock,
+   poetry.lock, uv.lock, Pipfile.lock, ...), the environment and the exit code
+   (`research/runs/RUN-*/run.json`). Commit your code first: a
+   run on an uncommitted tree cannot be reproduced, and code missing from the commit is
+   `RUN-CODE`.
 3. **Number rows** for the outputs (with the methodologist): `output`, `pointer`,
    `output_sha256`, `raw`, `rounding`, `run`, `exp`, `evaluation`, and a `tolerance`
    (`exact` for deterministic code; `abs` or `rel` for stochastic or timing values, with
-   the reason in `note`). Then `uws research check macros` writes the macro file.
+   the reason in `note`). Append each with `uws research check numbers add '<json>'`: it
+   fills `id`, `rev`, `output_sha256`, `raw` (read at `pointer`) and `printed` (from
+   `rounding`), refuses a malformed row and never edits an existing line. If the output
+   file stores a value already rounded, add `unrounded` (`{"run", "output", "pointer"}` of a
+   run that writes the full precision), or the rounding check can only warn. Then
+   `uws research check macros` writes the macro file.
 4. **Environment lock**: `research/env/requirements.lock` with every package pinned with
-   `==`, plus the Python version.
+   `==`, plus the Python version. Runs record its hash; no check reads its content yet
+   (the gates say so), so pinning every package is your job.
 5. **Repro reports**: `uws research check repro all` re-runs each recorded command at its
    commit in a scratch copy (never in the project) and compares every number within its
    tolerance; it writes `research/repro/report-*.json`. The analysis and publication gates

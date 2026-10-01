@@ -55,7 +55,7 @@ EOF
     rm -rf "$P/research/ledger"
     run check gate analysis
     [ "$status" -eq 2 ]
-    [[ "$output" == *"research/ledger/ not found"* ]]
+    [[ "$output" == *"research/ledger/ not found"* ]] || false
 }
 
 @test "research check: --json output is machine-readable" {
@@ -71,9 +71,9 @@ EOF
     append_claim '{"id":"C-0003","rev":2,"supersedes":"C-0003@1","text":"t","category":"reported_finding","strength":"none","sources":[{"citekey":"sandve2013","quote":"keep track of how it was produced","locator":"Rule 1"}],"author":"scout","status":"verified","verified_by":"scout","verified_at":"2026-09-26T00:00:00Z","verdict":"supports"}'
     run check ledger
     [ "$status" -eq 1 ]
-    [[ "$output" == *"LEDGER-SELFVERIFY"* ]]
-    [[ "$output" == *"C-0003"* ]]
-    [[ "$output" == *"research/ledger/claims.jsonl:6 "* ]]
+    [[ "$output" == *"LEDGER-SELFVERIFY"* ]] || false
+    [[ "$output" == *"C-0003"* ]] || false
+    [[ "$output" == *"research/ledger/claims.jsonl:6 "* ]] || false
 }
 
 @test "ledger: category rules (hypothesis never verified, inference needs dependencies)" {
@@ -81,22 +81,22 @@ EOF
     append_claim '{"id":"C-0005","rev":1,"supersedes":null,"text":"i","category":"inference","strength":"causal","status":"unverified","author":"lead","depends_on":["C-0002"]}'
     run check ledger
     [ "$status" -eq 1 ]
-    [[ "$output" == *"LEDGER-HYPOTHESIS C-0004"* ]]
-    [[ "$output" == *"LEDGER-STRENGTH C-0005"* ]]
+    [[ "$output" == *"LEDGER-HYPOTHESIS C-0004"* ]] || false
+    [[ "$output" == *"LEDGER-STRENGTH C-0005"* ]] || false
 }
 
 @test "ledger: a revision must name the revision it supersedes" {
     append_claim '{"id":"C-0003","rev":2,"text":"t","category":"open_question","status":"unverified","author":"lead"}'
     run check ledger
     [ "$status" -eq 1 ]
-    [[ "$output" == *"LEDGER-REV"* ]]
+    [[ "$output" == *"LEDGER-REV"* ]] || false
 }
 
 @test "ledger: a line that is not JSON is reported with its line number" {
     printf '{not json\n' >> "$P/research/ledger/claims.jsonl"
     run check ledger
     [ "$status" -eq 1 ]
-    [[ "$output" == *"claims.jsonl:6 LEDGER-PARSE"* ]]
+    [[ "$output" == *"claims.jsonl:6 LEDGER-PARSE"* ]] || false
 }
 
 # ── AT2: references.bib comes only from bib_sources ──────────────────────────
@@ -105,28 +105,30 @@ EOF
     sed_inplace 's/Ten Simple Rules/Eleven Simple Rules/' "$P/paper/references.bib"
     run check bib
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/references.bib:3 BIB-REFS entry sandve2013 is not byte-equal"* ]]
+    [[ "$output" == *"paper/references.bib:3 BIB-REFS entry sandve2013 is not byte-equal"* ]] || false
 }
 
 @test "AT2: an entry missing its .meta.json fails the bib check" {
     rm "$P/bib_sources/sandve2013.meta.json"
     run check bib
     [ "$status" -eq 1 ]
-    [[ "$output" == *"BIB-META"* ]]
+    [[ "$output" == *"BIB-META"* ]] || false
 }
 
 @test "bib: editing a fetched file is detected by its recorded hash" {
     sed_inplace 's/year={2013}/year={2014}/' "$P/bib_sources/sandve2013.bib"
     run check bib
     [ "$status" -eq 1 ]
-    [[ "$output" == *"bib_sources/sandve2013.bib:1 BIB-HASH"* ]]
+    [[ "$output" == *"bib_sources/sandve2013.bib:1 BIB-HASH"* ]] || false
 }
 
 @test "bib: a \\cite with no bib_sources entry is reported at its line" {
+    # nobody2099 is in neither bib_sources/ nor references.bib: it cites nothing (BIB-UNDEFINED;
+    # a key that references.bib defines but bib_sources/ lacks stays BIB-MISSING).
     printf 'See \\cite{nobody2099}.\n' >> "$P/paper/main.tex"
     run check bib
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:23 BIB-MISSING"* ]]
+    [[ "$output" == *"paper/main.tex:23 BIB-UNDEFINED"* ]] || false
 }
 
 @test "bib build: references.bib is rebuilt from bib_sources and then passes" {
@@ -149,7 +151,7 @@ EOF
         UWS_BIB_CURL="$P/fakebin/curl" UWS_RESEARCH_ROOT="$P" \
         run "${PROJECT_ROOT}/scripts/research_bib.sh" fetch dblp:journals/corr/abs-2309-11495
     [ "$status" -eq 1 ]
-    [[ "$output" == *"refused"* ]]
+    [[ "$output" == *"refused"* ]] || false
     [ "$(ls "$P/bib_sources")" = "$before" ]
 }
 
@@ -161,7 +163,7 @@ EOF
         UWS_BIB_CURL="$P/fakebin/curl" UWS_RESEARCH_ROOT="$P" \
         run "${PROJECT_ROOT}/scripts/research_bib.sh" fetch dblp:journals/corr/abs-2309-11495
     [ "$status" -eq 1 ]
-    [[ "$output" == *"HTML"* ]]
+    [[ "$output" == *"HTML"* ]] || false
     [ "$(ls "$P/bib_sources")" = "$before" ]
 }
 
@@ -189,7 +191,7 @@ EOF
 @test "bib fetch: a PI-supplied file needs a PI decision ID" {
     UWS_RESEARCH_ROOT="$P" run "${PROJECT_ROOT}/scripts/research_bib.sh" fetch doi:10.1/x --from-file "${RFIX}/responses/arxiv_2309.11495.bib"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"--pi-decision"* ]]
+    [[ "$output" == *"--pi-decision"* ]] || false
     UWS_RESEARCH_ROOT="$P" run "${PROJECT_ROOT}/scripts/research_bib.sh" fetch doi:10.1/x --from-file "${RFIX}/responses/arxiv_2309.11495.bib" --pi-decision D-001 --key pisupplied
     [ "$status" -eq 0 ]
     grep -q '"pi_decision": "D-001"' "$P/bib_sources/pisupplied.meta.json"
@@ -212,7 +214,7 @@ EOF
     append_claim '{"id":"C-0001","rev":3,"supersedes":"C-0001@2","text":"t","category":"reported_finding","strength":"none","sources":[{"citekey":"sandve2013","quote":"Every result must always be reproduced by an independent laboratory.","locator":"Rule 1"}],"author":"scout","status":"verified","verified_by":"verifier","verified_at":"2026-09-26T00:00:00Z","verdict":"supports"}'
     run check quotes
     [ "$status" -eq 1 ]
-    [[ "$output" == *"claims.jsonl:6 QUOTE-MISMATCH C-0001 cites sandve2013"* ]]
+    [[ "$output" == *"claims.jsonl:6 QUOTE-MISMATCH C-0001 cites sandve2013"* ]] || false
 }
 
 @test "quotes: typographic quotes and whitespace do not cause false failures; a missing cache does" {
@@ -222,7 +224,7 @@ EOF
     rm "$P/research/sources/cache/sandve2013.txt"
     run check quotes
     [ "$status" -eq 1 ]
-    [[ "$output" == *"QUOTE-NOCACHE"* ]]
+    [[ "$output" == *"QUOTE-NOCACHE"* ]] || false
     run check quotes --allow-missing-cache
     [ "$status" -eq 0 ]
 }
@@ -239,14 +241,14 @@ EOF
     grep -q 'ROC-AUC of 0.913' "$P/paper/main.tex"
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:5 NUM-LITERAL hand-typed number 0.913"* ]]
+    [[ "$output" == *"paper/main.tex:5 NUM-LITERAL hand-typed number 0.913"* ]] || false
 }
 
 @test "AT5: changing one byte of the output file gives a hash mismatch" {
     sed_inplace 's/0.9199/0.9198/' "$P/artifacts/model_results.json"
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-HASH"* ]]
+    [[ "$output" == *"NUM-HASH"* ]] || false
 }
 
 @test "numbers: a printed value that the rounding rule does not produce fails" {
@@ -260,16 +262,16 @@ open(p, "a").write(json.dumps(row) + "\n")
 EOF
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"NUM-ROUND"* ]]
-    [[ "$output" == *"expected 0.912"* ]]
+    [[ "$output" == *"NUM-ROUND"* ]] || false
+    [[ "$output" == *"expected 0.912"* ]] || false
 }
 
 @test "numbers: a literal with a reason is allowed, one without a reason is not" {
     printf '\\section{Results}\nWe ran 2.5 hours. %% uws:literal wall-clock note, not a result\nAnd 3.25 more. %% uws:literal\n' >> "$P/paper/main.tex"
     run check numbers
     [ "$status" -eq 1 ]
-    [[ "$output" == *"main.tex:25 NUM-LITERAL uws:literal needs a reason"* ]]
-    [[ "$output" != *"main.tex:24 "* ]]
+    [[ "$output" == *"main.tex:25 NUM-LITERAL uws:literal needs a reason"* ]] || false
+    [[ "$output" != *"main.tex:24 "* ]] || false
 }
 
 # ── AT6 / AT7 and the other slop rules ───────────────────────────────────────
@@ -278,8 +280,8 @@ EOF
     printf '\nWe present the first predictive models for workflow recovery.\n' >> "$P/paper/main.tex"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:24 S1"* ]]
-    [[ "$output" == *"the first"* ]]
+    [[ "$output" == *"paper/main.tex:24 S1"* ]] || false
+    [[ "$output" == *"the first"* ]] || false
 }
 
 @test "S1: a novelty word is allowed as a candidate contribution" {
@@ -299,8 +301,8 @@ EOF
     printf '\nThe framework finishes in \\GbAucCv{} seconds.\n' >> "$P/paper/main.tex"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:24 C3"* ]]
-    [[ "$output" == *"simulated"* ]]
+    [[ "$output" == *"paper/main.tex:24 C3"* ]] || false
+    [[ "$output" == *"simulated"* ]] || false
 }
 
 @test "C3: a number labelled measured whose script draws random values fails" {
@@ -315,30 +317,30 @@ open(p, "a").write(json.dumps(row) + "\n")
 EOF
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"C3 N-0001 is labelled measured, but research/code/bench.py:4 draws random.uniform()"* ]]
+    [[ "$output" == *"C3 N-0001 is labelled measured, but research/code/bench.py:4 draws random.uniform()"* ]] || false
 }
 
 @test "slop: S2 vague attribution, S4 placeholder and S6 strength drift are blocked" {
     printf '\nStudies show that checkpoints help.\n\nTODO add the ablation.\n\nThis proves that checkpoints cause faster recovery. %% C-0002\n' >> "$P/paper/main.tex"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"main.tex:24 S2"* ]]
-    [[ "$output" == *"main.tex:26 S4"* ]]
-    [[ "$output" == *"main.tex:28 S6"* ]]
+    [[ "$output" == *"main.tex:24 S2"* ]] || false
+    [[ "$output" == *"main.tex:26 S4"* ]] || false
+    [[ "$output" == *"main.tex:28 S6"* ]] || false
 }
 
 @test "slop: S4 flags a blank value in a row of numbers" {
     printf '\n\\begin{tabular}{lcc}\nModel & MAE & AUC \\\\\nGB & 1.10 &  \\\\\n\\end{tabular}\n' >> "$P/paper/main.tex"
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"S4 empty cell in a row of numbers"* ]]
+    [[ "$output" == *"S4 empty cell in a row of numbers"* ]] || false
 }
 
 @test "slop: S4 ignores blanks in a qualitative comparison table and the header corner" {
     printf '\n\\begin{tabular}{lcc}\n & Git-Native & Checkpoints \\\\\nUWS & \\checkmark & \\checkmark \\\\\nAirflow & & \\checkmark \\\\\n\\end{tabular}\n' >> "$P/paper/main.tex"
     run check slop
     # no S4 finding of any wording on these rows (the base fixture has no S4 findings)
-    [[ "$output" != *" S4 "* ]]
+    [[ "$output" != *" S4 "* ]] || false
 }
 
 @test "slop: C1 placeholders and C5 mtime-selected inputs in research code are blocked" {
@@ -360,9 +362,9 @@ def later():
 EOF
     run check slop
     [ "$status" -eq 1 ]
-    [[ "$output" == *"research/code/train.py:6 C5"* ]]
-    [[ "$output" == *"research/code/train.py:10 C1"* ]]
-    [[ "$output" == *"research/code/train.py:13 C1"* ]]
+    [[ "$output" == *"research/code/train.py:6 C5"* ]] || false
+    [[ "$output" == *"research/code/train.py:10 C1"* ]] || false
+    [[ "$output" == *"research/code/train.py:13 C1"* ]] || false
 }
 
 # ── AT9: ledgers are append-only ─────────────────────────────────────────────
@@ -371,18 +373,18 @@ EOF
     sed_inplace '/"id":"C-0003"/d' "$P/research/ledger/claims.jsonl"
     run check ledger
     [ "$status" -eq 1 ]
-    [[ "$output" == *"LEDGER-APPEND C-0003@1 was removed or edited compared with HEAD"* ]]
+    [[ "$output" == *"LEDGER-APPEND C-0003@1 was removed or edited compared with HEAD"* ]] || false
     git -C "$P" commit -q -am "drop C-0003"
     run check ledger
     [ "$status" -eq 1 ]
-    [[ "$output" == *"compared with HEAD~1"* ]]
+    [[ "$output" == *"compared with HEAD~1"* ]] || false
 }
 
 @test "AT9: editing a committed ledger line in place fails" {
     sed_inplace 's/"author":"lead"/"author":"writer"/' "$P/research/ledger/claims.jsonl"
     run check ledger
     [ "$status" -eq 1 ]
-    [[ "$output" == *"LEDGER-APPEND C-0003@1"* ]]
+    [[ "$output" == *"LEDGER-APPEND C-0003@1"* ]] || false
 }
 
 # ── AT8 / AT10: research.sh next runs the gate ───────────────────────────────
@@ -399,13 +401,13 @@ EOF
     printf '\nWe present the first predictive models.\n' >> "$P/paper/main.tex"
     run "${SCRIPTS_DIR}/research.sh" next
     [ "$status" -eq 1 ]
-    [[ "$output" == *"S1"* ]]
-    [[ "$output" == *"Blocked"* ]]
+    [[ "$output" == *"S1"* ]] || false
+    [[ "$output" == *"Blocked"* ]] || false
     [ "$(phase_now)" = "analysis" ]
 
     run "${SCRIPTS_DIR}/research.sh" next --force
     [ "$status" -eq 1 ]
-    [[ "$output" == *"needs a reason"* ]]
+    [[ "$output" == *"needs a reason"* ]] || false
     [ "$(phase_now)" = "analysis" ]
 
     run "${SCRIPTS_DIR}/research.sh" next --force "PI D-001: accept the wording for the internal draft"
@@ -420,7 +422,7 @@ EOF
     research_state publication
     run "${SCRIPTS_DIR}/research.sh" next --force "ship it"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"never accepted at the publication gate"* ]]
+    [[ "$output" == *"never accepted at the publication gate"* ]] || false
     [ "$(phase_now)" = "publication" ]
     if [ -f "$P/.workflow/logs/decisions.log" ]; then
         run grep -q "research-gate-force" "$P/.workflow/logs/decisions.log"
@@ -440,17 +442,17 @@ EOF
     research_state analysis
     run "${SCRIPTS_DIR}/research.sh" check ledger
     [ "$status" -eq 0 ]
-    [[ "$output" == *"ledger: PASS"* ]]
+    [[ "$output" == *"ledger: PASS"* ]] || false
     run "${SCRIPTS_DIR}/research.sh" check 1
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Marked [1]"* ]]
+    [[ "$output" == *"Marked [1]"* ]] || false
 }
 
 @test "uws research check gate goes through bin/uws" {
     research_state literature_review
     run "${PROJECT_ROOT}/bin/uws" research check gate literature_review
     [ "$status" -eq 0 ]
-    [[ "$output" == *"gate literature_review: PASS"* ]]
+    [[ "$output" == *"gate literature_review: PASS"* ]] || false
 }
 
 @test "research check init scaffolds a project without overwriting files" {
@@ -465,21 +467,21 @@ EOF
     [ "$(cat "$P/research/QUESTION.md")" = "mine" ]
     run check gate hypothesis
     [ "$status" -eq 1 ]
-    [[ "$output" == *"GATE-QUESTION"* ]]
+    [[ "$output" == *"GATE-QUESTION"* ]] || false
 }
 
 @test "gate peer_review: an open blocking red-team finding blocks" {
     printf '| F-003 | blocking | open | split leaks | train.py:157 | GroupKFold |\n' >> "$P/research/reviews/REV-001.md"
     run check gate peer_review
     [ "$status" -eq 1 ]
-    [[ "$output" == *"research/reviews/REV-001.md:9 GATE-REVIEW F-003"* ]]
+    [[ "$output" == *"research/reviews/REV-001.md:9 GATE-REVIEW F-003"* ]] || false
 }
 
 @test "gate publication: needs the PI approval line" {
     sed_inplace '/PUBLICATION-APPROVAL/d' "$P/research/pi/decisions.md"
     run check gate publication
     [ "$status" -eq 1 ]
-    [[ "$output" == *"GATE-PI"* ]]
+    [[ "$output" == *"GATE-PI"* ]] || false
 }
 
 # ── SubagentStop hook (L2) ────────────────────────────────────────────────────
@@ -492,7 +494,7 @@ hook_input() {
     append_claim '{"id":"C-0003","rev":2,"supersedes":"C-0003@1","text":"t","category":"open_question","status":"verified","author":"scout","verified_by":"scout","verified_at":"2026-09-26T00:00:00Z","verdict":"supports"}'
     run bash -c "$(declare -f hook_input); hook_input uws:uws-rt-scout 'Done. Open questions for the orchestrator: None' | CLAUDE_PROJECT_DIR='$P' CLAUDE_PLUGIN_ROOT='${PROJECT_ROOT}/plugins/uws' '$HOOK'"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"C-0003 is marked verified by its own author"* ]]
+    [[ "$output" == *"C-0003 is marked verified by its own author"* ]] || false
 }
 
 @test "hook: after 2 retries the agent may stop and a blocker is recorded" {
@@ -512,7 +514,7 @@ hook_input() {
 @test "hook: a missing 'Open questions' section is sent back; a clean stop passes" {
     run bash -c "$(declare -f hook_input); hook_input uws-rt-verifier 'All verified.' | CLAUDE_PROJECT_DIR='$P' CLAUDE_PLUGIN_ROOT='${PROJECT_ROOT}/plugins/uws' '$HOOK'"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"Open questions for the orchestrator"* ]]
+    [[ "$output" == *"Open questions for the orchestrator"* ]] || false
     run bash -c "$(declare -f hook_input); hook_input uws-rt-verifier 'Report. Open questions for the orchestrator: None' | CLAUDE_PROJECT_DIR='$P' CLAUDE_PLUGIN_ROOT='${PROJECT_ROOT}/plugins/uws' '$HOOK'"
     [ "$status" -eq 0 ]
 }
@@ -529,8 +531,8 @@ hook_input() {
 @test "hook: hooks.json routes SubagentStop for plain and plugin-scoped research agents only" {
     local matcher
     matcher="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hooks"]["SubagentStop"][0]["matcher"])' "${PROJECT_ROOT}/plugins/uws/hooks/hooks.json")"
-    [[ "uws-rt-verifier" =~ $matcher ]]
-    [[ "uws:uws-rt-scout" =~ $matcher ]]
+    [[ "uws-rt-verifier" =~ $matcher ]] || false
+    [[ "uws:uws-rt-scout" =~ $matcher ]] || false
     run bash -c "[[ 'uws-researcher' =~ $matcher ]]"
     [ "$status" -ne 0 ]
     run bash -c "[[ 'Explore' =~ $matcher ]]"
@@ -544,18 +546,18 @@ hook_input() {
     printf 'sdlc_phase: "design"\n' >> "$P/.workflow/state.yaml"
     run "${SCRIPTS_DIR}/orchestrate.sh" status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"sdlc"* ]]
+    [[ "$output" == *"sdlc"* ]] || false
     run "${SCRIPTS_DIR}/orchestrate.sh" status --methodology research
     [ "$status" -eq 0 ]
-    [[ "$output" == *"literature_review"* ]]
-    [[ "$output" == *"rt-scout"* ]]
+    [[ "$output" == *"literature_review"* ]] || false
+    [[ "$output" == *"rt-scout"* ]] || false
 }
 
 @test "orchestrate: --agent rt-verifier writes a research contract brief" {
     research_state literature_review
     run "${SCRIPTS_DIR}/orchestrate.sh" dispatch --methodology research --agent rt-verifier "Verify C-0001"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"DISPATCH: agent=rt-verifier subagent=.claude/agents/uws-rt-verifier.md phase=research:literature_review"* ]]
+    [[ "$output" == *"DISPATCH: agent=rt-verifier subagent=.claude/agents/uws-rt-verifier.md phase=research:literature_review"* ]] || false
     grep -q "research/ledger/claims.jsonl" "$P/workspace/rt-verifier/TASK.md"
     grep -q "uws research check gate literature_review" "$P/workspace/rt-verifier/TASK.md"
     run grep -q "REQ-ID" "$P/workspace/rt-verifier/TASK.md"
@@ -570,7 +572,7 @@ hook_input() {
     [ "$status" -eq 1 ]
     run "${SCRIPTS_DIR}/orchestrate.sh" status --methodology sdlc
     [ "$status" -eq 1 ]
-    [[ "$output" == *"no active sdlc phase"* ]]
+    [[ "$output" == *"no active sdlc phase"* ]] || false
 }
 
 # ── What ships ────────────────────────────────────────────────────────────────

@@ -99,7 +99,7 @@ teardown() {
     run "$PROJECT_ROOT/bin/uws" init
     # It should attempt to run init_workflow.sh (may prompt or auto-detect)
     # The key test: it must NOT fail with "No UWS project found"
-    [[ "$output" != *"No UWS project found"* ]]
+    [[ "$output" != *"No UWS project found"* ]] || false
     rm -rf "$fresh_dir"
 }
 
@@ -150,7 +150,7 @@ teardown() {
     assert_output "uws agent: retired"
     assert_output "uws orchestrate dispatch"
     assert_output "/agents"
-    [[ "$output" != *"CALLED:"* ]]
+    [[ "$output" != *"CALLED:"* ]] || false
     rm -rf "$empty_dir"
 }
 
@@ -161,7 +161,7 @@ teardown() {
     [ "${#lines[@]}" -eq 1 ]
     assert_output "uws skill: retired"
     assert_output "Skills are native Claude Code skills"
-    [[ "$output" != *"CALLED:"* ]]
+    [[ "$output" != *"CALLED:"* ]] || false
 }
 
 @test "uws sdlc dispatches to sdlc.sh" {
@@ -230,8 +230,8 @@ STUB
     [ "$status" -eq 0 ]
     assert_output "orchestrate <cmd>"
     assert_output "dashboard"
-    [[ "$output" != *"agent <name>"* ]]
-    [[ "$output" != *"skill <name>"* ]]
+    [[ "$output" != *"agent <name>"* ]] || false
+    [[ "$output" != *"skill <name>"* ]] || false
 }
 
 @test "uws company-os is no longer a recognized command" {

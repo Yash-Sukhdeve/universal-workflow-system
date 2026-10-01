@@ -24,14 +24,14 @@ teardown() {
 # ============================================================================
 
 @test "checkpoint.sh exists and is executable" {
-    [[ -f "${SCRIPTS_DIR}/checkpoint.sh" ]]
-    [[ -x "${SCRIPTS_DIR}/checkpoint.sh" ]]
+    [[ -f "${SCRIPTS_DIR}/checkpoint.sh" ]] || false
+    [[ -x "${SCRIPTS_DIR}/checkpoint.sh" ]] || false
 }
 
 @test "checkpoint.sh creates checkpoint with message" {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Test checkpoint message"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 @test "checkpoint.sh appends to checkpoints.log" {
@@ -43,7 +43,7 @@ teardown() {
     local final_lines
     final_lines=$(wc -l < "${TEST_TMP_DIR}/.workflow/checkpoints.log")
 
-    [[ "$final_lines" -gt "$initial_lines" ]]
+    [[ "$final_lines" -gt "$initial_lines" ]] || false
 }
 
 @test "checkpoint.sh includes message in log" {
@@ -66,7 +66,7 @@ teardown() {
     # Should have incrementing checkpoint IDs
     local checkpoints
     checkpoints=$(grep -c "CP_" "${TEST_TMP_DIR}/.workflow/checkpoints.log")
-    [[ "$checkpoints" -ge 2 ]]
+    [[ "$checkpoints" -ge 2 ]] || false
 }
 
 # ============================================================================
@@ -90,7 +90,7 @@ teardown() {
     after_ts=$(grep "last_updated" "${TEST_TMP_DIR}/.workflow/state.yaml" || echo "none")
 
     # Timestamps should be different (or at least exist)
-    [[ "$after_ts" != "none" ]]
+    [[ "$after_ts" != "none" ]] || false
 }
 
 # ============================================================================
@@ -101,7 +101,7 @@ teardown() {
     run "${SCRIPTS_DIR}/checkpoint.sh"
 
     # Should fail or prompt for message
-    [[ "$status" -ne 0 ]] || [[ "$output" =~ "message" ]] || [[ "$output" =~ "usage" ]] || [[ "$output" =~ "Usage" ]]
+    [[ "$status" -ne 0 ]] || [[ "$output" =~ "message" ]] || [[ "$output" =~ "usage" ]] || [[ "$output" =~ "Usage" ]] || false
 }
 
 @test "checkpoint.sh fails without initialized workflow" {
@@ -109,7 +109,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/checkpoint.sh" "Should fail"
 
-    [[ "$status" -ne 0 ]] || [[ "$output" =~ "not initialized" ]] || [[ "$output" =~ "Error" ]]
+    [[ "$status" -ne 0 ]] || [[ "$output" =~ "not initialized" ]] || [[ "$output" =~ "Error" ]] || false
 }
 
 @test "checkpoint.sh handles missing state.yaml" {
@@ -118,7 +118,7 @@ teardown() {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Missing state test"
 
     # Should fail gracefully
-    [[ "$status" -ne 0 ]] || [[ "$output" =~ "state" ]]
+    [[ "$status" -ne 0 ]] || [[ "$output" =~ "state" ]] || false
 }
 
 @test "checkpoint.sh handles missing checkpoints.log gracefully" {
@@ -127,7 +127,7 @@ teardown() {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Missing log test"
 
     # Should either create the file or fail gracefully
-    [[ -f "${TEST_TMP_DIR}/.workflow/checkpoints.log" ]] || [[ "$status" -ne 0 ]]
+    [[ -f "${TEST_TMP_DIR}/.workflow/checkpoints.log" ]] || [[ "$status" -ne 0 ]] || false
 }
 
 # ============================================================================
@@ -149,7 +149,7 @@ teardown() {
     # Count pipe delimiters (should be 2 for 3 fields)
     local pipes
     pipes=$(echo "$last_line" | tr -cd '|' | wc -c)
-    [[ "$pipes" -eq 2 ]]
+    [[ "$pipes" -eq 2 ]] || false
 }
 
 # ============================================================================
@@ -178,21 +178,21 @@ teardown() {
 @test "checkpoint.sh handles message with spaces" {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Message with multiple spaces"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
     grep -q "multiple spaces" "${TEST_TMP_DIR}/.workflow/checkpoints.log"
 }
 
 @test "checkpoint.sh handles message with special characters" {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Message with special: chars!"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 @test "checkpoint.sh handles empty message gracefully" {
     run "${SCRIPTS_DIR}/checkpoint.sh" ""
 
     # Should fail or use default message
-    [[ "$status" -ne 0 ]] || [[ "$output" =~ "message" ]]
+    [[ "$status" -ne 0 ]] || [[ "$output" =~ "message" ]] || false
 }
 
 # ============================================================================
@@ -205,7 +205,7 @@ teardown() {
     run "${SCRIPTS_DIR}/checkpoint.sh" --list
 
     # Should show checkpoint or indicate how to list
-    [[ "$status" -eq 0 ]] || [[ "$output" =~ "checkpoint" ]]
+    [[ "$status" -eq 0 ]] || [[ "$output" =~ "checkpoint" ]] || false
 }
 
 # ============================================================================
@@ -215,7 +215,7 @@ teardown() {
 @test "checkpoint.sh works with git repository" {
     run "${SCRIPTS_DIR}/checkpoint.sh" "Git repo test"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 @test "checkpoint.sh handles dirty git state" {
@@ -224,7 +224,7 @@ teardown() {
 
     run "${SCRIPTS_DIR}/checkpoint.sh" "Dirty state test"
 
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -eq 0 ]] || false
 }
 
 # ============================================================================
@@ -238,7 +238,7 @@ teardown() {
 
     local count
     count=$(grep -c "Rapid call" "${TEST_TMP_DIR}/.workflow/checkpoints.log")
-    [[ "$count" -eq 3 ]]
+    [[ "$count" -eq 3 ]] || false
 }
 
 # ============================================================================
@@ -255,5 +255,5 @@ teardown() {
     end_time=$(date +%s)
     local elapsed=$((end_time - start_time))
 
-    [[ "$elapsed" -lt 5 ]]
+    [[ "$elapsed" -lt 5 ]] || false
 }

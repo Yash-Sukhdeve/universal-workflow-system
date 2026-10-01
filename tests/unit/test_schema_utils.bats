@@ -39,7 +39,7 @@ teardown() {
     run validate_state_schema "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     assert_failure
-    [[ "$output" =~ "does not match pattern" ]]
+    [[ "$output" =~ "does not match pattern" ]] || false
 }
 
 @test "validate_state_schema detects invalid checkpoint format" {
@@ -86,7 +86,7 @@ EOF
     run validate_state_schema "${TEST_TMP_DIR}/.workflow/state.yaml"
 
     assert_failure
-    [[ "$output" =~ "Consistency" ]]
+    [[ "$output" =~ "Consistency" ]] || false
 }
 
 # ===========================================
@@ -235,7 +235,7 @@ EOF
     run validate_pattern "phase_1_planning" "^phase_[1-5]_" "test_field"
 
     assert_success
-    [[ $(schema_error_count) -eq 0 ]]
+    [[ $(schema_error_count) -eq 0 ]] || false
 }
 
 @test "validate_pattern fails on invalid pattern" {
@@ -246,7 +246,7 @@ EOF
     validate_pattern "invalid" "^phase_[1-5]_" "test_field" || true
 
     # Check that errors were recorded
-    [[ $(schema_error_count) -gt 0 ]]
+    [[ $(schema_error_count) -gt 0 ]] || false
 }
 
 @test "validate_pattern skips empty values" {
@@ -337,8 +337,8 @@ EOF
 
     schema_clear_results
 
-    [[ $(schema_error_count) -eq 0 ]]
-    [[ $(schema_warning_count) -eq 0 ]]
+    [[ $(schema_error_count) -eq 0 ]] || false
+    [[ $(schema_warning_count) -eq 0 ]] || false
 }
 
 @test "schema_error_count returns correct count" {
@@ -346,7 +346,7 @@ EOF
     schema_add_error "error 1"
     schema_add_error "error 2"
 
-    [[ $(schema_error_count) -eq 2 ]]
+    [[ $(schema_error_count) -eq 2 ]] || false
 }
 
 @test "schema_get_errors_json returns valid JSON" {
@@ -357,7 +357,7 @@ EOF
     local json
     json=$(schema_get_errors_json)
 
-    [[ "$json" == '["test error 1","test error 2"]' ]]
+    [[ "$json" == '["test error 1","test error 2"]' ]] || false
 }
 
 @test "schema_get_errors_json returns empty array when no errors" {
@@ -366,7 +366,7 @@ EOF
     local json
     json=$(schema_get_errors_json)
 
-    [[ "$json" == '[]' ]]
+    [[ "$json" == '[]' ]] || false
 }
 
 # ===========================================
@@ -381,7 +381,7 @@ EOF
     output=$(validate_all_schemas "${TEST_TMP_DIR}/.workflow" 2>&1) || true
 
     # Should at least attempt validation (output contains validation-related text)
-    [[ "$output" =~ "Validating" ]] || [[ "$output" =~ "state.yaml" ]] || [[ "$output" =~ "OK" ]] || [[ -z "$output" ]]
+    [[ "$output" =~ "Validating" ]] || [[ "$output" =~ "state.yaml" ]] || [[ "$output" =~ "OK" ]] || [[ -z "$output" ]] || false
 }
 
 @test "validate_all_schemas handles missing directory" {
@@ -390,7 +390,7 @@ EOF
     output=$(validate_all_schemas "${TEST_TMP_DIR}/nonexistent" 2>&1) || true
 
     # Should handle gracefully (no state.yaml found or returns cleanly)
-    [[ "$output" =~ "NOT FOUND" ]] || [[ "$output" =~ "not found" ]] || [[ "$output" =~ "Validating" ]] || [[ -z "$output" ]]
+    [[ "$output" =~ "NOT FOUND" ]] || [[ "$output" =~ "not found" ]] || [[ "$output" =~ "Validating" ]] || [[ -z "$output" ]] || false
 }
 
 # ===========================================

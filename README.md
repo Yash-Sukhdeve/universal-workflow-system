@@ -300,16 +300,21 @@ recorded in plain-text ledgers under `research/`, and a deterministic checker (P
 standard library) checks those ledgers at every phase gate:
 
 ```bash
-uws research check init              # scaffold research/ and bib_sources/
+uws research check init              # scaffold research/ and bib_sources/ (no .workflow needed;
+                                     # `uws init research` adds it for start/next)
 uws research bib fetch doi:10.1371/journal.pcbi.1003285 --key sandve2013
 uws research bib build               # references.bib only from bib_sources/
 uws research check retraction --online      # cache Crossref retraction notices
 uws research check plan new EXP-LEAK        # write the plan, then freeze and commit it
 uws research check plan freeze EXP-LEAK     #   before any data or run exists
 uws research check data add research/data/raw/x.csv --source ... --version 1 \
-    --split "..." --origin measured         # register every input (sha256, size)
+    --split '{"column": "split", "group_key": "scenario_id"}' \
+    --origin measured                       # register every input (sha256, size)
 uws research check run --exp EXP-LEAK --input research/data/raw/x.csv \
-    --output results.json -- python3 analysis.py   # recorded in research/runs/
+    --code analysis.py --output 'results_*.json' \
+    -- python3 analysis.py                  # recorded in research/runs/
+uws research check numbers add '{"macro": "\\AucCv", "output": "results_<stamp>.json",
+    "pointer": "/auc", "rounding": "round:3", ...}'  # also: claims add '<json>'
 uws research check repro all         # re-run in a scratch copy, compare each number
 uws research check gate literature_review   # file:line findings; exit 1 blocks
 uws research next                    # runs the gate; --force "<reason>" is logged,
@@ -322,13 +327,18 @@ the cached source, that every number in the paper comes from a generated macro t
 an output file and its hash, and a set of "slop" rules (unsupported novelty, vague
 attribution, placeholders, overclaimed causality, undisclosed simulated data, generator
 labels called ground truth). They also check that each experiment's plan was frozen and
-committed before its results (a later change needs a PI decision), that every input is in
+committed before its results, including any result a run's input was computed from (a
+later change needs a PI decision), that every input is in
 the data manifest with its hash and, when generated, its seed, that derived metrics match
 their declared formula (for example FP / (FP + TN)), that cross-validation values are not
 presented as held-out results, that every number reproduces from its recorded run, that the
 red team reviewed the current manuscript, and that no verified claim rests on a source
-Crossref lists as retracted (an unchecked source is a warning, never a pass). The plugin
-command is `/uws:research-check`. Design: `docs/design/research-team.md`.
+Crossref lists as retracted (an unchecked source is a warning, never a pass). Ledger rows
+are appended with `numbers add` / `claims add`, which validate them and never edit an
+existing line; a hand-typed number is tied to its row through the row's `where`, and a split
+declared as JSON is checked for one unit on both sides (leakage). The plugin command is
+`/uws:research-check`. Design: `docs/design/research-team.md` (section 11b: what the first
+field test, an audit of the PROMISE 2026 paper, changed).
 
 ---
 
@@ -358,7 +368,8 @@ uws kb prune                             # dry run of the removal rules; --apply
   overlaps with trusted items (4) and anything that looks like a credential.
 - Items become `stale` or `disputed` when their watched files change or their check fails,
   and `prune --apply` moves superseded, disproven, expired and never-promoted items to
-  `docs/kb/retired/` with `git mv` (`uws kb restore <ID>` undoes it). Every change is a line
+  `docs/kb/retired/` with `git mv` (`uws kb restore <ID>` undoes it); imported items are
+  excepted, since they wait for the PI's triage (decision D6). Every change is a line
   in `docs/kb/events.tsv`; nothing is committed for you.
 - Session start adds one line (`KB: 12 trusted, 1 stale, ...`) inside the 1.2 KB context
   budget. In Claude Code, the `uws-kb` skill and `/uws:kb` command wrap the CLI.
@@ -388,6 +399,58 @@ Nothing changes without the PI: `uws kb approve <ID>` records acceptance but nev
 change (that goes through a normal change request), and after approval `learn` watches the
 same metric for 10 events and proposes a revert if it did not improve. `uws kb learn --dry-run`
 shows what it would propose.
+
+### Global knowledge base, imports and subagent briefs
+
+A second, cross-project KB lives at `~/uws-global-knowledge/kb` (the directory is
+`UWS_GLOBAL_MEMORY_DIR` or `global_memory_dir` in `~/.config/uws/config.yaml` when set). It must
+be its own git repository, so every change stays reviewable and reversible; UWS refuses to
+write to it otherwise.
+
+```bash
+uws kb init --global                     # create it and run git init (never commits)
+uws kb pi --set you@example.com --global # its own PI, in your own terminal
+uws kb add --global --type lesson --claim "macOS ships bash 3.2" --evidence reported \
+  --source url:https://... --quote "..."  # prints global:K-20260930-1a2b3c
+uws kb search bash                       # project and global items, one 5-line budget
+uws kb approve global:K-20260930-1a2b3c  # global:ID reaches the global KB from any project
+```
+
+Global claims may not name project or home paths (`add` refuses, `lint` reports I8), and only
+the global KB's PI promotes its items.
+
+`uws kb import` turns the older memory stores into candidates for the PI to triage. It only
+reads its sources (a vector-memory database is copied into memory through a read-only
+connection; auto-memory files are read, and `MEMORY.md` is opened only with `--include-index`,
+never written) and never makes anything trusted:
+
+```bash
+uws kb import vector --db memory/vector_memory.db --dry-run      # what it would add
+uws kb import vector --db ~/uws-global-knowledge/memory/vector_memory.db --scope global
+uws kb import automemory --dir ~/.claude/projects/<project>/memory
+uws kb import automemory --dir ~/.claude/projects/<project>/memory --include-index --dry-run
+                                         # also each entry of MEMORY.md (read only)
+uws kb review --imported                 # the triage queue, with the steps to keep, correct,
+                                         # refute (uws kb dispute) or drop each item
+```
+
+Duplicates collapse into one item, rows that look like secrets are skipped, preferences and
+corrections stay in auto-memory, and rows that name concrete things (paths, file names,
+snake_case names, backticked terms), none of which the project contains, are flagged
+`suspected-fixture` (project imports only). `approve` refuses an import as it stands: the PI
+restates it with a resolvable source (`uws kb add ... --supersedes <ID>`, repeating the claim
+to keep it as it is), and approving the restatement retires the import. No rule retires an
+import before the PI has reviewed it: `prune` skips imports, and a restatement or a dispute
+takes effect only when the PI approves it (decision D6). The vector-memory servers and skills
+keep running unchanged.
+
+`uws orchestrate dispatch` adds up to 5 trusted items (1000 bytes) that share at least two
+whole words with the task to the subagent's `TASK.md`, under a heading that calls them leads to
+verify, not evidence. Searches, `show` and these briefs are logged per machine in
+`docs/kb/.cache/usage.tsv` (gitignored). From that log, `uws kb prune` lists trusted items not
+retrieved on this machine in the last 20 sessions (older than 90 days, decisions excepted) for
+you to retire with `uws kb retire <ID> unused`, and `uws kb learn` measures the unused share and
+proposes a shorter review window when it passes 50%.
 
 ---
 

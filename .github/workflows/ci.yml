@@ -56,6 +56,19 @@ jobs:
             exit 1
           fi
 
+      - name: Reject test assertions that cannot fail under bash 3.2
+        run: |
+          # macOS's /bin/bash 3.2 does not apply errexit to a failing [[ ]] or (( )), so a
+          # bats line that is only `[[ ... ]]` never fails a test there: write
+          # `[[ ... ]] || false` (like the bare `! cmd` rule in CLAUDE.md). Checked in the
+          # knowledge-base increment-2 test files; add new test files to this list.
+          if grep -nE '^[[:space:]]*(\[\[ .* \]\]|\(\( .* \)\))[[:space:]]*$' \
+              tests/integration/test_kb_global.bats tests/integration/test_kb_import.bats \
+              tests/integration/test_kb_usage.bats; then
+            echo "::error::bare [[ ]] / (( )) assertion: append || false (bash 3.2 ignores its failure)"
+            exit 1
+          fi
+
       - name: Compile the research checker (Python 3 standard library only)
         run: |
           # scripts/research_check.py backs the research gates; its behaviour is tested by
@@ -63,6 +76,35 @@ jobs:
           python3 -m py_compile scripts/research_check.py
           if grep -nE '^\s*(import|from)\s+(yaml|numpy|pandas|requests|bibtexparser)\b' scripts/research_check.py; then
             echo "::error::research_check.py must use the Python standard library only"
+            exit 1
+          fi
+          # scripts/kb_import.py backs `uws kb import`; tests/integration/test_kb_import.bats
+          # builds its SQLite fixtures with tests/fixtures/kb/make_vector_db.py. Both run on
+          # users' and CI machines with a bare python3, so standard library only.
+          python3 -m py_compile scripts/kb_import.py tests/fixtures/kb/make_vector_db.py
+          # every import statement against sys.stdlib_module_names (tests/helpers/stdlib_only.py)
+          if ! python3 tests/helpers/stdlib_only.py scripts/kb_import.py tests/fixtures/kb/make_vector_db.py; then
+            echo "::error::kb_import.py and make_vector_db.py must use the Python standard library only"
+            exit 1
+          fi
+          # The importer reads vector-memory databases through sqlite3's read-only URI
+          # connection and backup API (Python 3.7+)
+          python3 -c 'import sqlite3, sys; assert sys.version_info >= (3, 7); print("sqlite", sqlite3.sqlite_version)'
+
+      - name: Reject sourcing from process substitution (reads nothing on bash 3.2)
+        run: |
+          if grep -rnE '^[^#]*(^|[;&|[:space:]])(source|\.)[[:space:]]+<\(' scripts bin tests --include='*.sh' --include='*.bash' --include='*.bats' --include=uws; then
+            echo "::error::'source <(...)' silently reads nothing on bash 3.2 (macOS); write to a temp file and source that"
+            exit 1
+          fi
+
+      - name: Reject bats assertions that cannot fail on macOS
+        run: |
+          # Under bash 3.2 (macOS /bin/bash) a failing [[ ]] that is not the last
+          # command of a test does not trip errexit, so the assertion is a no-op.
+          # Write `[[ ... ]] || false` (or use [ ], run + $status checks).
+          if grep -rnE '^[[:space:]]+\[\[ .* \]\][[:space:]]*$' tests --include='*.bats' --include='*.bash'; then
+            echo "::error::bare [[ ]] assertion in a bats test: append '|| false' (bash 3.2 ignores it otherwise)"
             exit 1
           fi
 
@@ -105,6 +147,7 @@ jobs:
           ls "$materialized"/agents/uws-*.md
           test -f "$materialized/skills/uws-kb/SKILL.md"
           test -x "$materialized/scripts/kb.sh"
+          test -x "$materialized/scripts/kb_import.py"
           test -f "$materialized/skills/uws-research-lead/SKILL.md"
           test -x "$materialized/hooks/research_subagent_stop.sh"
 
@@ -188,6 +231,9 @@ jobs:
         run: |
           brew install yq || echo "yq installation failed (non-critical)"
           yq --version || true
+
+      - name: Check python3 with sqlite3 (uws kb import and its tests)
+        run: python3 -c 'import sqlite3, sys; assert sys.version_info >= (3, 7); print(sys.version.split()[0], "sqlite", sqlite3.sqlite_version)'
 
       - name: Make scripts executable
         run: |

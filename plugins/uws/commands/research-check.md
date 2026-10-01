@@ -1,12 +1,14 @@
 ---
-description: Run the research team's evidence checks (ledger, bib, quotes, numbers, slop, plan, data, retraction) or a phase gate
-argument-hint: "<ledger|bib|quotes|numbers|slop|plan|data|retraction|repro <N-ID|all>|manuscript-hash|gate <phase>|init>"
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/uws research check:*)
+description: Run the research team's evidence checks (ledger, claims, bib, quotes, numbers, slop, plan, data, retraction) or a phase gate
+argument-hint: "<ledger|claims [add '<json>']|bib|quotes|numbers [add '<json>']|slop|plan|data|run ... -- <cmd>|repro <N-ID|all>|retraction|manuscript-hash|macros|gate <phase>|init>"
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/uws research check:*), Bash(${CLAUDE_PLUGIN_ROOT}/bin/uws research status:*)
 ---
 
-Run the UWS research evidence check with the user's arguments (`$ARGUMENTS`; if empty,
-run `gate` with the current research phase shown by
-`${CLAUDE_PLUGIN_ROOT}/bin/uws research status`):
+Run the UWS research evidence check with the user's arguments (`$ARGUMENTS`). If they are
+empty, run `${CLAUDE_PLUGIN_ROOT}/bin/uws research status` and run `gate` with the current
+research phase it shows. If `research status` fails (a project without
+`.workflow/state.yaml`: the checks do not need one, the phase actions do), ask the user
+which phase to gate instead of guessing:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/uws research check <arguments>

@@ -92,12 +92,12 @@ hook_context() {
     sed_inplace 's/^goal:.*/goal: "Ship the parser"/' "$PROJ/.workflow/state.yaml"
     run hook_context
     [ "$status" -eq 0 ]
-    [[ "$output" == *"goal: Ship the parser"* ]]
-    [[ "$output" == *"project_type: software"* ]]
-    [[ "$output" == *"current_phase: phase_1_planning"* ]]
-    [[ "$output" == *"current_checkpoint: CP_1_001"* ]]
-    [[ "$output" =~ last_updated:\ [0-9]{4}-[0-9]{2}-[0-9]{2}T ]]
-    [[ "$output" != *"null"* ]]
+    [[ "$output" == *"goal: Ship the parser"* ]] || false
+    [[ "$output" == *"project_type: software"* ]] || false
+    [[ "$output" == *"current_phase: phase_1_planning"* ]] || false
+    [[ "$output" == *"current_checkpoint: CP_1_001"* ]] || false
+    [[ "$output" =~ last_updated:\ [0-9]{4}-[0-9]{2}-[0-9]{2}T ]] || false
+    [[ "$output" != *"null"* ]] || false
 }
 
 @test "hook: accepts unquoted scalars as written by yq" {
@@ -112,9 +112,9 @@ research_phase: data_collection
 EOF
     run hook_context
     [ "$status" -eq 0 ]
-    [[ "$output" == *"goal: Measure recovery latency"* ]]
-    [[ "$output" == *"research_phase: data_collection"* ]]
-    [[ "$output" == *"current_checkpoint: CP_2_004"* ]]
+    [[ "$output" == *"goal: Measure recovery latency"* ]] || false
+    [[ "$output" == *"research_phase: data_collection"* ]] || false
+    [[ "$output" == *"current_checkpoint: CP_2_004"* ]] || false
 }
 
 @test "hook: JSON-escapes quotes, backslashes, tabs and control characters" {
@@ -128,11 +128,11 @@ EOF
     echo "$output" | jq -e . >/dev/null
     local ctx
     ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-    [[ "$ctx" == *'say \"hi\"'* ]]
-    [[ "$ctx" == *$'\t'"tab"* ]]
+    [[ "$ctx" == *'say \"hi\"'* ]] || false
+    [[ "$ctx" == *$'\t'"tab"* ]] || false
     # ESC removed, the rest of the text kept
-    [[ "$ctx" != *$'\033'* ]]
-    [[ "$ctx" == *"[31mred"* ]]
+    [[ "$ctx" != *$'\033'* ]] || false
+    [[ "$ctx" == *"[31mred"* ]] || false
 }
 
 @test "hook: silent outside UWS projects" {
@@ -163,10 +163,10 @@ EOF
     ' "$PROJ/.workflow/handoff.md" > "$PROJ/h.tmp" && mv "$PROJ/h.tmp" "$PROJ/.workflow/handoff.md"
     run hook_context
     [ "$status" -eq 0 ]
-    [[ "$output" == *"- Wire the parser"* ]]
-    [[ "$output" != *"Done already"* ]]
-    [[ "$output" == *"Blockers (handoff.md):"* ]]
-    [[ "$output" == *"- Waiting on API key"* ]]
+    [[ "$output" == *"- Wire the parser"* ]] || false
+    [[ "$output" != *"Done already"* ]] || false
+    [[ "$output" == *"Blockers (handoff.md):"* ]] || false
+    [[ "$output" == *"- Waiting on API key"* ]] || false
 }
 
 @test "hook: git line reports branch and change counts" {
@@ -174,7 +174,7 @@ EOF
     echo "x" > "$PROJ/new_file.txt"
     run hook_context
     [ "$status" -eq 0 ]
-    [[ "$output" =~ Git:\ branch\ [^\;]+\;\ [0-9]+\ modified,\ [0-9]+\ staged,\ [1-9][0-9]*\ untracked ]]
+    [[ "$output" =~ Git:\ branch\ [^\;]+\;\ [0-9]+\ modified,\ [0-9]+\ staged,\ [1-9][0-9]*\ untracked ]] || false
 }
 
 @test "plugin hook uses the same code path as recover_context.sh --hook" {
@@ -190,12 +190,12 @@ EOF
 @test "repo settings.json: SessionStart runs recover_context.sh --hook without discarding stderr" {
     local cmd
     cmd="$(jq -r '.hooks.SessionStart[0].hooks[0].command' "${PROJECT_ROOT}/.claude/settings.json")"
-    [[ "$cmd" == *"recover_context.sh --hook"* ]]
+    [[ "$cmd" == *"recover_context.sh --hook"* ]] || false
     # Errors from the script reach Claude Code's hook log instead of vanishing
-    [[ "$cmd" != *"recover_context.sh --hook 2>"* ]]
-    [[ "$cmd" != *"recover_context.sh 2>"* ]]
+    [[ "$cmd" != *"recover_context.sh --hook 2>"* ]] || false
+    [[ "$cmd" != *"recover_context.sh 2>"* ]] || false
     # ...but a failure never blocks the session
-    [[ "$cmd" == *"|| true"* ]]
+    [[ "$cmd" == *"|| true"* ]] || false
 }
 
 # ── Checkpoint list hygiene ──────────────────────────────────────────────────
@@ -212,26 +212,26 @@ EOF
 EOF
     run hook_context
     [ "$status" -eq 0 ]
-    [[ "$output" == *"CP_1_002 | Real work saved"* ]]
-    [[ "$output" != *"Format:"* ]]
-    [[ "$output" != *"AGENT_ACTIVATED"* ]]
-    [[ "$output" != *"AGENT_DISPATCHED"* ]]
-    [[ "$output" != *"SKILL_ENABLED"* ]]
-    [[ "$output" != *"AUTO"* ]]
-    [[ "$output" != *"PHASE_TRANSITION"* ]]
-    [[ "$output" != *"| INIT |"* ]]
+    [[ "$output" == *"CP_1_002 | Real work saved"* ]] || false
+    [[ "$output" != *"Format:"* ]] || false
+    [[ "$output" != *"AGENT_ACTIVATED"* ]] || false
+    [[ "$output" != *"AGENT_DISPATCHED"* ]] || false
+    [[ "$output" != *"SKILL_ENABLED"* ]] || false
+    [[ "$output" != *"AUTO"* ]] || false
+    [[ "$output" != *"PHASE_TRANSITION"* ]] || false
+    [[ "$output" != *"| INIT |"* ]] || false
 
     run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/recover_context.sh' </dev/null"
     [ "$status" -eq 0 ]
     local section
     section="$(printf '%s\n' "$output" | awk '/Recent Checkpoints:/{f=1;next} /Active Agent:/{f=0} f')"
-    [[ "$section" == *"CP_1_002 - Real work saved"* ]]
-    [[ "$section" != *"Format"* ]]
-    [[ "$section" != *"AGENT_ACTIVATED"* ]]
-    [[ "$section" != *"AGENT_DISPATCHED"* ]]
-    [[ "$section" != *"SKILL_ENABLED"* ]]
-    [[ "$section" != *"PHASE_TRANSITION"* ]]
-    [[ "$section" != *"INIT"* ]]
+    [[ "$section" == *"CP_1_002 - Real work saved"* ]] || false
+    [[ "$section" != *"Format"* ]] || false
+    [[ "$section" != *"AGENT_ACTIVATED"* ]] || false
+    [[ "$section" != *"AGENT_DISPATCHED"* ]] || false
+    [[ "$section" != *"SKILL_ENABLED"* ]] || false
+    [[ "$section" != *"PHASE_TRANSITION"* ]] || false
+    [[ "$section" != *"INIT"* ]] || false
 }
 
 # ── Human-mode recovery ──────────────────────────────────────────────────────
@@ -240,10 +240,10 @@ EOF
     init_project
     run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/recover_context.sh' </dev/null"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Project Type:     software"* ]]
-    [[ "$output" =~ Last\ Updated:\ +[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]
-    [[ "$output" != *": null"* ]]
-    [[ "$output" != *"Score: 61%"* ]]
+    [[ "$output" == *"Project Type:     software"* ]] || false
+    [[ "$output" =~ Last\ Updated:\ +[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] || false
+    [[ "$output" != *": null"* ]] || false
+    [[ "$output" != *"Score: 61%"* ]] || false
 }
 
 @test "recover: no ANSI escapes when stdout is not a terminal" {
@@ -274,7 +274,7 @@ EOF
     init_project
     run bash -c "cd '$PROJ' && '${PROJECT_ROOT}/scripts/recover_context.sh' </dev/null"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Score: 100% [GOOD]"* ]]
+    [[ "$output" == *"Score: 100% [GOOD]"* ]] || false
 }
 
 # ── Handoff trustworthiness ──────────────────────────────────────────────────
@@ -480,12 +480,12 @@ EOF
     # Recent checkpoints are listed in verbose mode
     run "${PROJECT_ROOT}/bin/uws" status --verbose </dev/null
     [ "$status" -eq 0 ]
-    [[ "$output" == *"fixed the user's login flow"* ]]
-    [[ "$output" != *"AGENT_DISPATCHED"* ]]
-    [[ "$output" != *"unmatched"* ]]
+    [[ "$output" == *"fixed the user's login flow"* ]] || false
+    [[ "$output" != *"AGENT_DISPATCHED"* ]] || false
+    [[ "$output" != *"unmatched"* ]] || false
 
     run "${PROJECT_ROOT}/bin/uws" checkpoint status </dev/null
     [ "$status" -eq 0 ]
-    [[ "$output" == *"fixed the user's login flow"* ]]
-    [[ "$output" != *"unmatched"* ]]
+    [[ "$output" == *"fixed the user's login flow"* ]] || false
+    [[ "$output" != *"unmatched"* ]] || false
 }

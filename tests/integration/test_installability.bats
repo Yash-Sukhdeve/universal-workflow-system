@@ -67,7 +67,7 @@ install_into_project() {
     # grep -c || echo 0 used to print "0\n0"
     local ctx
     ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-    [[ "$(echo "$ctx" | grep -A1 'Modified files:' | tail -1)" != "0" ]]
+    [[ "$(echo "$ctx" | grep -A1 'Modified files:' | tail -1)" != "0" ]] || false
 }
 
 @test "installer: upgrade migrates a v1.2.0 flat hooks array and keeps other permissions" {

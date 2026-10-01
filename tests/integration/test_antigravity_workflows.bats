@@ -172,7 +172,7 @@ teardown() {
     run "${SCRIPTS_DIR}/status.sh" 2>/dev/null
 
     # Either succeeds with warning or fails with error
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]] || false
 }
 
 @test "workflows handle corrupted state gracefully" {
@@ -183,7 +183,7 @@ teardown() {
     run "${SCRIPTS_DIR}/status.sh" 2>/dev/null
 
     # Should not crash
-    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]]
+    [[ "$status" -eq 0 ]] || [[ "$status" -eq 1 ]] || false
 }
 
 # =============================================================================
@@ -198,7 +198,7 @@ teardown() {
     output=$("${SCRIPTS_DIR}/status.sh" 2>/dev/null) || true
 
     # Should have recognizable format
-    [[ "$output" == *"phase"* ]] || [[ "$output" == *"Phase"* ]] || [[ "$output" == *"status"* ]]
+    [[ "$output" == *"phase"* ]] || [[ "$output" == *"Phase"* ]] || [[ "$output" == *"status"* ]] || false
 }
 
 @test "workflows reference same underlying scripts as Claude commands" {
@@ -210,6 +210,6 @@ teardown() {
     grep -q "status" "$antigravity_wf" 2>/dev/null || true
 
     # At minimum, both files should exist
-    [[ -f "$claude_cmd" ]]
-    [[ -f "$antigravity_wf" ]]
+    [[ -f "$claude_cmd" ]] || false
+    [[ -f "$antigravity_wf" ]] || false
 }

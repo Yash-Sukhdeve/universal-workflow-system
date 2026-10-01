@@ -34,6 +34,133 @@ readonly MAGENTA='\033[0;35m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m'
 
+PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
+RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
+# Subcommands of `research.sh check <name>` that run the evidence checker instead of
+# ticking a numbered deliverable (docs/design/research-team.md section 6.6).
+RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers claims slop gate init role-exit plan data run repro retraction manuscript-hash macros "
+
+#######################################
+# Validate workflow is initialized. Only the phase actions (status, start, next, reject,
+# reset, goal, check <n>, deliverables) need it; the evidence checks do not.
+# Arguments: $1 - the action that needs the state
+#######################################
+validate_workflow() {
+    local action="${1:-status}"
+    # A .workflow that resolve_project.sh fell back to belongs to UWS itself, not to this
+    # project: using it would change UWS's own research phase.
+    if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" || ! -d "$WORKFLOW_DIR" || ! -f "$STATE_FILE" ]]; then
+        echo -e "${RED}Error: research.sh ${action} needs .workflow/state.yaml, and this project has none.${NC}"
+        echo -e "Run: ${CYAN}uws init research${NC} (or ./scripts/init_workflow.sh) in the project root."
+        echo -e "The evidence checks need no workflow state: ${CYAN}research.sh check init|ledger|gate <phase>|...${NC}"
+        exit 1
+    fi
+}
+
+#######################################
+# Run the evidence checker (docs/design/research-team.md section 6.6). It needs no
+# workflow state. When no .workflow belongs to this project, no --root is passed and the
+# checker finds the project itself: the nearest directory, from the current one upwards,
+# with research/ledger or .workflow, else the current directory. So `check init` scaffolds
+# here and never inside the UWS installation, and a check from a subdirectory (paper/)
+# finds the project.
+# Arguments: checker command and its arguments
+#######################################
+run_checker() {
+    if ! command -v python3 > /dev/null 2>&1; then
+        echo -e "${RED}Error: python3 is required for research checks.${NC}" >&2
+        exit 2
+    fi
+    if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" ]]; then
+        exec python3 "$RESEARCH_CHECK" "$@"
+    fi
+    exec python3 "$RESEARCH_CHECK" --root "$PROJECT_ROOT" "$@"
+}
+
+#######################################
+# Run the BibTeX fetcher; like the checker it needs no workflow state (and finds the
+# project the same way when no .workflow belongs to it).
+#######################################
+run_bib() {
+    if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" ]]; then
+        exec bash "${SCRIPT_DIR}/research_bib.sh" "$@"
+    fi
+    UWS_RESEARCH_ROOT="$PROJECT_ROOT" exec bash "${SCRIPT_DIR}/research_bib.sh" "$@"
+}
+
+#######################################
+# Usage text (needs no workflow state and no library)
+#######################################
+show_usage() {
+    echo "Usage: ./scripts/research.sh [action] [details]"
+    echo ""
+    echo "Actions:"
+    echo "  status  Show current research phase (default)"
+    echo "  start   Begin research at hypothesis phase"
+    echo "  next    Advance to next phase"
+    echo "  reject  Report rejected hypothesis or failed analysis"
+    echo "  reset   Reset research state to start over"
+    echo "  check <n>                  Mark deliverable <n> of the current phase done"
+    echo ""
+    echo "Research team (active when research/ledger exists; docs/design/research-team.md)."
+    echo "The checks and bib need no .workflow/state.yaml:"
+    echo "  check init                 Scaffold research/ and bib_sources/"
+    echo "  check ledger|bib|quotes|numbers|claims|slop   Run one evidence check"
+    echo "  check numbers add '<json>' Append a validated number row (claims add: a claim row)"
+    echo "  check gate <phase>         Run a phase's evidence gate (next runs it too)"
+    echo "  check plan [new|freeze <EXP-ID>]   Pre-register an experiment plan (frozen by hash)"
+    echo "  check data [add <path> ...]        Data manifest: hashes, sources, splits, seeds"
+    echo "  check run [--exp E] [--input P] [--code P] [--output P|GLOB] -- <cmd>   Run and record a command"
+    echo "  check repro <N-ID ...|all> Re-run recorded commands in a scratch copy and compare"
+    echo "  check retraction [--online]        Retraction notices (Crossref) for bib_sources/"
+    echo "  check manuscript-hash      The hash a red-team review must name"
+    echo "  check macros               Write the number macros from the number ledger"
+    echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
+    echo "  bib build                  Write references.bib from bib_sources/ only"
+    echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"
+    echo ""
+    echo "Research Phases (Scientific Method):"
+    echo "  hypothesis → literature_review → experiment_design → data_collection"
+    echo "    → analysis → peer_review → publication"
+    echo ""
+    echo "Rejection Handling:"
+    echo "  literature_review rejected → returns to hypothesis"
+    echo "  experiment_design rejected → returns to hypothesis"
+    echo "  data issues               → returns to experiment_design"
+    echo "  analysis rejected          → returns to experiment_design"
+    echo "  peer_review rejected       → returns to analysis"
+    echo "  publication rejected       → returns to analysis"
+    echo ""
+    echo "Note: Negative results are valuable in research!"
+}
+
+# Dispatch what needs no workflow state before any library is sourced, and refuse the
+# actions that need it when there is none: logging_utils.sh and decision_utils.sh create
+# log directories as soon as they are sourced (LOG_DIR in the current directory,
+# DECISION_LOG_DIR in WORKFLOW_DIR). In a project without .workflow that would leave a stray
+# .workflow/ in the project (which uws then takes for a UWS project) and write into the UWS
+# installation that resolve_project.sh falls back to.
+case "${1:-status}" in
+    check)
+        if [[ -n "${2:-}" && "$RESEARCH_CHECK_COMMANDS" == *" ${2} "* ]]; then
+            shift
+            run_checker "$@"
+        fi
+        validate_workflow check
+        ;;
+    bib)
+        shift
+        run_bib "$@"
+        ;;
+    help|--help|-h)
+        show_usage
+        exit 0
+        ;;
+    *)
+        validate_workflow "${1:-status}"
+        ;;
+esac
+
 # Source utility libraries
 source_lib() {
     local lib="$1"
@@ -46,9 +173,11 @@ source_lib() {
     return 1
 }
 
-# decisions.log lives in the project's .workflow/logs (decision_utils.sh defaults to a
-# CWD-relative path, which is wrong when research.sh runs from a subdirectory).
-# shellcheck disable=SC2034  # read by decision_utils.sh
+# Logs live in the project's .workflow/logs: logging_utils.sh and decision_utils.sh default
+# to a CWD-relative path, which is wrong when research.sh runs from a subdirectory.
+# shellcheck disable=SC2034  # read by logging_utils.sh and decision_utils.sh
+LOG_DIR="${LOG_DIR:-${WORKFLOW_DIR}/logs}"
+# shellcheck disable=SC2034
 DECISION_LOG_DIR="${WORKFLOW_DIR}/logs"
 
 # Source core utilities
@@ -59,28 +188,6 @@ source_lib "logging_utils.sh" || true
 source_lib "workflow_routing.sh" || true
 source_lib "decision_utils.sh" || true
 source_lib "kb_utils.sh" || true   # meta-learning outcomes (docs/kb/outcomes.tsv)
-
-PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
-RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
-# Subcommands of `research.sh check <name>` that run the evidence checker instead of
-# ticking a numbered deliverable (docs/design/research-team.md section 6.6).
-RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers slop gate init role-exit plan data run repro retraction manuscript-hash macros "
-
-#######################################
-# Validate workflow is initialized
-#######################################
-validate_workflow() {
-    if [[ ! -d "$WORKFLOW_DIR" ]]; then
-        echo -e "${RED}Error: Workflow not initialized.${NC}"
-        echo -e "Run: ${CYAN}./scripts/init_workflow.sh${NC}"
-        exit 1
-    fi
-
-    if [[ ! -f "$STATE_FILE" ]]; then
-        echo -e "${RED}Error: State file not found: ${STATE_FILE}${NC}"
-        exit 1
-    fi
-}
 
 #######################################
 # Get current research phase safely
@@ -453,8 +560,8 @@ main() {
     local details="${2:-}"
     local extra="${3:-}"
 
-    # Validate workflow first
-    validate_workflow
+    # `check <name>`, `bib` and `help` were dispatched, and the workflow state validated,
+    # before the libraries were sourced (above).
 
     # Methodology guard: warn if research workflow is not active for this project type
     if declare -f is_methodology_active > /dev/null 2>&1; then
@@ -649,15 +756,7 @@ main() {
             ;;
 
         check)
-            # `check <name>` runs the evidence checker; `check <n>` ticks a deliverable.
-            if [[ -n "$details" && "$RESEARCH_CHECK_COMMANDS" == *" ${details} "* ]]; then
-                if ! command -v python3 > /dev/null 2>&1; then
-                    echo -e "${RED}Error: python3 is required for research checks.${NC}" >&2
-                    exit 2
-                fi
-                shift
-                exec python3 "$RESEARCH_CHECK" --root "$PROJECT_ROOT" "$@"
-            fi
+            # `check <name>` ran the evidence checker above; `check <n>` ticks a deliverable.
             local current_phase
             current_phase=$(get_phase)
             if [[ "$current_phase" == "none" ]]; then
@@ -690,11 +789,6 @@ main() {
             fi
             ;;
 
-        bib)
-            shift
-            UWS_RESEARCH_ROOT="$PROJECT_ROOT" exec bash "${SCRIPT_DIR}/research_bib.sh" "$@"
-            ;;
-
         deliverables)
             local _p="${details:-}"
             [[ -z "$_p" ]] && _p="$(get_phase)"
@@ -703,44 +797,7 @@ main() {
             ;;
 
         help|--help|-h)
-            echo "Usage: ./scripts/research.sh [action] [details]"
-            echo ""
-            echo "Actions:"
-            echo "  status  Show current research phase (default)"
-            echo "  start   Begin research at hypothesis phase"
-            echo "  next    Advance to next phase"
-            echo "  reject  Report rejected hypothesis or failed analysis"
-            echo "  reset   Reset research state to start over"
-            echo "  check <n>                  Mark deliverable <n> of the current phase done"
-            echo ""
-            echo "Research team (active when research/ledger exists; docs/design/research-team.md):"
-            echo "  check init                 Scaffold research/ and bib_sources/"
-            echo "  check ledger|bib|quotes|numbers|slop   Run one evidence check"
-            echo "  check gate <phase>         Run a phase's evidence gate (next runs it too)"
-            echo "  check plan [new|freeze <EXP-ID>]   Pre-register an experiment plan (frozen by hash)"
-            echo "  check data [add <path> ...]        Data manifest: hashes, sources, splits, seeds"
-            echo "  check run [--exp E] [--input P] [--output P] -- <cmd>   Run and record a command"
-            echo "  check repro <N-ID ...|all> Re-run recorded commands in a scratch copy and compare"
-            echo "  check retraction [--online]        Retraction notices (Crossref) for bib_sources/"
-            echo "  check manuscript-hash      The hash a red-team review must name"
-            echo "  check macros               Write the number macros from the number ledger"
-            echo "  bib fetch <id> [--key K]   Download authoritative BibTeX (arXiv, DOI, DBLP, ACL)"
-            echo "  bib build                  Write references.bib from bib_sources/ only"
-            echo "  next --force \"<reason>\"    Override a failing gate (logged; refused at publication)"
-            echo ""
-            echo "Research Phases (Scientific Method):"
-            echo "  hypothesis → literature_review → experiment_design → data_collection"
-            echo "    → analysis → peer_review → publication"
-            echo ""
-            echo "Rejection Handling:"
-            echo "  literature_review rejected → returns to hypothesis"
-            echo "  experiment_design rejected → returns to hypothesis"
-            echo "  data issues               → returns to experiment_design"
-            echo "  analysis rejected          → returns to experiment_design"
-            echo "  peer_review rejected       → returns to analysis"
-            echo "  publication rejected       → returns to analysis"
-            echo ""
-            echo "Note: Negative results are valuable in research!"
+            show_usage
             ;;
 
         *)

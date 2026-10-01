@@ -35,7 +35,7 @@ teardown() {
     # No state.yaml
 
     run check_required_files
-    [[ "$output" == *"state.yaml"* ]]
+    [[ "$output" == *"state.yaml"* ]] || false
 }
 
 @test "check_required_files lists missing checkpoints.log" {
@@ -44,7 +44,7 @@ teardown() {
     # No checkpoints.log
 
     run check_required_files
-    [[ "$output" == *"checkpoints.log"* ]]
+    [[ "$output" == *"checkpoints.log"* ]] || false
 }
 
 @test "check_required_files lists multiple missing files" {
@@ -52,8 +52,8 @@ teardown() {
     # No required files
 
     run check_required_files
-    [[ "$output" == *"state.yaml"* ]]
-    [[ "$output" == *"checkpoints.log"* ]]
+    [[ "$output" == *"state.yaml"* ]] || false
+    [[ "$output" == *"checkpoints.log"* ]] || false
 }
 
 # =============================================================================
@@ -124,7 +124,7 @@ metadata:
 EOF
 
     run check_required_fields .workflow/state.yaml
-    [[ "$output" == *"current_phase"* ]]
+    [[ "$output" == *"current_phase"* ]] || false
 }
 
 @test "check_required_fields lists missing current_checkpoint" {
@@ -135,7 +135,7 @@ metadata:
 EOF
 
     run check_required_fields .workflow/state.yaml
-    [[ "$output" == *"current_checkpoint"* ]]
+    [[ "$output" == *"current_checkpoint"* ]] || false
 }
 
 @test "check_required_fields lists missing last_updated by its current (flat) name" {
@@ -385,15 +385,15 @@ EOF
     create_full_test_environment
 
     run generate_completeness_report
-    [[ "$output" == *"Score"* ]] || [[ "$output" == *"%"* ]]
+    [[ "$output" == *"Score"* ]] || [[ "$output" == *"%"* ]] || false
 }
 
 @test "generate_completeness_report shows component scores" {
     create_full_test_environment
 
     run generate_completeness_report
-    [[ "$output" == *"File Score"* ]]
-    [[ "$output" == *"State Score"* ]]
+    [[ "$output" == *"File Score"* ]] || false
+    [[ "$output" == *"State Score"* ]] || false
 }
 
 @test "generate_completeness_report lists missing files" {
@@ -402,7 +402,7 @@ EOF
     # Missing checkpoints.log
 
     run generate_completeness_report
-    [[ "$output" == *"Missing"* ]] || [[ "$output" == *"checkpoints.log"* ]]
+    [[ "$output" == *"Missing"* ]] || [[ "$output" == *"checkpoints.log"* ]] || false
 }
 
 # =============================================================================
@@ -441,21 +441,21 @@ EOF
 
     run get_completeness_summary
     [ "$status" -eq 0 ]
-    [[ "$output" == *"## Recovery Completeness"* ]]
+    [[ "$output" == *"## Recovery Completeness"* ]] || false
 }
 
 @test "get_completeness_summary includes score" {
     create_full_test_environment
 
     run get_completeness_summary
-    [[ "$output" == *"Score:"* ]]
+    [[ "$output" == *"Score:"* ]] || false
 }
 
 @test "get_completeness_summary includes status" {
     create_full_test_environment
 
     run get_completeness_summary
-    [[ "$output" == *"Status:"* ]]
+    [[ "$output" == *"Status:"* ]] || false
 }
 
 @test "get_completeness_summary lists missing items" {
@@ -464,7 +464,7 @@ EOF
     # Missing required files
 
     run get_completeness_summary
-    [[ "$output" == *"Missing"* ]]
+    [[ "$output" == *"Missing"* ]] || false
 }
 
 # =============================================================================
@@ -476,40 +476,40 @@ EOF
 
     run get_completeness_json
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"score":'* ]]
-    [[ "$output" == *'"file_score":'* ]]
-    [[ "$output" == *'"state_score":'* ]]
+    [[ "$output" == *'"score":'* ]] || false
+    [[ "$output" == *'"file_score":'* ]] || false
+    [[ "$output" == *'"state_score":'* ]] || false
 }
 
 @test "get_completeness_json includes thresholds" {
     create_full_test_environment
 
     run get_completeness_json
-    [[ "$output" == *'"thresholds":'* ]]
-    [[ "$output" == *'"good":'* ]]
-    [[ "$output" == *'"warn":'* ]]
+    [[ "$output" == *'"thresholds":'* ]] || false
+    [[ "$output" == *'"good":'* ]] || false
+    [[ "$output" == *'"warn":'* ]] || false
 }
 
 @test "get_completeness_json includes missing items" {
     create_full_test_environment
 
     run get_completeness_json
-    [[ "$output" == *'"missing_files":'* ]]
-    [[ "$output" == *'"missing_fields":'* ]]
+    [[ "$output" == *'"missing_files":'* ]] || false
+    [[ "$output" == *'"missing_fields":'* ]] || false
 }
 
 @test "get_completeness_json includes consistency flag" {
     create_full_test_environment
 
     run get_completeness_json
-    [[ "$output" == *'"consistency":'* ]]
+    [[ "$output" == *'"consistency":'* ]] || false
 }
 
 @test "get_completeness_json includes is_complete flag" {
     create_full_test_environment
 
     run get_completeness_json
-    [[ "$output" == *'"is_complete":'* ]]
+    [[ "$output" == *'"is_complete":'* ]] || false
 }
 
 # =============================================================================
