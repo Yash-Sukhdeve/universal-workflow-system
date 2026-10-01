@@ -38,7 +38,8 @@ held-out split (N-0004 = N-0002 / (N-0002 + N-0003))."
 3. **Analysis code** under `research/code/` that implements the frozen plan exactly: the
    split it names, the metric it defines, the seeds it records. No placeholders (rule C1),
    inputs pinned by path, never picked by modification time (rule C5).
-4. **Number rows** (`research/ledger/numbers.jsonl`), appended, never edited, each with
+4. **Number rows** (`research/ledger/numbers.jsonl`), appended with
+   `uws research check numbers add '<json>'`, never edited, each with
    `exp` (the EXP-ID it answers, or `"exploratory"` for anything outside a frozen plan),
    `evaluation` (`held-out` | `validation` | `cross-validation` | `training` | `n/a`),
    `metric` in words, and, for every derived metric, a `formula` over the counts it is built
