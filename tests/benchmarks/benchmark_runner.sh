@@ -58,9 +58,10 @@ calc_elapsed_ms() {
     echo $(( (end - start) / 1000000 ))
 }
 
-# Calculate statistics from array
+# Calculate statistics from the given values: calc_stats "${results[@]}"
+# (values, not an array name: namerefs need bash 4.3 and macOS ships 3.2)
 calc_stats() {
-    local -n arr=$1
+    local arr=("$@")
     local sum=0
     local count=${#arr[@]}
 
@@ -147,7 +148,7 @@ EOF
     rm -rf "$tmp_dir"
 
     # Calculate stats
-    local stats=$(calc_stats results)
+    local stats=$(calc_stats "${results[@]}")
     read -r mean std_dev median min max <<< "$stats"
 
     log_success "Checkpoint creation: mean=${mean}ms, std=${std_dev}ms, median=${median}ms" >&2
@@ -226,7 +227,7 @@ EOF
     rm -rf "$tmp_dir"
 
     # Calculate stats
-    local stats=$(calc_stats results)
+    local stats=$(calc_stats "${results[@]}")
     read -r mean std_dev median min max <<< "$stats"
 
     log_success "Agent activation: mean=${mean}ms, std=${std_dev}ms, median=${median}ms" >&2
@@ -334,7 +335,7 @@ EOF
     rm -rf "$tmp_dir"
 
     # Calculate stats
-    local stats=$(calc_stats results)
+    local stats=$(calc_stats "${results[@]}")
     read -r mean std_dev median min max <<< "$stats"
 
     log_success "Context recovery (UWS): mean=${mean}ms, std=${std_dev}ms, median=${median}ms" >&2
@@ -386,7 +387,7 @@ benchmark_baseline_manual() {
     done
 
     # Calculate stats
-    local stats=$(calc_stats results)
+    local stats=$(calc_stats "${results[@]}")
     read -r mean std_dev median min max <<< "$stats"
 
     log_success "Manual recovery (baseline): mean=${mean}ms (~$((mean / 60000))min)" >&2
@@ -466,7 +467,7 @@ benchmark_baseline_git_only() {
     rm -rf "$tmp_dir"
 
     # Calculate stats
-    local stats=$(calc_stats results)
+    local stats=$(calc_stats "${results[@]}")
     read -r mean std_dev median min max <<< "$stats"
 
     log_success "Git-only recovery: mean=${mean}ms (~$((mean / 60000))min)" >&2
