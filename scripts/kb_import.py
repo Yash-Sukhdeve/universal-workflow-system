@@ -33,7 +33,8 @@ backslash, tab, newline and carriage return escaped as \\ \t \n \r:
   flags     "suspected-fixture" or "-"
   text      the text the claim is made from (vector: the row without its
             "PHASE n | DOMAIN: d | CATEGORY: c |" prefix; automemory: the description;
-            an index entry: its text without list, quote and bold markers)
+            an index entry: its text without list and quote markers, and without
+            paired bold markers outside code spans)
   meta      "key=value; ..." facts about the source row for the item body
   original  the source text, verbatim
 
@@ -431,8 +432,26 @@ def section_tag(heading):
     return t.strip("-")
 
 
+RE_CODE_SPAN = re.compile(r"`[^`\n]*`")
+# **text** or __text__: the markers touch the text inside and no word character outside
+RE_BOLD = re.compile(r"(?<![\w*])(\*\*|__)(?=\S)(.+?)(?<=\S)\1(?![\w*])")
+
+
+def strip_bold(text):
+    """Remove paired bold markers outside code spans; `__init__.py` and `x ** 2` stay as written."""
+    spans = []
+
+    def keep(m):
+        spans.append(m.group(0))
+        return "\0%d\0" % (len(spans) - 1)
+
+    t = RE_BOLD.sub(r"\2", RE_CODE_SPAN.sub(keep, text))
+    return re.sub(r"\0(\d+)\0", lambda m: spans[int(m.group(1))], t)
+
+
 def plain(block):
-    """One line of text from a Markdown block: list, quote, bold and code-fence markers removed.
+    """One line of text from a Markdown block: list, quote and code-fence markers removed, and
+    paired bold markers outside code spans.
 
     A nested list item is joined to the text before it with "; ", other lines with a space.
     """
@@ -448,7 +467,7 @@ def plain(block):
             out += ("; " if m.group(1) else " ") + text
         else:
             out = text
-    return re.sub(r"\*\*|__", "", out)
+    return strip_bold(out)
 
 
 def read_index(args, project, path):

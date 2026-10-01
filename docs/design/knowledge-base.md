@@ -807,8 +807,9 @@ imports only read their sources; no import was run on the real stores.
   leave them out of the triage that D2 needs. With the flag, each top-level list item or
   paragraph of `MEMORY.md` becomes a candidate with source `import:automemory#MEMORY.md:L<first
   line>`, tags `import, automemory, index, <section heading>` and the entry quoted in the body.
-  Nested items join their parent (with "; "), fenced code stays inside its entry, list, quote
-  and bold markers are dropped from the claim, and lines that only link a topic file, or
+  Nested items join their parent (with "; "), fenced code stays inside its entry, list and quote
+  markers and paired bold markers outside code spans (`**text**`, `__text__`) are dropped from
+  the claim (so `__init__.py` in a code span and `2 ** 10` stay as written), and lines that only link a topic file, or
   entries under 12 characters, are skipped with the reason printed. The file is still only
   read; trimming it remains the PI's own edit (D2). A line number moves when the file is
   edited, so a rerun after an edit adds the new reference to the existing candidate (R7) instead

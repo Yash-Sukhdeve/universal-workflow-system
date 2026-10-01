@@ -560,6 +560,25 @@ EOF
     chmod 755 "$mem"
 }
 
+@test "import automemory --include-index: bold markers go, code spans and arithmetic stay as written" {
+    local mem="${SRC}/automem"
+    chmod 755 "$SRC"
+    mkdir -p "$mem"
+    cat > "$mem/MEMORY.md" <<'EOF'
+- Every package needs an `__init__.py` file and a `__main__` entry point
+- Use **bold** markers in python `x ** 2 ** y` math, and __strong__ ones too
+- Powers like 2 ** 10 and a_b__c names stay as written
+- **See `kb.sh lint` first** before tagging
+EOF
+    run "$UWS" kb import automemory --dir "$mem" --include-index
+    [ "$status" -eq 0 ]
+    [ "$(field "$(item_with "$KB" 'Every package')" claim)" = 'Every package needs an `__init__.py` file and a `__main__` entry point' ]
+    [ "$(field "$(item_with "$KB" 'markers in python')" claim)" = 'Use bold markers in python `x ** 2 ** y` math, and strong ones too' ]
+    [ "$(field "$(item_with "$KB" 'Powers like')" claim)" = 'Powers like 2 ** 10 and a_b__c names stay as written' ]
+    [ "$(field "$(item_with "$KB" 'before tagging')" claim)" = 'See `kb.sh lint` first before tagging' ]
+    chmod 555 "$SRC"
+}
+
 @test "import: the reader and fixture builder use the Python standard library only" {
     # parse only (py_compile would write __pycache__ into the checkout)
     run python3 -c 'import ast, sys; [ast.parse(open(p).read(), p) for p in sys.argv[1:]]' \
