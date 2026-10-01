@@ -515,3 +515,24 @@ EOF
     [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL hand-typed number 0.912 is N-0001"* ]]
     [[ "$output" != *"NUM-WHERE"* ]]
 }
+
+@test "re-run numbers add: a misprinted value is recorded as printed and reported; a malformed row is still refused" {
+    # The audit must record the manuscript's F1 0.911 as printed, although it rounds to 0.912.
+    local n
+    n="$(wc -l < "$P/research/ledger/numbers.jsonl")"
+    run check numbers add '{"macro":"\\GbAucAsPrinted","printed":"0.913","rounding":"floor:3","metric":"5-fold CV mean ROC-AUC as the manuscript prints it","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/cv_auc_mean","data_origin":"synthetic-generated","evaluation":"cross-validation","exp":"EXP-LEAK","inputs":["research/data/raw/gb_scores.csv"]}'
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"NUM-ROUND N-0002: printed '0.913' is not floor:3 applied to raw 0.9125 (expected 0.912)"* ]]
+    [[ "$output" == *"appended N-0002 rev 1"* ]]
+    [[ "$output" == *"note: the findings above are about its printed value"* ]]
+    [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$((n + 1))" ]
+    run check numbers
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"NUM-ROUND N-0002"* ]]
+    run check numbers add '{"macro":"\\NoRounding","printed":"0.913","metric":"m","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/cv_auc_mean","data_origin":"measured","evaluation":"cross-validation","exp":"exploratory","inputs":[]}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"missing 'rounding'"* ]]
+    [[ "$output" == *"refused"* ]]
+    [ "$(wc -l < "$P/research/ledger/numbers.jsonl")" -eq "$((n + 1))" ]
+}

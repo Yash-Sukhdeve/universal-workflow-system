@@ -128,10 +128,14 @@ DEFAULT_CONFIG = {
 # --------------------------------------------------------------------------- findings
 
 class Finding(object):
-    __slots__ = ("path", "line", "rule", "msg", "level")
+    """One finding. `printed` marks a finding about the value a number row records as printed
+    (NUM-ROUND, NUM-FORMULA disagreements): an audit ledger must record a misprinted number as
+    printed, so `numbers add` appends such a row and reports the finding instead of refusing it."""
+    __slots__ = ("path", "line", "rule", "msg", "level", "printed")
 
-    def __init__(self, path, line, rule, msg, level="block"):
+    def __init__(self, path, line, rule, msg, level="block", printed=False):
         self.path, self.line, self.rule, self.msg, self.level = path, line, rule, msg, level
+        self.printed = printed
 
     def render(self):
         tag = " [warn]" if self.level == "warn" else ""
@@ -1964,8 +1968,8 @@ def _check_rounding(project, rel, lineno, nid, row):
       stored-equivalent value could produce is still blocked."""
     rule, raw, printed, scale = row["rounding"], row["raw"], row["printed"], row.get("scale")
 
-    def bad(msg, level="block"):
-        return [Finding(rel, lineno, "NUM-ROUND", "%s: %s" % (nid, msg), level)]
+    def bad(msg, level="block", printed=False):
+        return [Finding(rel, lineno, "NUM-ROUND", "%s: %s" % (nid, msg), level, printed)]
 
     try:
         want = apply_rounding(raw, rule, scale)
@@ -1983,12 +1987,12 @@ def _check_rounding(project, rel, lineno, nid, row):
         want_u = apply_rounding(value, rule, scale)
         if got != want_u:
             return bad("printed %r is not %s applied to the unrounded value %s (expected %s; %s)"
-                       % (printed, rule, value, want_u, source))
+                       % (printed, rule, value, want_u, source), printed=True)
         return []
     if got == want:
         return []
     if isinstance(raw, (int, str)) and not isinstance(raw, bool) and "." not in str(raw):
-        return bad("printed %r is not %s applied to raw %r (expected %s)" % (printed, rule, raw, want))
+        return bad("printed %r is not %s applied to raw %r (expected %s)" % (printed, rule, raw, want), printed=True)
     k = _decimals(raw)
     half = Decimal(5).scaleb(-(k + 1))
     lo = apply_rounding(Decimal(str(raw)) - half, rule, scale)
@@ -2001,8 +2005,8 @@ def _check_rounding(project, rel, lineno, nid, row):
         return bad("printed %r is not %s applied to raw %r (expected %s), but the output file is pre-rounded: raw has "
                    "%d decimals, and the true values it may stand for print as %s to %s, so the rounding cannot be "
                    "judged. Add `unrounded` {run, output, pointer} from a run that writes the full-precision value"
-                   % (printed, rule, raw, want, k, lo, hi), "warn")
-    return bad("printed %r is not %s applied to raw %r (expected %s)" % (printed, rule, raw, want))
+                   % (printed, rule, raw, want, k, lo, hi), "warn", printed=True)
+    return bad("printed %r is not %s applied to raw %r (expected %s)" % (printed, rule, raw, want), printed=True)
 
 
 def _check_run(project, rel, lineno, nid, run, row=None):
@@ -2122,7 +2126,7 @@ def _check_formula(numbers, nid, lineno, row):
     if row.get("raw") is not None and not within_tolerance(computed, row["raw"], row.get("tolerance"), default_rel="1e-9"):
         out.append(Finding(rel, lineno, "NUM-FORMULA",
                            "%s: formula %s = %s (%s), but raw is %r; the metric does not follow its definition"
-                           % (nid, formula, _fmt_decimal(computed), shown, row["raw"])))
+                           % (nid, formula, _fmt_decimal(computed), shown, row["raw"]), printed=True))
     if row.get("rounding") and row.get("printed") is not None:
         try:
             want = apply_rounding(computed, row["rounding"], row.get("scale"))
@@ -2132,7 +2136,7 @@ def _check_formula(numbers, nid, lineno, row):
         if want is not None and (not pm or pm.group(1) != want):
             out.append(Finding(rel, lineno, "NUM-FORMULA",
                                "%s: printed %r, but %s applied to the formula's value gives %s"
-                               % (nid, row["printed"], row["rounding"], want)))
+                               % (nid, row["printed"], row["rounding"], want), printed=True))
     return out
 
 
@@ -4566,12 +4570,19 @@ def cmd_ledger_add(project, kind, text):
         project._claims = view
         findings.extend(_check_claim(project, view, project.numbers(), lineno, row))
     emit(findings, False)
-    if any(f.level == "block" for f in findings):
+    # A row is refused for what is wrong with the row itself (schema, references, its value
+    # against the output file, links). A printed value that its evidence does not support is a
+    # finding about the manuscript: the row records it as printed and the gate keeps failing
+    # until the manuscript or a later revision corrects it (the PROMISE audit's F1 0.911).
+    if any(f.level == "block" and not f.printed for f in findings):
         print("refused: the row was not appended to %s" % led.rel, file=sys.stderr)
         return EXIT_FINDINGS
     _append_jsonl(led.path, row)
     print("appended %s rev %d to %s%s" % (rid, row["rev"], led.rel,
                                           " (filled in by the tool: %s)" % ", ".join(filled) if filled else ""))
+    if any(f.level == "block" for f in findings):
+        print("note: the findings above are about its printed value, which the row records as printed; "
+              "the gate fails on them until the manuscript (or a new revision of the row) is corrected")
     if kind == "numbers" and row.get("macro"):
         print("next: `uws research check macros` defines %s in the generated macro file" % row["macro"])
     return EXIT_OK
