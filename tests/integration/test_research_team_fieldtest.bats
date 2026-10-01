@@ -489,3 +489,29 @@ EOF
     run check init
     [[ "$output" == *"nothing changed"* ]]
 }
+
+# ── Re-run of the gates on the audit: a miss and a false positive it found ──
+
+@test "re-run S1: 'First predictive models' (PROMISE introduction line 35) is a novelty claim; an ordinal First is not" {
+    { printf '\n\\begin{itemize}\n'; cat "$PROMISE/intro-first.tex"; printf '\\end{itemize}\n\nFirst, we train models. First we split the data into folds.\n'; } >> "$P/paper/main.tex"
+    local l
+    l="$(line_of 'First predictive models')"
+    run check slop
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"paper/main.tex:${l} S1 'First predictive models' needs a verified claim"* ]]
+    [ "$(printf '%s\n' "$output" | grep -c ' S1 ' || true)" -eq 1 ]
+}
+
+@test "re-run NUM-WHERE: a place named inside parentheses in where is a note, not a place" {
+    printf '\n\\section{Discussion}\nThe 5-fold CV mean ROC-AUC is 0.912.\n' >> "$P/paper/main.tex"
+    local l
+    l="$(line_of 'mean ROC-AUC is 0.912')"
+    # The PROMISE ledger's N-0007 says "<file>:108 (the section paper/main-promise.tex:106 inputs; ...)".
+    add_revision N-0001 "{\"where\": \"paper/main.tex:${l} (the section paper/main.tex:2 inputs; the macro file)\"}"
+    run check numbers
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"paper/main.tex:${l} NUM-LITERAL hand-typed number 0.912 is N-0001"* ]]
+    [[ "$output" != *"NUM-WHERE"* ]]
+}

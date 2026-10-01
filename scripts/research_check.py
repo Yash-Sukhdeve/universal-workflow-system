@@ -1697,14 +1697,21 @@ def _number_scope(doc, idx):
 
 
 # `where` of a ledger row: places in the manuscript, separated by ';' (free text between
-# them is ignored): file:line, file:first-last, file:l1,l2 or file#label.
+# them is ignored): file:line, file:first-last, file:l1,l2 or file#label. Text in
+# parentheses is a note, never a place: the PROMISE ledger wrote "audit/recovered/x.tex:108
+# (the section paper/main-promise.tex:106 inputs; ...)", and main-promise.tex:106 is where the
+# missing section is input, not where the number is printed.
 WHERE_ITEM_RE = re.compile(r"(?<![\w./-])([\w./-]+\.(?:tex|md))(?::(\d+(?:\s*[-,]\s*\d+)*)|#([^\s;,()]+))")
+PAREN_NOTE_RE = re.compile(r"\([^()]*\)")
 
 
 def parse_where(text):
     """[(path, spec, [(first, last), ...] or None, label or None)] of a `where` field."""
     out = []
-    for m in WHERE_ITEM_RE.finditer(str(text or "")):
+    text, prev = str(text or ""), None
+    while prev != text:   # innermost parentheses first, so nested notes go too
+        prev, text = text, PAREN_NOTE_RE.sub(" ", text)
+    for m in WHERE_ITEM_RE.finditer(text):
         path, spec, label = m.group(1), m.group(2), m.group(3)
         if spec:
             locs = []
@@ -2226,8 +2233,17 @@ def _hand_typed_numbers(project, macro_rel):
 
 # --------------------------------------------------------------------------- slop
 
+# "First" without an article is a novelty claim when it heads a contribution noun, as in the
+# PROMISE contribution list's "\textbf{First predictive models} for ..." (design section 10,
+# F10); an ordinal "first" ("First, we ...", "First we train models", "the first fold") is
+# not matched by that branch: up to two words may stand between, never a pronoun, article or
+# preposition.
+S1_FIRST_NOUN = (r"first(?:\s+(?!(?:we|i|you|they|it|the|a|an|our|their|its|this|these|those|to|of|in|on|"
+                 r"for|with|by|and|or|then)\b)[A-Za-z-]+){0,2}?\s+(?:models?|approach(?:es)?|methods?|frameworks?|benchmarks?|"
+                 r"datasets?|stud(?:y|ies)|systems?|tools?|techniques?|algorithms?|attempts?|implementations?|"
+                 r"evaluations?|analys[ie]s|investigations?|predictors?)")
 S1_RE = re.compile(r"\b(novel(?:ty)?|state[- ]of[- ]the[- ]art|breakthroughs?|unprecedented|"
-                   r"outperform(?:s|ed|ing)?|best|(?:the|a) first|first to|first time)\b", re.I)
+                   r"outperform(?:s|ed|ing)?|best|(?:the|a) first|first to|first time|" + S1_FIRST_NOUN + r")\b", re.I)
 # Fixed idioms in which "best" makes no claim about the work itself. The list is narrow on
 # purpose and matched as whole phrases, never as a broad pattern that could hide a claim;
 # "to the best of our knowledge" is NOT on it, because it usually introduces a novelty
