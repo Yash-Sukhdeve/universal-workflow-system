@@ -300,7 +300,7 @@ EOF
     # N-0002 was reproduced by some other script, with no run record; attest it in a report.
     add_number '{"id":"N-0002","macro":"\\Attested","printed":"0.920","raw":0.9199,"rounding":"round:3","metric":"held-out ROC-AUC","output":"artifacts/model_results.json","pointer":"/classification/Gradient Boosting/test_auc","data_origin":"synthetic-generated","evaluation":"held-out","exp":"EXP-LEAK","inputs":["research/data/raw/gb_scores.csv"]}'
     commit_all "N-0002"
-    python3 - "$CHECK" "$P" << 'EOF'
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$CHECK" "$P" << 'EOF'
 import importlib.util, json, os, sys
 spec = importlib.util.spec_from_file_location("rc", sys.argv[1])
 rc = importlib.util.module_from_spec(spec)
