@@ -23,7 +23,7 @@
 #   kb_record_gate_pass
 #   Increment 2 (design section 18): kb_global_memory_dir, kb_global_dir, kb_global_ready,
 #   kb_guarded, kb_session_id, kb_usage_record, kb_is_global_id, kb_scan_scope_args,
-#   kb_git_env_clear
+#   kb_git_env_clear, kb_shell_quote
 
 if [[ "${_UWS_KB_UTILS_LOADED:-}" == "true" ]]; then
     return 0 2>/dev/null || true
@@ -723,6 +723,17 @@ kb_usage_record() {
         echo "uws kb: could not record item usage in ${d}/.cache/usage.tsv (continuing)" >&2
     fi
     return 0
+}
+
+# kb_shell_quote <word>: the word as a POSIX shell reads it back, for commands
+# printed for a person or a subagent to run: as is when it has only
+# [A-Za-z0-9_./:@%+=-], else in single quotes (each ' written '\'').
+kb_shell_quote() {
+    case "$1" in
+        "" ) printf "''" ;;
+        *[!A-Za-z0-9_./:@%+=-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+        * ) printf '%s' "$1" ;;
+    esac
 }
 
 # Succeeds when the argument is a whole global item ID: global:K-<yyyymmdd>-<hex>

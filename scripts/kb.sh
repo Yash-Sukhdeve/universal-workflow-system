@@ -2882,7 +2882,9 @@ cmd_init() {
             echo "Initialised the global KB at ${KB} as its own git repository."
         fi
         ensure_kb
-        echo "Next, in your own terminal: uws kb pi --set <your git e-mail> --global. Commit the KB yourself (git -C ${KB} add -A; git -C ${KB} commit)."
+        local qkb
+        qkb="$(kb_shell_quote "$KB")"
+        echo "Next, in your own terminal: uws kb pi --set <your git e-mail> --global. Commit the KB yourself (git -C ${qkb} add -A; git -C ${qkb} commit)."
         return 0
     fi
     require_writable

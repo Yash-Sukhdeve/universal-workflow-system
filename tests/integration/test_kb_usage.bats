@@ -366,6 +366,21 @@ session() {  # session <name> <words...>: one session that searches for <words>
     [ "$output" = "0" ]
 }
 
+@test "TASK.md: the uws command the leads give the subagent runs when the install path has a space" {
+    seed K-20260101-000001 lesson "Login rate limiter lesson: the limiter keys on the account"
+    local inst="${TEST_TMP_DIR}/sp ace/uws repo" cmd
+    mkdir -p "$inst"
+    cp -R "${PROJECT_ROOT}/bin" "${PROJECT_ROOT}/scripts" "$inst/"
+    "$inst/bin/uws" sdlc start >/dev/null
+    run "$inst/bin/uws" orchestrate dispatch "Implement the login rate limiter"
+    [ "$status" -eq 0 ]
+    cmd="$(sed -n 's/.*Full item: `\(.*\) kb show <ID>`.*/\1/p' workspace/researcher/TASK.md)"
+    [ -n "$cmd" ]
+    run sh -c "${cmd} kb show K-20260101-000001"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"id: K-20260101-000001"* ]] || false
+}
+
 # ── test-suite guard ────────────────────────────────────────────────────────
 
 @test "guard: the test helper protects the UWS checkout's KB, and a test can opt in" {

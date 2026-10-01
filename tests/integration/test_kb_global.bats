@@ -116,6 +116,18 @@ EOF
     [ -z "$(git -C "$GKB" log --oneline 2>/dev/null)" ]
 }
 
+@test "init --global: the commit hint quotes a global KB path that has a space" {
+    export UWS_GLOBAL_MEMORY_DIR="${TEST_TMP_DIR}-global/g mem"
+    local g="${UWS_GLOBAL_MEMORY_DIR}/kb" cmd
+    run "$UWS" kb init --global
+    [ "$status" -eq 0 ]
+    cmd="$(printf '%s\n' "$output" | sed -n 's/.*(\(git -C .* add -A\);.*/\1/p')"
+    [ -n "$cmd" ]
+    run bash -c "$cmd"
+    [ "$status" -eq 0 ]
+    [ -n "$(git -C "$g" diff --cached --name-only)" ]
+}
+
 @test "global: an inherited GIT_DIR does not make a plain directory pass for the KB's own repository" {
     # git exports GIT_DIR to hooks (absolute in worktrees); a plain directory is still no repository
     mkdir -p "$GKB"
