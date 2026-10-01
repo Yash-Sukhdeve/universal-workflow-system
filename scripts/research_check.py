@@ -367,6 +367,25 @@ class Ledger(object):
                         self.latest[rid] = (lineno, obj)
 
 
+    def appended(self, obj):
+        """(a copy of this ledger with `obj` appended in memory, the line it would take)."""
+        new = Ledger.__new__(Ledger)
+        new.project, new.rel, new.prefix, new.path = self.project, self.rel, self.prefix, self.path
+        new.exists, new.parse_errors = True, list(self.parse_errors)
+        new.rows, new.latest = list(self.rows), dict(self.latest)
+        lineno = 1
+        if os.path.isfile(self.path):
+            with open(self.path, encoding="utf-8") as fh:
+                lineno = sum(1 for _ in fh) + 1
+        new.rows.append((lineno, obj))
+        rid = obj.get("id")
+        if isinstance(rid, str):
+            prev = new.latest.get(rid)
+            if prev is None or _rev(obj) >= _rev(prev[1]):
+                new.latest[rid] = (lineno, obj)
+        return new, lineno
+
+
 def _rev(obj):
     r = obj.get("rev", 1)
     return r if isinstance(r, int) and not isinstance(r, bool) else 1
@@ -3120,6 +3139,143 @@ def run_code_paths(rec):
     return out
 
 
+# A data manifest row's `split` is free text, or a structure the checker can test for
+# leakage (independent units on both sides of a split; design 5 experiment_design row,
+# Kapoor & Narayanan 2022 [src S15], scikit-learn grouped CV [src S16]):
+#   {"train": <path>, "validation": <path>, "test": <path>, "group_key": "<column>"}
+#       (at least two of train/validation/test, each a registered data file), or
+#   {"column": "<split column>", "group_key": "<column>"}   (one file with a split column).
+SPLIT_PARTS = ("train", "validation", "test")
+SPLIT_KEYS = SPLIT_PARTS + ("group_key", "column")
+# Free-text values that say the file is not split; they need no leakage warning.
+NO_SPLIT = ("none", "n/a", "na", "no split", "not split", "unsplit", "-")
+_MISSING = object()
+
+
+def parse_split(value):
+    """(structure or None, error or None) for a manifest `split` value."""
+    if isinstance(value, dict):
+        return value, None
+    if isinstance(value, str) and value.strip().startswith("{"):
+        try:
+            obj = json.loads(value)
+        except ValueError as exc:
+            return None, "looks like JSON but does not parse: %s" % exc
+        if not isinstance(obj, dict):
+            return None, "must be a JSON object"
+        return obj, None
+    return None, None
+
+
+def split_errors(project, split):
+    """Structural problems of a declared split, as messages; empty when it can be checked."""
+    errs = []
+    unknown = sorted(set(split) - set(SPLIT_KEYS))
+    if unknown:
+        errs.append("unknown key(s) %s (allowed: %s)" % (", ".join(unknown), ", ".join(SPLIT_KEYS)))
+    gk = split.get("group_key")
+    if not isinstance(gk, str) or not gk.strip():
+        errs.append("group_key must name the field that identifies an independent unit (e.g. scenario_id)")
+    parts = [k for k in SPLIT_PARTS if k in split]
+    if "column" in split:
+        if parts:
+            errs.append("give either column (one file with a split column) or train/validation/test files, not both")
+        if not isinstance(split["column"], str) or not split["column"].strip():
+            errs.append("column must name the split column")
+    else:
+        if len(parts) < 2:
+            errs.append("name at least two of train, validation and test (or a split column)")
+        for k in parts:
+            rel = safe_rel(project, split[k]) if isinstance(split[k], str) else None
+            if not rel or not os.path.isfile(project.path(rel)):
+                errs.append("%s file %s is not a file inside the project" % (k, split[k]))
+    return errs
+
+
+def read_records(path):
+    """Rows of a CSV/TSV, JSON Lines or JSON file (a list of objects, or an object whose
+    only list of objects is the rows)."""
+    if path.endswith((".csv", ".tsv")):
+        with open(path, encoding="utf-8", newline="") as fh:
+            return list(csv.DictReader(fh, delimiter="\t" if path.endswith(".tsv") else ","))
+    if path.endswith(".jsonl"):
+        return [obj for _l, obj, err in _read_jsonl(path) if not err]
+    if path.endswith(".json"):
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, list):
+            return [r for r in data if isinstance(r, dict)]
+        if isinstance(data, dict):
+            lists = [v for v in data.values() if isinstance(v, list) and v and all(isinstance(r, dict) for r in v)]
+            if len(lists) == 1:
+                return lists[0]
+            raise ValueError("%d lists of records in the JSON object; cannot tell which holds the rows" % len(lists))
+    raise ValueError("cannot read rows from %s (use CSV, TSV, JSON Lines or JSON)" % os.path.basename(path))
+
+
+def _field(rec, key):
+    if key in rec:
+        return rec[key]
+    node = rec
+    for part in key.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return _MISSING
+        node = node[part]
+    return node
+
+
+def _unit(value):
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value)
+
+
+def check_split_leak(project, p, split):
+    """DATA-SPLIT / DATA-LEAK findings for one manifest row with a structured split."""
+    man = project.manifest()
+    lineno = man.latest[p][0]
+    gk = split["group_key"]
+    groups, order = {}, []
+    try:
+        if "column" in split:
+            col = split["column"]
+            for i, rec in enumerate(read_records(project.path(p)), 1):
+                name, g = _field(rec, col), _field(rec, gk)
+                if name is _MISSING or g is _MISSING:
+                    return [Finding(man.rel, lineno, "DATA-SPLIT", "%s: %s has no %s (row %d)"
+                                    % (p, p, col if name is _MISSING else gk, i))]
+                if _unit(name) not in groups:
+                    order.append(_unit(name))
+                groups.setdefault(_unit(name), set()).add(_unit(g))
+        else:
+            for part in SPLIT_PARTS:
+                if part not in split:
+                    continue
+                f = safe_rel(project, split[part])
+                if f not in man.latest:
+                    return [Finding(man.rel, lineno, "DATA-SPLIT", "%s: the %s file %s is not registered in %s, so its "
+                                    "content is not pinned" % (p, part, f, man.rel))]
+                order.append(part)
+                groups[part] = set()
+                for i, rec in enumerate(read_records(project.path(f)), 1):
+                    g = _field(rec, gk)
+                    if g is _MISSING:
+                        return [Finding(man.rel, lineno, "DATA-SPLIT", "%s: %s has no %s (row %d)" % (p, f, gk, i))]
+                    groups[part].add(_unit(g))
+    except (OSError, ValueError, csv.Error) as exc:
+        return [Finding(man.rel, lineno, "DATA-SPLIT", "%s: cannot read the split: %s" % (p, exc))]
+    out = []
+    for i, a in enumerate(order):
+        for b in order[i + 1:]:
+            both = groups[a] & groups[b]
+            if both:
+                shown = sorted(both, key=lambda v: (len(v), v))
+                out.append(Finding(man.rel, lineno, "DATA-LEAK", "%s: %d %s value(s) appear in both %s and %s (%s%s); "
+                                   "the same unit on both sides of a split leaks into the evaluation"
+                                   % (p, len(both), gk, a, b, ", ".join(shown[:5]), ", ..." if len(shown) > 5 else "")))
+    return out
+
+
 def check_data(project):
     """Data manifest, generated-data seeds, number inputs and run-record completeness (section 8)."""
     out = []
@@ -3199,6 +3355,21 @@ def check_data(project):
                     out.append(Finding(man.rel, lineno, "DATA-SEED", "%s: its generator %s draws random values (%s() at line %d) "
                                        "but never sets a seed" % (p, gen_rel, draws[0][1], draws[0][0])))
 
+        # Leakage between splits: checked when the split is declared as a structure.
+        split, split_err = parse_split(row.get("split"))
+        if split_err:
+            out.append(Finding(man.rel, lineno, "DATA-SPLIT", "%s: split %s" % (p, split_err)))
+        elif split is not None:
+            errs = split_errors(project, split)
+            for err in errs:
+                out.append(Finding(man.rel, lineno, "DATA-SPLIT", "%s: split: %s" % (p, err)))
+            if not errs and os.path.isfile(path):
+                out.extend(check_split_leak(project, p, split))
+        elif isinstance(row.get("split"), str) and row["split"].strip().lower() not in NO_SPLIT:
+            out.append(Finding(man.rel, lineno, "DATA-LEAK", "%s: the split is free text, so leakage between splits "
+                               "cannot be checked; declare it as {\"train\": <path>, \"test\": <path>, \"group_key\": "
+                               "<unit field>} or {\"column\": <split column>, \"group_key\": <unit field>}" % p, "warn"))
+
     # Raw data must be registered.
     raw_dir = project.path(RAW_DATA_REL)
     if os.path.isdir(raw_dir):
@@ -3268,6 +3439,16 @@ def data_add(project, args):
         if not value or not value.strip():
             print("refused: %s is required" % flag, file=sys.stderr)
             return EXIT_FINDINGS
+    split, split_err = parse_split(args.split)
+    if split_err:
+        print("refused: --split %s" % split_err, file=sys.stderr)
+        return EXIT_FINDINGS
+    if split is not None:
+        errs = split_errors(project, split)
+        if errs:
+            for err in errs:
+                print("refused: --split: %s" % err, file=sys.stderr)
+            return EXIT_FINDINGS
     generated = args.origin in NON_MEASURED or bool(args.generator)
     if generated:
         gen_rel = _project_rel_arg(project, args.generator) if args.generator else None
@@ -3292,7 +3473,8 @@ def data_add(project, args):
         print("%s is already registered at sha256 %s; nothing to do" % (rel, _short(sha)))
         return EXIT_OK
     row = {"path": rel, "sha256": sha, "size": size, "source": args.source, "version": args.version,
-           "split": args.split, "origin": args.origin, "registered_at": utc_now(), "registered_by": args.by or "engineer"}
+           "split": split if split is not None else args.split, "origin": args.origin, "registered_at": utc_now(),
+           "registered_by": args.by or "engineer"}
     if args.license:
         row["license"] = args.license
     if args.labels is not None:
@@ -4285,26 +4467,136 @@ def check_retractions(project):
     return out
 
 
+# --------------------------------------------------------------------------- ledger rows (add)
+
+def _fill_number(project, row):
+    """Fields the tool fills from the files instead of letting anyone type them: the output
+    hash, the raw value at the pointer, and the printed form under the rounding rule. A value
+    that was given is never replaced; the checks below then compare it with the file."""
+    filled = []
+    out_rel = safe_rel(project, row.get("output"))
+    path = project.path(out_rel) if out_rel else None
+    if path and os.path.isfile(path):
+        if not row.get("output_sha256"):
+            row["output_sha256"] = sha256_file(path)
+            filled.append("output_sha256")
+        if row.get("raw") is None and isinstance(row.get("pointer"), str) and row["pointer"]:
+            try:
+                value = resolve_pointer(path, row["pointer"])
+            except (ValueError, IndexError, KeyError, OSError):
+                value = None   # the pointer check reports it
+            if value is not None and not isinstance(value, (dict, list)):
+                row["raw"] = value
+                filled.append("raw")
+    if row.get("printed") in (None, "") and row.get("raw") is not None and row.get("rounding"):
+        try:
+            row["printed"] = apply_rounding(row["raw"], row["rounding"], row.get("scale"))
+            filled.append("printed")
+        except (ValueError, InvalidOperation):
+            pass   # the rounding check reports it
+    return filled
+
+
+def cmd_ledger_add(project, kind, text):
+    """`numbers add` / `claims add`: append one row after validating it; existing rows are
+    never touched. Missing id, rev and supersedes are filled (a new ID, or the next revision
+    of an existing one); number rows also get the output hash, raw value and printed form."""
+    led = project.numbers() if kind == "numbers" else project.claims()
+    if text == "-":
+        text = sys.stdin.read()
+    if not text or not text.strip():
+        raise EnvError("usage: %s add '<one JSON object>' (or - to read it from stdin)" % kind)
+    try:
+        row = json.loads(text)
+    except ValueError as exc:
+        print("refused: not valid JSON: %s" % exc, file=sys.stderr)
+        return EXIT_FINDINGS
+    if not isinstance(row, dict):
+        print("refused: the row must be one JSON object", file=sys.stderr)
+        return EXIT_FINDINGS
+    filled = []
+    if row.get("id") is None:
+        nums = [int(m.group(1)) for k in led.latest for m in [re.match(r"^%s-(\d+)$" % led.prefix, k)] if m]
+        row["id"] = "%s-%04d" % (led.prefix, max(nums) + 1 if nums else 1)
+        filled.append("id")
+    rid = row["id"]
+    prev = led.latest.get(rid) if isinstance(rid, str) else None
+    if "rev" not in row:
+        row["rev"] = _rev(prev[1]) + 1 if prev else 1
+        filled.append("rev")
+    if "supersedes" not in row and isinstance(row.get("rev"), int):
+        row["supersedes"] = "%s@%d" % (rid, row["rev"] - 1) if row["rev"] > 1 else None
+    if kind == "numbers":
+        filled.extend(_fill_number(project, row))
+    view, lineno = led.appended(row)
+    findings = [f for f in _check_revisions(view) if f.line == lineno]
+    project._links = None
+    if kind == "numbers":
+        project._numbers = view
+        run_rel = "research/runs/%s/run.json" % row.get("run") if row.get("run") else None
+        findings.extend(f for f in check_numbers(project, [rid]) if f.rule != "NUM-MACRO" and
+                        ((f.path == led.rel and f.line == lineno) or (run_rel and f.path == run_rel)))
+        if row.get("data_origin") != "literature":
+            exp = row.get("exp")
+            if exp is None:
+                findings.append(Finding(led.rel, lineno, "PLAN-LINK", "%s: set exp to the EXP-ID whose frozen plan it "
+                                        "answers, or to %r" % (rid, EXPLORATORY)))
+            elif exp != EXPLORATORY and exp not in experiment_ids(project):
+                findings.append(Finding(led.rel, lineno, "PLAN-LINK", "%s: exp %s has no %s/%s/plan.md"
+                                        % (rid, exp, EXPERIMENTS_REL, exp)))
+            if not row.get("run") and row.get("inputs") is None:
+                findings.append(Finding(led.rel, lineno, "DATA-NOINPUT", "%s names no run and no inputs" % rid))
+    else:
+        project._claims = view
+        findings.extend(_check_claim(project, view, project.numbers(), lineno, row))
+    emit(findings, False)
+    if any(f.level == "block" for f in findings):
+        print("refused: the row was not appended to %s" % led.rel, file=sys.stderr)
+        return EXIT_FINDINGS
+    _append_jsonl(led.path, row)
+    print("appended %s rev %d to %s%s" % (rid, row["rev"], led.rel,
+                                          " (filled in by the tool: %s)" % ", ".join(filled) if filled else ""))
+    if kind == "numbers" and row.get("macro"):
+        print("next: `uws research check macros` defines %s in the generated macro file" % row["macro"])
+    return EXIT_OK
+
+
 # --------------------------------------------------------------------------- macros
 
 def cmd_macros(project, args):
+    """Write the macro file from the valid rows; report and skip the invalid ones (a row with
+    a schema error, or a macro name that another row also uses). Exit 1 when any is skipped,
+    so the gap is visible, but the valid macros are written either way."""
     rel = args.out or project.config.get("numbers_tex") or "paper/generated/numbers.tex"
     numbers = project.numbers()
-    problems = [f for f in numbers.parse_errors + _check_number_shapes(numbers) if f.level == "block"]
-    if problems:
-        emit(problems, False)
-        print("refused: fix the number ledger first (%s was not written)" % rel, file=sys.stderr)
-        return EXIT_FINDINGS
+    emit(numbers.parse_errors, False)
+    skipped = {}
+    for f in _check_number_shapes(numbers):
+        if f.level != "block":
+            continue
+        nid = f.msg.split(":", 1)[0]
+        skipped.setdefault(nid, []).append(f.msg.split(": ", 1)[1] if ": " in f.msg else f.msg)
+    owners = {}
+    for nid in sorted(numbers.latest):
+        macro = numbers.latest[nid][1].get("macro")
+        if isinstance(macro, str) and macro:
+            owners.setdefault(macro, []).append(nid)
+    for macro, nids in owners.items():
+        if len(nids) > 1:
+            for nid in nids:
+                skipped.setdefault(nid, []).append("macro %s is used by %s" % (macro, ", ".join(nids)))
     lines = ["% Generated from research/ledger/numbers.jsonl by `uws research check macros`. Do not edit by hand.\n"]
     for nid in sorted(numbers.latest):
         row = numbers.latest[nid][1]
-        if row.get("macro"):
+        if row.get("macro") and nid not in skipped:
             lines.append("\\newcommand{%s}{%s}\n" % (row["macro"], row.get("printed")))
     path = project.path(rel)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     _atomic_write(path, "".join(lines))
-    print("%s (%d macros)" % (rel, len(lines) - 1))
-    return EXIT_OK
+    for nid in sorted(skipped):
+        print("skipped %s: %s" % (nid, "; ".join(skipped[nid])))
+    print("%s (%d macros%s)" % (rel, len(lines) - 1, ", %d invalid row(s) skipped" % len(skipped) if skipped else ""))
+    return EXIT_FINDINGS if skipped or numbers.parse_errors else EXIT_OK
 
 
 # --------------------------------------------------------------------------- gate
@@ -4418,19 +4710,26 @@ def check_pi_approval(project):
 
 
 def kb_note(project):
-    """Section 9: the KB is advisory. Report whether it can be consulted; never fail."""
+    """Section 9: the KB is advisory. Say what `uws kb stats` says (so the two never
+    disagree: it exits 0 and prints "No KB yet ..." when the project has no KB); never fail."""
     here = os.path.dirname(os.path.abspath(__file__))
     uws = os.path.join(os.path.dirname(here), "bin", "uws")
+    advisory = "(advisory; the gate does not depend on it)"
     if not os.path.isfile(os.path.join(here, "kb.sh")) or not os.path.isfile(uws):
-        return "KB unavailable (advisory; the gate does not depend on it)"
+        return "KB unavailable %s: the kb command is not installed next to this checker" % advisory
     try:
         proc = subprocess.run([uws, "kb", "stats"], cwd=project.root, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=15)
-    except (OSError, subprocess.TimeoutExpired):
-        return "KB unavailable (advisory; the gate does not depend on it)"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return "KB unavailable %s: `uws kb stats` did not run (%s)" % (advisory, exc)
+    first = (proc.stdout.decode("utf-8", "replace").strip().splitlines() or [""])[0].strip()
     if proc.returncode != 0:
-        return "KB unavailable (advisory; the gate does not depend on it)"
-    return "KB available (advisory): check `uws kb search <terms>` for disputed items and raise them as Q-IDs"
+        err = (proc.stderr.decode("utf-8", "replace").strip().splitlines() or [""])[0].strip()
+        return "KB unavailable %s: `uws kb stats` failed: %s" % (advisory, err or "exit %d" % proc.returncode)
+    if not first or first.lower().startswith("no kb"):
+        return "No KB yet %s: `uws kb stats` says: %s" % (advisory, first or "(nothing)")
+    return ("KB available (advisory): `uws kb stats` says: %s; check `uws kb search <terms>` for disputed items "
+            "and raise them as Q-IDs" % first)
 
 
 # Rules of design section 6.5 that no check implements yet. The gates say so instead of
@@ -4612,6 +4911,15 @@ def cmd_init(project):
             with open(p, "w", encoding="utf-8") as fh:
                 fh.write(content)
             created.append(rel)
+    # git does not store empty directories: a .gitkeep lets the scaffold be committed
+    # (research/sources/cache is gitignored on purpose, so it gets none).
+    for d in ("research/lit", "research/pi", "research/reviews", "research/experiments", "research/data/raw",
+              "research/runs", "research/repro", "bib_sources"):
+        p = project.path(d)
+        if os.path.isdir(p) and not os.listdir(p):
+            with open(os.path.join(p, ".gitkeep"), "w", encoding="utf-8"):
+                pass
+            created.append(d + "/.gitkeep")
     gi = project.path(".gitignore")
     line = "research/sources/cache/"
     existing = read_text(gi).splitlines() if os.path.isfile(gi) else []
@@ -4661,8 +4969,14 @@ def build_parser():
     sub.add_parser("bib", help="bib_sources provenance and references.bib equality")
     s = sub.add_parser("quotes", help="quotes are verbatim in the cached source text")
     s.add_argument("--allow-missing-cache", action="store_true", help="report a missing cache as a warning (CI without caches)")
-    s = sub.add_parser("numbers", help="number provenance and hand-typed decimals")
+    s = sub.add_parser("numbers", help="number provenance and hand-typed numbers; `add '<json>'` appends a row")
+    s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
+    s.add_argument("row", nargs="?", help="for add: one JSON object (or - for stdin); id, rev, output_sha256, raw "
+                   "and printed are filled in when missing")
     s.add_argument("--id", action="append", help="check only these N-IDs (repeatable)")
+    s = sub.add_parser("claims", help="claim ledger rules (as `ledger`); `add '<json>'` appends a validated row")
+    s.add_argument("action", nargs="?", default="check", choices=("check", "add"))
+    s.add_argument("row", nargs="?", help="for add: one JSON object (or - for stdin); id and rev are filled in")
     s = sub.add_parser("slop", help="S1 S2 S4 S6 C1 C3 C5 C6")
     s.add_argument("files", nargs="*", help="limit to these files")
     s = sub.add_parser("plan", help="pre-registration: check plans, or `new`/`freeze <EXP-ID>`")
@@ -4676,7 +4990,8 @@ def build_parser():
     s.add_argument("path", nargs="?", help="file to register (for add)")
     s.add_argument("--source", help="where the file came from (URL, instrument, or the generating command)")
     s.add_argument("--version", help="dataset version or release")
-    s.add_argument("--split", help="split definition: which rows are train/validation/test, or how splits are made")
+    s.add_argument("--split", help="split definition: free text, or JSON {\"train\": path, \"test\": path, "
+                   "\"group_key\": field} / {\"column\": field, \"group_key\": field} so leakage can be checked")
     s.add_argument("--origin", help="measured | simulated | synthetic-generated | literature")
     s.add_argument("--generator", help="script that generated the file (required for generated data)")
     s.add_argument("--seed", help="seed the generator used (required for generated data; 'unrecorded' if unknown)")
@@ -4791,8 +5106,14 @@ def main(argv=None):
             return cmd_manuscript_hash(project, args)
         if args.cmd == "macros":
             return cmd_macros(project, args)
+        if args.cmd in ("numbers", "claims") and args.action == "add":
+            return cmd_ledger_add(project, args.cmd, args.row)
+        if args.cmd in ("numbers", "claims") and args.row:
+            raise EnvError("a row is only taken by `%s add`" % args.cmd)
         if args.cmd == "ledger":
             findings = check_ledger(project, args.base)
+        elif args.cmd == "claims":
+            findings = check_ledger(project)
         elif args.cmd == "bib":
             findings = check_bib(project)
         elif args.cmd == "quotes":

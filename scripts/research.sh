@@ -64,22 +64,51 @@ PROJECT_ROOT="$(dirname "$WORKFLOW_DIR")"
 RESEARCH_CHECK="${SCRIPT_DIR}/research_check.py"
 # Subcommands of `research.sh check <name>` that run the evidence checker instead of
 # ticking a numbered deliverable (docs/design/research-team.md section 6.6).
-RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers slop gate init role-exit plan data run repro retraction manuscript-hash macros "
+RESEARCH_CHECK_COMMANDS=" ledger bib quotes numbers claims slop gate init role-exit plan data run repro retraction manuscript-hash macros "
 
 #######################################
-# Validate workflow is initialized
+# Validate workflow is initialized. Only the phase actions (status, start, next, reject,
+# reset, goal, check <n>, deliverables) need it; the evidence checks do not.
+# Arguments: $1 - the action that needs the state
 #######################################
 validate_workflow() {
-    if [[ ! -d "$WORKFLOW_DIR" ]]; then
-        echo -e "${RED}Error: Workflow not initialized.${NC}"
-        echo -e "Run: ${CYAN}./scripts/init_workflow.sh${NC}"
+    local action="${1:-status}"
+    # A .workflow that resolve_project.sh fell back to belongs to UWS itself, not to this
+    # project: using it would change UWS's own research phase.
+    if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" || ! -d "$WORKFLOW_DIR" || ! -f "$STATE_FILE" ]]; then
+        echo -e "${RED}Error: research.sh ${action} needs .workflow/state.yaml, and this project has none.${NC}"
+        echo -e "Run: ${CYAN}uws init research${NC} (or ./scripts/init_workflow.sh) in the project root."
+        echo -e "The evidence checks need no workflow state: ${CYAN}research.sh check init|ledger|gate <phase>|...${NC}"
         exit 1
     fi
+}
 
-    if [[ ! -f "$STATE_FILE" ]]; then
-        echo -e "${RED}Error: State file not found: ${STATE_FILE}${NC}"
-        exit 1
+#######################################
+# Run the evidence checker (docs/design/research-team.md section 6.6). It needs no
+# workflow state. When no .workflow belongs to this project, the checker finds the project
+# from the current directory (nearest research/ledger, else the current directory), so
+# `check init` scaffolds here and never inside the UWS installation.
+# Arguments: checker command and its arguments
+#######################################
+run_checker() {
+    if ! command -v python3 > /dev/null 2>&1; then
+        echo -e "${RED}Error: python3 is required for research checks.${NC}" >&2
+        exit 2
     fi
+    if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" ]]; then
+        exec python3 "$RESEARCH_CHECK" "$@"
+    fi
+    exec python3 "$RESEARCH_CHECK" --root "$PROJECT_ROOT" "$@"
+}
+
+#######################################
+# Run the BibTeX fetcher; like the checker it needs no workflow state.
+#######################################
+run_bib() {
+    if [[ "${UWS_WORKFLOW_SOURCE:-}" == "fallback" ]]; then
+        exec bash "${SCRIPT_DIR}/research_bib.sh" "$@"
+    fi
+    UWS_RESEARCH_ROOT="$PROJECT_ROOT" exec bash "${SCRIPT_DIR}/research_bib.sh" "$@"
 }
 
 #######################################
@@ -453,8 +482,19 @@ main() {
     local details="${2:-}"
     local extra="${3:-}"
 
-    # Validate workflow first
-    validate_workflow
+    # The evidence checker and the BibTeX fetcher work from the project files alone.
+    if [[ "$action" == "check" && -n "$details" && "$RESEARCH_CHECK_COMMANDS" == *" ${details} "* ]]; then
+        shift
+        run_checker "$@"
+    fi
+    if [[ "$action" == "bib" ]]; then
+        shift
+        run_bib "$@"
+    fi
+    case "$action" in
+        help|--help|-h) ;;
+        *) validate_workflow "$action" ;;
+    esac
 
     # Methodology guard: warn if research workflow is not active for this project type
     if declare -f is_methodology_active > /dev/null 2>&1; then
@@ -649,15 +689,7 @@ main() {
             ;;
 
         check)
-            # `check <name>` runs the evidence checker; `check <n>` ticks a deliverable.
-            if [[ -n "$details" && "$RESEARCH_CHECK_COMMANDS" == *" ${details} "* ]]; then
-                if ! command -v python3 > /dev/null 2>&1; then
-                    echo -e "${RED}Error: python3 is required for research checks.${NC}" >&2
-                    exit 2
-                fi
-                shift
-                exec python3 "$RESEARCH_CHECK" --root "$PROJECT_ROOT" "$@"
-            fi
+            # `check <name>` ran the evidence checker above; `check <n>` ticks a deliverable.
             local current_phase
             current_phase=$(get_phase)
             if [[ "$current_phase" == "none" ]]; then
@@ -688,11 +720,6 @@ main() {
             else
                 echo -e "  ${YELLOW}${_rem} remaining.${NC}"
             fi
-            ;;
-
-        bib)
-            shift
-            UWS_RESEARCH_ROOT="$PROJECT_ROOT" exec bash "${SCRIPT_DIR}/research_bib.sh" "$@"
             ;;
 
         deliverables)

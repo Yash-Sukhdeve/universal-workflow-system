@@ -105,6 +105,18 @@ Examples:
 EOF
 }
 
+# research_needs_no_state <research args>: true for `bib ...` and for `check <name>` (a
+# checker command, not the number of a deliverable to tick).
+research_needs_no_state() {
+    case "${1:-}" in
+        bib) return 0 ;;
+        check)
+            [[ -n "${2:-}" && ! "${2}" =~ ^[0-9]+$ ]] && return 0
+            ;;
+    esac
+    return 1
+}
+
 # `uws agent` / `uws skill` were retired: agents are real Claude Code
 # subagents (.claude/agents/uws-<role>.md) and skills are native Claude Code
 # skills, so there is nothing to activate or enable.
@@ -158,6 +170,13 @@ main() {
     # Find UWS root
     local root
     if ! root="$(find_uws_root)"; then
+        # The research evidence checks (`research check <name>`) and the BibTeX fetcher
+        # (`research bib`) work from the project files alone (docs/design/research-team.md
+        # section 6.6), so they run here without a .workflow; research.sh finds the project
+        # from the current directory and refuses the actions that need workflow state.
+        if [[ "$cmd" == "research" ]] && research_needs_no_state "$@"; then
+            exec "$UWS_INSTALL_DIR/scripts/research.sh" "$@"
+        fi
         echo "Error: No UWS project found (no .workflow/ directory)." >&2
         echo "Run 'uws init' inside your project to get started." >&2
         exit 1

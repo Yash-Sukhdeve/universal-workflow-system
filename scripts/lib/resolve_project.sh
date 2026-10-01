@@ -9,7 +9,9 @@
 #   3. Git repo root/.workflow (if in a git repo)
 #   4. SCRIPT_DIR/../.workflow (UWS's own .workflow — last resort)
 #
-# Also exports UWS_SCRIPTS_DIR so scripts can find each other.
+# Also exports UWS_SCRIPTS_DIR so scripts can find each other, and UWS_WORKFLOW_SOURCE
+# (env | cwd | git | fallback): "fallback" means no .workflow belongs to the calling project,
+# so a script that would write project state must not use the one it resolved.
 
 # Guard against double-sourcing
 if [[ "${_RESOLVE_PROJECT_LOADED:-}" == "true" ]]; then
@@ -23,12 +25,14 @@ UWS_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 _resolve_workflow_dir() {
     # 1. Explicit env var takes priority
     if [[ -n "${WORKFLOW_DIR:-}" ]]; then
+        UWS_WORKFLOW_SOURCE="env"
         return 0
     fi
 
     # 2. CWD has a .workflow/
     if [[ -d "$(pwd)/.workflow" ]]; then
         WORKFLOW_DIR="$(pwd)/.workflow"
+        UWS_WORKFLOW_SOURCE="cwd"
         return 0
     fi
 
@@ -37,11 +41,13 @@ _resolve_workflow_dir() {
     git_root="$(git rev-parse --show-toplevel 2>/dev/null)" || true
     if [[ -n "$git_root" && -d "${git_root}/.workflow" ]]; then
         WORKFLOW_DIR="${git_root}/.workflow"
+        UWS_WORKFLOW_SOURCE="git"
         return 0
     fi
 
     # 4. Fallback: UWS's own .workflow/
     WORKFLOW_DIR="${UWS_SCRIPTS_DIR}/../.workflow"
+    UWS_WORKFLOW_SOURCE="fallback"
 }
 
 _resolve_workflow_dir
@@ -49,4 +55,4 @@ _resolve_workflow_dir
 # Derived paths used by many scripts
 STATE_FILE="${WORKFLOW_DIR}/state.yaml"
 
-export WORKFLOW_DIR STATE_FILE UWS_SCRIPTS_DIR
+export WORKFLOW_DIR STATE_FILE UWS_SCRIPTS_DIR UWS_WORKFLOW_SOURCE

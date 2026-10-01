@@ -123,10 +123,12 @@ EOF
 }
 
 @test "bib: a \\cite with no bib_sources entry is reported at its line" {
+    # nobody2099 is in neither bib_sources/ nor references.bib: it cites nothing (BIB-UNDEFINED;
+    # a key that references.bib defines but bib_sources/ lacks stays BIB-MISSING).
     printf 'See \\cite{nobody2099}.\n' >> "$P/paper/main.tex"
     run check bib
     [ "$status" -eq 1 ]
-    [[ "$output" == *"paper/main.tex:23 BIB-MISSING"* ]]
+    [[ "$output" == *"paper/main.tex:23 BIB-UNDEFINED"* ]]
 }
 
 @test "bib build: references.bib is rebuilt from bib_sources and then passes" {
